@@ -1269,8 +1269,10 @@ Messages are opaque **handles** into an internal message store. Create one with 
   store slot), so it can be modified and sent without affecting the source.
   This is the canonical way to "send a modified copy of the incoming message",
   e.g. `let copy = midi.clone(msg); midi.setChannel(copy, 5); midiOut.send(copy);`
-  Note: NRPN/14-bit-CC chain state is not copied — a clone of an NRPN or
-  `createCc14bit()` handle is a single plain message, not a chained group.
+  Cloning an NRPN, RPN or 14-bit CC handle clones the whole group (it takes
+  as many store slots as the group has messages), and the clone is a group
+  handle again. Only the MIDI payload is copied: a received message's decode
+  result (`midi.getControl()`, `midi.getValue()` on an assembled message) is not.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
   set with `midi.setNRPN` (and `midi.setChannel`); other setters raise an error.
 - `midi.createRPN()` → the same 4-handle chain for a *registered* parameter

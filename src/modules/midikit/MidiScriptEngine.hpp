@@ -114,6 +114,26 @@ struct MidiScriptEngine {
 		return nullptr;
 	}
 
+	// midi.clone(): appends a copy of the handle at slot `src` to the store, a whole
+	// group (with its chain flags) for a group handle, and returns the new slot.
+	// Only the MIDI payload is copied: the clone starts unsent, and a received
+	// message's decode result is not carried over. The caller has checked that
+	// groupSize() slots are free.
+	size_t cloneGroup(size_t src) {
+		size_t n = groupSize(msgStore[src]);
+		size_t dst = msgCount;
+		for (size_t k = 0; k < n; k++) {
+			ScriptMessage copy;
+			copy.in.msg = msgStore[src + k].in.msg;
+			msgStore[dst + k] = copy;
+		}
+		msgStore[dst].isNrpn = msgStore[src].isNrpn;
+		msgStore[dst].isRpn = msgStore[src].isRpn;
+		msgStore[dst].isCc14bit = msgStore[src].isCc14bit;
+		msgCount += n;
+		return dst;
+	}
+
 	// midi.setChannel() on a handle: every message of its group, so the group
 	// stays on one channel. `slot` from handleToSlot().
 	void setGroupChannel(size_t slot, uint8_t channel) {

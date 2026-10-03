@@ -1766,15 +1766,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_clone(lua_State* L) {
 		auto* e = getEngine(L);
 		requireCallback(L, "midi.clone");
-		ScriptMessage* src = getMsg(L, 1);
-		size_t* s = &e->msgCount;
-		if (*s >= e->msgStore.size()) luaStoreFull(L, "midi.clone");
-		// Copy only the MIDI payload; the clone starts fresh and unsent (all
-		// fields at defaults) so it can be modified and sent independently.
-		ScriptMessage clone;
-		clone.in.msg = src->in.msg;
-		e->msgStore[*s] = clone;
-		lua_pushinteger(L, static_cast<lua_Integer>(e->slotToHandle((*s)++)));
+		size_t src = checkHandle(L, 1);
+		// A group handle is cloned as a group: all its slots, with the chain flags.
+		if (e->msgCount + MidiScriptEngine::groupSize(e->msgStore[src]) > e->msgStore.size()) luaStoreFull(L, "midi.clone");
+		lua_pushinteger(L, static_cast<lua_Integer>(e->slotToHandle(e->cloneGroup(src))));
 		return 1;
 	}
 

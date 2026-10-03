@@ -1729,14 +1729,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (!inCallbackOrThrow(ctx, "midi.clone", exc)) return exc;
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.clone: invalid msg");
-		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s >= getEngine(ctx)->msgStore.size()) return jsStoreFull(ctx, "midi.clone");
-		// Copy only the MIDI payload; the clone starts fresh and unsent (all
-		// fields at defaults) so it can be modified and sent independently.
-		ScriptMessage clone;
-		clone.in.msg = getEngine(ctx)->msgStore[idx].in.msg;
-		getEngine(ctx)->msgStore[*s] = clone;
-		return JS_NewFloat64(ctx, double(getEngine(ctx)->slotToHandle((*s)++)));
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		// A group handle is cloned as a group: all its slots, with the chain flags.
+		if (e->msgCount + MidiScriptEngine::groupSize(e->msgStore[idx]) > e->msgStore.size()) return jsStoreFull(ctx, "midi.clone");
+		return JS_NewFloat64(ctx, double(e->slotToHandle(e->cloneGroup(idx))));
 	}
 
 	// Shared by midi.createNRPN() and midi.createRPN(): the same 4-handle chain,

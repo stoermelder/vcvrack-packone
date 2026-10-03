@@ -1024,3 +1024,67 @@ TEST_CASE("Single-message setters on plain handles and on the incoming message a
 	REQUIRE(plainJs.sent.size() == 1);
 	REQUIRE(plainJs.sent[0].bytes == std::vector<uint8_t>({0x93, 62, 7}));
 }
+
+
+// midi.clone of a group handle is a group again: all its messages and the chain
+// flags, independent of the source.
+
+TEST_CASE("midi.clone of a group handle clones the whole group independently", "[MidiKit][CrossEngine]") {
+	for (const GroupKind& k : GROUP_KINDS) {
+		CATCH_INFO(k.name);
+		EngineResult base = run(jsOnMessage(std::string(k.js) + " midiOut.send(g);"));
+		REQUIRE(base.sent.size() == k.size);
+
+		// The clone sends the same group as the source...
+		EngineResult js = run(jsOnMessage(std::string(k.js) + " let c = midi.clone(g); midiOut.send(c);"));
+		EngineResult lua = run(luaOnMessage(std::string(k.lua) + "; local c = midi.clone(g); midiOut.send(c)"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.log.empty());
+		REQUIRE(lua.log.empty());
+		REQUIRE(js.sent == base.sent);
+		REQUIRE(lua.sent == base.sent);
+
+		// ...and is a group handle: its own channel applies to all of it, and
+		// the source stays on channel 1 (no shared slots).
+		EngineResult ch = run(jsOnMessage(std::string(k.js) + " let c = midi.clone(g); midi.setChannel(c, 5); midiOut.send(c); midiOut.send(g);"));
+		EngineResult chLua = run(luaOnMessage(std::string(k.lua) + "; local c = midi.clone(g); midi.setChannel(c, 5); midiOut.send(c); midiOut.send(g)"));
+		REQUIRE(ch.sent.size() == 2 * k.size);
+		REQUIRE(ch.sent == chLua.sent);
+		for (size_t i = 0; i < k.size; i++) {
+			REQUIRE(ch.sent[i].bytes[0] == 0xb4);
+			REQUIRE(ch.sent[k.size + i].bytes[0] == 0xb0);
+		}
+
+		// Single-message setters are rejected on the clone, like on the source.
+		std::string call = "midi.setNote(c, 1);";
+		std::string expected = std::string("midi.setNote: ") + k.error;
+		EngineResult rej = run(jsOnMessage(std::string(k.js) + " let c = midi.clone(g); " + jsGuarded(call)));
+		EngineResult rejLua = run(luaOnMessage(std::string(k.lua) + "; local c = midi.clone(g); " + luaGuarded(call)));
+		REQUIRE(rej.log.find(expected) != std::string::npos);
+		REQUIRE(rejLua.log.find(expected) != std::string::npos);
+	}
+
+	// Re-setting the source after the clone leaves the clone as it was.
+	EngineResult js = run(jsOnMessage("let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); let c = midi.clone(g); midi.setNRPN(g, 2, 5, 6); midiOut.send(c);"));
+	EngineResult lua = run(luaOnMessage("local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); local c = midi.clone(g); midi.setNRPN(g, 2, 5, 6); midiOut.send(c)"));
+	EngineResult base = run(jsOnMessage("let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); midiOut.send(g);"));
+	REQUIRE(js.sent == base.sent);
+	REQUIRE(lua.sent == base.sent);
+}
+
+TEST_CASE("midi.clone of a group needs room for the whole group", "[MidiKit][CrossEngine]") {
+	// 32 slots: the incoming message (1), an NRPN (4) and 26 plain handles leave one free. The plain
+	// message still clones, the group does not, and the error names the store.
+	std::string jsFill = "let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); let p = midi.create(); midi.setNoteOn(p, 1, 60, 100); for (let i = 0; i < 25; i++) midi.create();";
+	std::string luaFill = "local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); local p = midi.create(); midi.setNoteOn(p, 1, 60, 100); for i = 1, 25 do midi.create() end";
+
+	EngineResult js = run(jsOnMessage(jsFill + " midiOut.send(midi.clone(p)); " + jsGuarded("midi.clone(g);")));
+	EngineResult lua = run(luaOnMessage(luaFill + " midiOut.send(midi.clone(p)); " + luaGuarded("midi.clone(g)")));
+	CATCH_INFO(js.log);
+	CATCH_INFO(lua.log);
+	REQUIRE(js.sent.size() == 1);
+	REQUIRE(js.sent == lua.sent);
+	REQUIRE(js.log.find("message store full") != std::string::npos);
+	REQUIRE(lua.log.find("message store full") != std::string::npos);
+}
