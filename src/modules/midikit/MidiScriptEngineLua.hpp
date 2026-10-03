@@ -2,6 +2,7 @@
 extern "C" {
 	#include "minilua.h"
 }
+#include "minilua.json.hpp"
 #include <jansson.h>
 #include "../../utils/TaskWorker.hpp"
 #include <algorithm>
@@ -1037,6 +1038,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("rescale",   lua_number_rescale);
 		setTableFunc("toString",  lua_number_toString);
 		lua_setglobal(L, "number");
+
+		// ── json table ───────────────────────────────────────────────────────
+		// Pure-Lua library (json.encode/json.decode); it returns its table.
+		if (luaL_loadbuffer(L, LUA_JSON_SOURCE, sizeof(LUA_JSON_SOURCE) - 1, "json") == LUA_OK
+				&& lua_pcall(L, 0, 1, 0) == LUA_OK) {
+			lua_setglobal(L, "json");
+		}
+		else {
+			handler->writeLog("Error loading json library", false);
+			lua_pop(L, 1);
+		}
 
 		// ── input table ──────────────────────────────────────────────────────
 		// Default onTooltip provided in Lua; scripts may override.

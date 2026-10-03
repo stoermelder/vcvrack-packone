@@ -710,5 +710,5 @@ TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
 	};
 
 	runExample("presets/MidiKit/JavaScript/basic/TipsyIn.js", "{\"value\":42}", "application/json");
-	runExample("presets/MidiKit/Lua/basic/TipsyIn.lua", "42", "text/plain");
+	runExample("presets/MidiKit/Lua/basic/TipsyIn.lua", "{\"value\":42}", "application/json");
 }

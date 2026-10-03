@@ -27,7 +27,7 @@ Both engines handle the common case equally well: reacting to
 |---|---|---|
 | Language completeness | Full JavaScript (ES2020): `while`, `switch`, `try`, `class`, `new`, `this`, `var`/`let`/`const`, function declarations, arrow functions | Full Lua 5.4 syntax; only the *library* is trimmed |
 | Data structures | Array literals `[1,2,3]`, object literals `{a:1}` | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
-| Stdlib | Full JS standard library: `Math`, `JSON`, `String`, `Array`, ... | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed) |
+| Stdlib | Full JS standard library: `Math`, `JSON`, `String`, `Array`, ... | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed), plus a `json` table with `json.encode(value)` and `json.decode(string)` (bundled [json.lua](https://github.com/rxi/json.lua) by rxi, MIT). Invalid input raises an error, so wrap `json.decode` in `pcall`; JSON `null` decodes to `nil` |
 | String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()` helper available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
 | Familiarity | Preferred if the user/preset is JS-oriented or ports logic from another JS script | Preferred if the script needs `string.format`, `table.sort`, pattern matching, or other real stdlib features |
 | Performance/footprint | QuickJS is a full embeddable JS engine with a 1 MiB memory limit | minilua is a stripped full Lua VM; similarly small footprint |
@@ -531,8 +531,8 @@ midi.onMessage = function(midiPort, msg)
    -- Send a text message via Tipsy protocol (mime defaults to text/plain)
    trig.sendTipsy("Preset changed!")
    
-   -- Or send JSON-like data with an explicit mime type
-   local config = '{"channel":1,"mode":"auto"}'
+   -- Or send JSON data with an explicit mime type
+   local config = json.encode({ channel = 1, mode = "auto" })
    trig.sendTipsy(config, "application/json")
 end
 ```
@@ -569,6 +569,13 @@ end
 
 trig.onTipsyMessage = function(data, mimeType)
    rack.log("received " .. mimeType .. ": " .. data)
+
+   if mimeType == "application/json" then
+      local ok, config = pcall(json.decode, data)
+      if ok then
+         -- ... use config
+      end
+   end
 end
 ```
 

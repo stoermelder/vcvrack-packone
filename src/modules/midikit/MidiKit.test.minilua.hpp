@@ -35,6 +35,113 @@ TEST_CASE("Script can override input.onTooltip", "[MidiKit][Lua]") {
 }
 
 
+static const char* LUA_JSON = R"(--[[
+@engine minilua@v1
+--]]
+input.onTooltip = function(i)
+  local t = json.decode('{"a":[1,2,{"b":"x"}],"n":' .. i .. '}')
+  return json.encode({ t.a[3].b, t.n, #t.a })
+end
+)";
+
+TEST_CASE("Lua scripts have the json library", "[MidiKit][Lua]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+
+	m->loadScript(LUA_JSON);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	REQUIRE(m->host.seLua.getInputName(1) == "[\"x\",2,3]");
+}
+
+
+// Each input index runs one json case, so a test reads the result through the tooltip.
+static const char* LUA_JSON_CASES = R"LUA(--[[
+@engine minilua@v1
+--]]
+local cases = {
+  function() return json.encode({ 1, 2.5, -3, "a", true, false }) end,
+  function() return json.encode({ k = { 1, { z = 0 } } }) end,
+  function() return json.encode("q\"\\\n\t/") end,
+  function() return json.encode({}) end,
+  function() local t = json.decode('[null, 1]') return tostring(t[1]) .. ',' .. t[2] end,
+  function() return json.decode('"\\u00e9\\u20ac"') end,
+  function() local t = json.decode(' { "x" : [ 1e2 , -0.5 ] } ') return t.x[1] .. ',' .. t.x[2] end,
+  function() local ok, err = pcall(json.decode, '{"a":') return tostring(ok) .. ':' .. tostring(err ~= nil) end,
+  function() local ok = pcall(json.decode, '[1 2]') return tostring(ok) end,
+  function() local ok = pcall(json.encode, { 1, nil, 3, x = 1 }) return tostring(ok) end,
+  function() local ok = pcall(json.encode, 0 / 0) return tostring(ok) end,
+  function() local ok = pcall(json.encode, function() end) return tostring(ok) end,
+  function()
+    local src = { name = "n", list = { 1, 2, { deep = { true } } }, num = 12.25 }
+    local back = json.decode(json.encode(src))
+    return back.name .. tostring(back.list[3].deep[1]) .. back.num .. #back.list
+  end,
+}
+input.onTooltip = function(i) return cases[i]() end
+)LUA";
+
+static std::string luaJsonCase(MidiKitModule* m, int n) {
+	return m->host.seLua.getInputName(n - 1);   // the script's cases are 1-based
+}
+
+TEST_CASE("Lua json.encode produces compact JSON for arrays, objects and strings", "[MidiKit][Lua][Json]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(LUA_JSON_CASES);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	REQUIRE(luaJsonCase(m, 1) == "[1,2.5,-3,\"a\",true,false]");
+	REQUIRE(luaJsonCase(m, 2) == "{\"k\":[1,{\"z\":0}]}");
+	REQUIRE(luaJsonCase(m, 3) == "\"q\\\"\\\\\\n\\t/\"");
+	REQUIRE(luaJsonCase(m, 4) == "[]");
+}
+
+TEST_CASE("Lua json.decode handles null, unicode escapes, whitespace and exponents", "[MidiKit][Lua][Json]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(LUA_JSON_CASES);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	REQUIRE(luaJsonCase(m, 5) == "nil,1");
+	REQUIRE(luaJsonCase(m, 6) == "\xC3\xA9\xE2\x82\xAC");   // é€ as UTF-8
+	REQUIRE(luaJsonCase(m, 7) == "100.0,-0.5");
+}
+
+TEST_CASE("Lua json raises errors for malformed input and unsupported values", "[MidiKit][Lua][Json]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(LUA_JSON_CASES);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	REQUIRE(luaJsonCase(m, 8) == "false:true");   // truncated document
+	REQUIRE(luaJsonCase(m, 9) == "false");         // missing comma
+	REQUIRE(luaJsonCase(m, 10) == "false");        // mixed array/object table
+	REQUIRE(luaJsonCase(m, 11) == "false");        // NaN
+	REQUIRE(luaJsonCase(m, 12) == "false");        // function
+}
+
+TEST_CASE("Lua json round-trips a nested value", "[MidiKit][Lua][Json]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(LUA_JSON_CASES);
+	REQUIRE(m->host.seLua.L != nullptr);
+
+	REQUIRE(luaJsonCase(m, 13) == "ntrue12.253");
+}
+
+TEST_CASE("Lua json is available again after a script reload", "[MidiKit][Lua][Json]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->loadScript(LUA_JSON_CASES);
+	REQUIRE(luaJsonCase(m, 4) == "[]");
+	m->loadScript(LUA_INPUT_NAME);   // a script that never touches json
+	m->loadScript(LUA_JSON_CASES);
+	REQUIRE(m->host.seLua.L != nullptr);
+	REQUIRE(luaJsonCase(m, 4) == "[]");
+}
+
+
 static const char* QUICKJS_HEADER = R"(/**
  * @engine QuickJs@v1
  */
