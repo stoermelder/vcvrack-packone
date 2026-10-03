@@ -1,21 +1,20 @@
 # MIDI-KIT scripting reference
 
-MIDI-KIT scripts run in one of two embedded engines, chosen by a versioned
-`@engine` header tag: `QuickJs@v1` (a full JavaScript engine) or `minilua@v1`
-(a sandboxed Lua 5.4 via minilua). Both engines expose the *same* API (`midi`, `midiOut`, `input`,
-`trig`, `param`, `number`, `rack`) with 1-based indices for ports,
-channels, and params. Pick the engine per script; the module identifies it
-from the header, not the file extension.
+MIDI-KIT runs a script that reads incoming MIDI, trigger and CV, and sends MIDI, triggers and voltages. The script is written in one of two embedded languages, picked by a versioned `@engine` tag in its header:
 
-**Contents:**
-- [Part 1 — Writing a script](#part-1--writing-a-script): engine choice,
-  file header, script structure and lifecycle
-- [Part 2 — Examples](#part-2--examples): worked scripts from basic
-  pass-through to context menus and assembled NRPN input
-- [Part 3 — API reference](#part-3--api-reference): every `rack.*` /
-  `input.*` / `trig.*` / `param.*` / `midi.*` / `midiOut.*` / `number.*`
-  function, persistence, messages between modules, sample-accurate timing, and the MIDI status/type reference
-- [Part 4 — Gotchas](#part-4--gotchas)
+- `QuickJs@v1`: JavaScript (a full ES2020 engine)
+- `minilua@v1`: Lua 5.4 (sandboxed, via minilua)
+
+Both engines offer the *same* API: `midi`, `midiOut`, `input`, `trig`, `param`, `number` and `rack`. Ports, channels and params are **1-based** everywhere. The module identifies the engine from the header, not from the file extension.
+
+**Contents**
+
+| Part | What is in it |
+| --- | --- |
+| [Part 1 — Writing a script](#part-1--writing-a-script) | engine choice, file header, script structure and callbacks |
+| [Part 2 — Examples](#part-2--examples) | worked scripts from basic pass-through to context menus, assembled NRPN input and messages between modules |
+| [Part 3 — API reference](#part-3--api-reference) | every `rack.*`, `input.*`, `trig.*`, `param.*`, `midi.*`, `midiOut.*` and `number.*` function, persistence, messages between modules, sample-accurate timing |
+| [Part 4 — Gotchas](#part-4--gotchas) | the mistakes that cost the most time |
 
 ## Part 1 — Writing a script
 
@@ -40,8 +39,7 @@ array/object literal syntax or scripts adapted from existing JS examples.
 
 ### Required file header
 
-The engine is selected by parsing `@key value` tags out of the leading
-comment block only — nothing after the block is scanned.
+The script starts with a comment block of `@key value` tags. Only this leading block is scanned for tags; nothing after it is.
 
 QuickJs (JS-style `/** ... */`):
 ```javascript
@@ -63,95 +61,68 @@ Lua (Lua-style `--[[ ... --]]`):
 --]]
 ```
 
-`@engine` is mandatory and must exactly match `QuickJs@v1` or `minilua@v1`, or
-the script is rejected. The `@v1` suffix pins the script to an engine protocol
-revision, so a future breaking change can bump it (`@v2`) without silently
-misbehaving old scripts. `@author`/`@description` are optional and get echoed
-to the module's log on load. `@target` is conventional but not checked.
+| Tag | Required | Meaning |
+| --- | --- | --- |
+| `@engine` | yes | `QuickJs@v1` or `minilua@v1`, exactly. Anything else rejects the script |
+| `@author`, `@description` | no | echoed to the module log on load |
+| `@target` | no | conventional, not checked |
+| `@requires` | no | what the script needs from the module, see below |
 
-`@requires params=N` is optional and declares that the script needs at least `N`
-panel params, for example `@requires params=4` for a script that reads params
-3 and 4. A module with fewer params (MIDI-µKIT has 2) refuses to load the script
-and logs "Script not loaded: it requires 4 params, this module has 2", instead
-of failing later when the script touches a param that isn't there. An unknown
-key or a malformed value also refuses the script. A script can still adapt
-instead of refusing by checking `param.count` or by giving `param.getValue` a
-fallback (see [Module variants](#module-variants)). The tag sits in the header
-block next to `@engine`. The **Examples** menus grey out such scripts on a variant
-that can't run them and show "needs N params" next to the name.
+The `@v1` suffix pins the script to an engine protocol revision, so a future breaking change can become `@v2` without old scripts silently misbehaving. The engine is found by a plain substring search for `@engine <name>@vN` in the header block, so keep the tag inside the leading comment.
 
-`@requires messages=N` is optional and asks for a message store of at least `N`
-handles (see [`midi.*`](#midi-message-constructioninspection)). The default is
-32, the maximum 512, and `N` is a minimum: `messages=16` keeps 32, `messages=64`
-gives 64. A value above 512, or a malformed one, refuses the script
-("Script not loaded: @requires messages=5000 exceeds the maximum of 512"). The
-store is sized once, before the script's top-level code runs, and every load
-sets it again, so a following script without the tag gets 32. Both keys can be
-combined: `@requires params=4 messages=512`.
+#### `@requires`
 
-A larger store lets a callback hold more distinct messages *at once*. It does not
-raise how much a callback can *send*: everything goes through the output queue,
-which holds 2048 messages and hands them on 128 at a time, one batch every
-8 samples. A larger store doesn't raise that limit, and reusing one handle
-does as well for most scripts.
+The tag sits in the header block next to `@engine`. Several keys can be combined: `@requires params=4 messages=512`. An unknown key or a malformed value refuses the script.
 
-Engine selection is a plain substring search for `@engine <name>@vN` in the
-header comment block — not the file extension, and not scanned past the
-block. Keep the `@engine` tag inside the leading comment, or the script can be
-misrouted.
+**`params=N`** declares that the script needs at least `N` panel params, for example `params=4` for a script that reads params 3 and 4. A module with fewer params (MIDI-µKIT has 2) refuses to load the script and logs "Script not loaded: it requires 4 params, this module has 2", instead of failing later when the script touches a param that isn't there. The **Examples** menus grey out such scripts on a variant that can't run them and show "needs N params" next to the name.
+
+A script can adapt instead of refusing, by checking `param.count` or by giving `param.getValue` a fallback (see [Module variants](#module-variants)).
+
+**`messages=N`** asks for a message store of at least `N` handles (see [`midi.*`](#midi--message-constructioninspection)).
+
+- The default is 32 and the maximum 512. `N` is a minimum: `messages=16` keeps 32, `messages=64` gives 64.
+- A value above 512 refuses the script ("Script not loaded: @requires messages=5000 exceeds the maximum of 512").
+- The store is sized once, before the top-level code runs, and every load sets it again, so a following script without the tag gets 32.
+- A larger store lets a callback hold more distinct messages *at once*. It does not raise how much a callback can *send*: everything goes through the output queue (2048 messages, handed on 128 at a time, one batch every 8 samples). Reusing one handle does as well for most scripts.
 
 ### Script structure
 
-A MIDI-KIT script is a single text file: top-level code that runs once when
-the script (re)loads, plus optional callbacks that run in response to events.
-There is no per-sample or per-frame callback — logic only runs when something
-happens: a MIDI message arrives, a trigger fires, a Tipsy message decodes, or
-the script loads/unloads/saves.
+A script is a single text file with two kinds of code:
 
-**Top-level code** runs once, synchronously, at (re)load. It's where you set
-up `config`, define helpers, register context-menu items, and enable things
-(`param.enable()`, `trig.enableIn()`, `midi.enableNrpnIn()`, …).
+- **Top-level code** runs once, synchronously, when the script (re)loads. Use it to set up `config`, define helpers, register context-menu items and enable inputs and ports (`param.enable()`, `trig.enableIn()`, `midi.enableNrpnIn()`, ...).
+- **Callbacks** run in response to events. There is no per-sample or per-frame callback: logic only runs when something happens, namely a MIDI message arrives, a trigger fires, a Tipsy message decodes, a broadcast arrives, or the script loads or unloads.
 
-The callbacks a script can define, and when each runs:
-
-| Callback | Runs … | Needs |
+| Callback | Runs ... | Needs |
 | --- | --- | --- |
-| `midi.onMessage(midiPort, msg)` | on every incoming MIDI message | — |
-| `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` / `midi.onCc14bit(midiPort, msg)` | on every completed NRPN / RPN / 14-bit CC parameter change | `midi.enableNrpnIn()` / `enableRpnIn()` / `enableCc14bitIn()` |
+| `midi.onMessage(midiPort, msg)` | on every incoming MIDI message | nothing |
+| `midi.onNrpn(midiPort, msg)`, `midi.onRpn(...)`, `midi.onCc14bit(...)` | on every completed NRPN, RPN or 14-bit CC parameter change | `midi.enableNrpnIn()`, `enableRpnIn()`, `enableCc14bitIn()` |
 | `trig.onTrigger(trigPort, channel)` | on every rising edge of an *enabled* trigger channel | `trig.enableIn()` |
 | `trig.onTipsyMessage(data, mimeType)` | on every complete [Tipsy](#tipsy) message decoded from trigger input 1 | `trig.enableTipsyIn()` |
-| `rack.onLoad()` / `rack.onUnload()` | script [lifecycle](#persistence) — load, teardown | — |
-| `input.getName(i)` / `param.getName(i)` / `param.getValueFormat(i)` | when a panel tooltip is shown; looked up live, so they may be reassigned at runtime | — |
+| `rack.onBroadcast(value, topic)` | when another MIDI-KIT module broadcasts, see [Messages between modules](#messages-between-modules) | nothing |
+| `rack.onLoad()`, `rack.onUnload()` | on script load and teardown, see [Persistence](#persistence) | nothing |
+| `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)` | when a panel tooltip is shown. Looked up live, so they may be reassigned at runtime | nothing |
 
-All hooks are assigned as plain fields on their object (`midi.onMessage =
-function(midiPort, msg) {...}` in JS, `function(...) end` in Lua) and must be
-assigned exactly once, at the top level — see [Hooks and predefined objects
-are resolved once, at load
-time](#hooks-and-predefined-objects-are-resolved-once-at-load-time) for why.
-A script that never defines `midi.onMessage` loads fine but silently ignores
-all MIDI (logged once at load); the other hooks warn only for `midi.onMessage`
-— omitting the rest is silent.
+Rules for callbacks:
 
-**The return value of `midi.onMessage` is ignored and reserved.** Today every
-message is handled the same way whatever the callback returns: nothing is
-dropped, consumed or forwarded because of it. A future version may give a
-return value a meaning (for example "consumed"), so don't write a callback that
-returns something by accident, such as `return midiOut.send(msg)` or an
-implicit return from a helper. End it with a bare `return` (or no `return`).
-Messages are passed on only through the `midiOut.send*` calls.
-
-`trig.onTrigger` additionally needs `trig.enableIn(trigPort, [channel])` — the
-trigger input is otherwise not processed at all on that port and channel: no ticks
-counted, no `sendAfterTrigger` messages drained, no callback dispatched.
+- Assign each hook once, at the top level, as a plain field on its object: `midi.onMessage = function(midiPort, msg) {...}` in JS, `function midi.onMessage(midiPort, msg) ... end` in Lua. See [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time) for why.
+- A script without `midi.onMessage` loads but ignores all MIDI (logged once at load). No other hook warns when missing.
+- `trig.onTrigger` needs `trig.enableIn(trigPort, [channel])`. Until then that port and channel is not processed at all: no ticks counted, no `sendAfterTrigger` messages drained, no callback.
+- **The return value of `midi.onMessage` is ignored and reserved.** Nothing is dropped, consumed or forwarded because of it. A future version may give it a meaning (for example "consumed"), so don't return something by accident, such as `return midiOut.send(msg)` or an implicit return from a helper. End the callback with a bare `return` or no `return`. Messages are passed on only through the `midiOut.send*` calls.
 
 ## Part 2 — Examples
 
-**Note:** Channels are 1..16, parameter and input indices are 1..4 (1..2 on MIDI-µKIT, see [Module variants](#module-variants)), trigger input and output indices are 1..2. The main entry point is `midi.onMessage(midiPort, msg)`, where `midiPort` is the 1-based MIDI input the message arrived on. Only MIDI input and output 1 are enabled by default; see [Enabling MIDI ports](#enabling-midi-ports).
+**Conventions in the examples**
 
-Examples build up roughly from simplest to most involved: basic pass-through
-and filtering first, then message construction (NRPN, 14-bit CC, SysEx, raw),
-then lifecycle/trigger/Tipsy examples, and finally UI (context menu) and
-assembled-input examples.
+- Channels are 1..16. Parameter and input indices are 1..4 (1..2 on MIDI-µKIT, see [Module variants](#module-variants)). Trigger input and output indices are 1..2.
+- The main entry point is `midi.onMessage(midiPort, msg)`, where `midiPort` is the 1-based MIDI input the message arrived on.
+- Only MIDI input and output 1 are enabled by default, see [Enabling MIDI ports](#enabling-midi-ports).
+
+The examples build up from simplest to most involved:
+
+1. basic pass-through and filtering
+2. message construction (NRPN, 14-bit CC, SysEx, raw)
+3. lifecycle, trigger and Tipsy
+4. UI (context menu), assembled input and messages between modules
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
@@ -869,73 +840,76 @@ local length = param.getValue(3, 0.5)   -- 0.5 on µKIT, where param 3 doesn't e
 
 ### Hooks and predefined objects are resolved once, at load time
 
-`midi.onMessage`, `midi.onNrpn`, `midi.onRpn` and `midi.onCc14bit` are read
-from the `midi` object **exactly once**;
-`rack.onLoad`, `rack.onUnload` and `rack.onBroadcast` from the `rack` object; and
-`trig.onTrigger`/`trig.onTipsyMessage` from the `trig` object — all right
-after the script's top-level code finishes running. **Reassigning any of them
-afterward, from inside a callback or anywhere else, has no effect.** The
-function present at load time keeps running for the script's lifetime; a
-later assignment is simply never looked at again. The same applies to
-defining a hook **late**: a script that never defines `midi.onMessage` at
-load time but assigns it later (e.g. from inside `trig.onTrigger`) never has
-that later definition called — the "no `midi.onMessage` defined" warning
-logged at load time is the last word on it. (`trig.enableIn()` is not a hook —
-it's a live API call like `param.enable()`, so calling it at any time takes
-effect for subsequent trigger dispatch. `rack.getConfig()`/`rack.setConfig()`
-are likewise live calls, not hooks — see [Persistence](#persistence) — so
-unlike the hooks above, calling them from inside a callback, or any number of
-times, works exactly as it looks like it should.)
+Hooks are read from their object **exactly once**, right after the script's top-level code has run:
 
-The tooltip functions `input.getName`, `param.getName` and `param.getValueFormat`
-are the exception: they are looked up by name each time a tooltip is shown, so
-assigning them later does work. A script can therefore reassign them at runtime,
-for example from `midi.onMessage`, to change a tooltip as its state changes. This
-is supported, unlike reassigning any other hook. The cost is a name lookup per
-tooltip, which is negligible because a tooltip is shown only while the pointer
-hovers over a parameter or port.
+| Object | Hooks read once |
+| --- | --- |
+| `midi` | `onMessage`, `onNrpn`, `onRpn`, `onCc14bit` |
+| `rack` | `onLoad`, `onUnload`, `onBroadcast` |
+| `trig` | `onTrigger`, `onTipsyMessage` |
 
-This is a deliberate, permanent design choice: resolving hooks once, rather
-than looking them up by name on every incoming MIDI message or trigger tick,
-is what keeps message dispatch fast. Write scripts so every hook is assigned
-exactly once, at the top level, during initial load — this is what every
-shipped preset does and the only supported pattern.
+**Reassigning a hook afterwards, from a callback or anywhere else, has no effect.** The function present at load time keeps running for the script's lifetime. Defining a hook *late* does not work either: a script that assigns `midi.onMessage` from inside `trig.onTrigger` never has it called, and the "no `midi.onMessage` defined" warning logged at load is the last word on it.
 
-Reassigning (or otherwise clobbering — e.g. `rack = 42`) one of the
-predefined globals (`rack`, `midi`, `midiOut`, `trig`, `input`, `param`,
-`number`) at runtime is likewise unsupported. Both engines degrade gracefully
-rather than crash if a script does this anyway — expect either the
-reassignment to be silently ignored (for a hook function, per above) or a
-caught, logged script error on the next statement that uses the clobbered
-value — but the resulting behavior is undefined and may differ in wording
-between QuickJs and Lua. Treat this as a bug in the script, not a supported
-technique.
+Write every hook once, at the top level, during the initial load. Every shipped preset does, and it is the only supported pattern. This is a deliberate, permanent choice: not looking hooks up by name on every MIDI message or trigger tick is what keeps dispatch fast.
+
+**What is live instead**
+
+- `trig.enableIn()`, `param.enable()` and the other `enable*` calls are ordinary API calls. Calling them at any time takes effect for later events.
+- `rack.getConfig()` and `rack.setConfig()` are live too, so they can be called from any callback, any number of times (see [Persistence](#persistence)).
+- The tooltip functions `input.getName`, `param.getName` and `param.getValueFormat` are looked up each time a tooltip is shown. A script can reassign them at runtime, for example from `midi.onMessage`, to change a tooltip as its state changes. The cost is one lookup per tooltip, which is negligible.
+
+**Do not clobber the predefined globals.** Reassigning `rack`, `midi`, `midiOut`, `trig`, `input`, `param` or `number` (for example `rack = 42`) is unsupported. Neither engine crashes. Expect the assignment to be ignored (for a hook) or a logged script error on the next statement that uses the clobbered value. The exact behavior is undefined and its wording differs between QuickJs and Lua. Treat it as a bug in the script.
 
 ### `rack.*`
 
 | Function | Effect |
 | --- | --- |
-| `rack.log(value [, value ...])` | write a line to the module's log/console. Any number of arguments are concatenated (no separator) into one line, each coerced the same way as a single value: strings logged verbatim (no added quotes), numbers formatted like `number.toString()` (so `rack.log(1 / 3)` prints `0.333333`, and whole numbers print exactly however large: `rack.log(rack.getEventFrame())` shows every digit), booleans as `true`/`false`, `null`/`undefined` (QuickJs) / `nil` (Lua) as `null`/`undefined`. Other values (objects, arrays, tables, functions) use each engine's own stringification — scalars are guaranteed to format identically in both engines |
+| `rack.log(value [, value ...])` | write a line to the module's log, see [Log formatting](#log-formatting) |
 | `rack.overlay(s1 [, s2 [, s3]])` | show up to 3 lines in the on-panel overlay |
-| `rack.getEventFrame()` | the engine frame (sample counter) of the event being handled: the arrival frame in `midi.onMessage` (of the last message for assembled NRPN/RPN/14-bit events), the frame of the edge in `trig.onTrigger`, the frame the message completed on in `trig.onTipsyMessage`. `-1` outside an event (top level, `rack.onLoad`, `rack.onUnload`, context-menu callbacks). Use with `midiOut.sendAtFrame()` — see [Enabling sample-accurate timing](#enabling-sample-accurate-timing) |
-| `rack.msToFrames(ms)` | the number of frames in `ms` milliseconds at the current sample rate, rounded to a whole frame (`rack.msToFrames(10)` is 441 at 44.1 kHz). Use it to place messages relative to `rack.getEventFrame()` |
-| `rack.framesToMs(frames)` | the inverse: milliseconds in `frames` frames, not rounded. For example, a measured clock period in frames becomes a time (and a BPM) |
-| `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
-| `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. Rejects a malformed key the same way as `setConfig()` — see [Persistence](#persistence) |
-| `rack.sendBroadcast(value [, topic])` | send `value`, with an optional string topic, to every other MIDI-KIT module whose script defines `rack.onBroadcast`, and return how many modules it was queued for. See [Messages between modules](#messages-between-modules) |
-| `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |
+| `rack.getEventFrame()` | the engine frame (sample counter) of the event being handled, `-1` outside an event. See [Event frames](#event-frames) |
+| `rack.msToFrames(ms)` | frames in `ms` milliseconds at the current sample rate, rounded to a whole frame (`rack.msToFrames(10)` is 441 at 44.1 kHz). Use it to place messages relative to `rack.getEventFrame()` |
+| `rack.framesToMs(frames)` | the inverse: milliseconds in `frames` frames, not rounded. A measured clock period in frames becomes a time, and a BPM |
+| `rack.random()` | a random number in [0, 1) from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed |
+| `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. See [Persistence](#persistence) |
+| `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. See [Persistence](#persistence) |
+| `rack.sendBroadcast(value [, topic])` | send `value` to the other MIDI-KIT modules, returns how many received it. See [Messages between modules](#messages-between-modules) |
+| `rack.registerContextMenu(options)`, `rack.unregisterContextMenu(label)` | add or remove right-click menu items, see [Context menu](#context-menu--rackregistercontextmenu) |
 
-`rack.onLoad`/`rack.onUnload` (script lifecycle), `rack.onBroadcast` ([Messages between modules](#messages-between-modules)) and
-`rack.registerContextMenu`/`rack.unregisterContextMenu` (below) are documented in their own subsections.
+The hooks `rack.onLoad`, `rack.onUnload` and `rack.onBroadcast` are described under [Script structure](#script-structure), [Persistence](#persistence) and [Messages between modules](#messages-between-modules).
+
+#### Log formatting
+
+`rack.log()` concatenates any number of arguments, with no separator, into one line. Each value is formatted as it would be alone:
+
+| Value | Logged as |
+| --- | --- |
+| string | verbatim, no added quotes |
+| number | like `number.toString()`: `rack.log(1 / 3)` prints `0.333333`, and whole numbers print every digit however large (`rack.log(rack.getEventFrame())`) |
+| boolean | `true` / `false` |
+| `null` / `undefined` (QuickJs), `nil` (Lua) | `null` / `undefined` |
+| object, array, table, function | each engine's own stringification |
+
+Scalars format identically in both engines. The log's context menu sets whether lines start with seconds, the engine frame or nothing.
+
+#### Event frames
+
+`rack.getEventFrame()` returns the frame of the event being handled:
+
+| Callback | Frame |
+| --- | --- |
+| `midi.onMessage` | the arrival frame (of the last message, for assembled NRPN/RPN/14-bit events) |
+| `trig.onTrigger` | the frame of the edge |
+| `trig.onTipsyMessage` | the frame the message completed on |
+| `rack.onBroadcast` | the frame of the sender's event |
+| top level, `rack.onLoad`, `rack.onUnload`, context-menu callbacks | `-1` |
+
+Use it with `midiOut.sendAtFrame()`, see [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
 
 #### Context menu — `rack.registerContextMenu`
 
-`rack.registerContextMenu(options)` adds one item to the module's right-click
-context menu, in registration order (multiple items are allowed). Returns
-`true` on success; throws (load fails) if `options` is malformed. Two
-variants:
+`rack.registerContextMenu(options)` adds one item to the module's right-click context menu. Items appear in registration order, and any number is allowed. It returns `true`, or throws (the load fails) if `options` is malformed. There are two variants.
 
-*Boolean toggle* — a single menu line with a checkmark:
+*Boolean toggle*, a single menu line with a checkmark:
 ```js
 rack.registerContextMenu({
    type: "boolean",
@@ -951,8 +925,7 @@ rack.registerContextMenu({
    }
 });
 ```
-*Options submenu* — a submenu with one entry per option, checkmark on the
-current selection:
+*Options submenu*, one entry per option with a checkmark on the current selection:
 ```js
 rack.registerContextMenu({
    type: "options",
@@ -968,103 +941,78 @@ rack.registerContextMenu({
    }
 });
 ```
-Lua uses an equivalent table: `{ type = "boolean", label = "...",
-onGetValue = function() return config.emitTrigger end,
-onChange = function(checked) ... end }`.
+Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`.
 
-Notes:
-- `label` must be a non-empty string; `options` must be a non-empty array of
-  strings; `onChange` must be a function.
-- `onGetValue` is optional and, when present, must be a function returning
-  the item's current value: a boolean for `type: "boolean"`, an index number
-  for `type: "options"`. It is evaluated just-in-time on the worker thread
-  every time the context menu is opened, so the checkmark/selection always
-  reflects the script's live state — including config restored by
-  `onLoad()` on a patch reload. When `onGetValue` is absent the value
-  defaults to `false` / `0`.
-- `onChange` runs on the worker thread (like the other callbacks) when the
-  menu item is clicked, and may call any other `rack.*` function. Exceptions
-  inside it are logged as `Context menu callback error: ...` without
-  crashing.
-- **`onChange` can send.** It is an event-less callback like `rack.onLoad`:
-  MIDI created with `midi.create()` and sent with `midiOut.send()` (or any
-  other `midiOut.*` sender) goes out when `onChange` returns, and trigger,
-  voltage and Tipsy outputs work as usual. Timing is "as soon as possible"
-  (`rack.getEventFrame()` is `-1`). `onGetValue` is not a callback of this
-  kind: it runs while the menu is built and must not send.
-- The module's presentation state (checkmark/selection) is updated as soon as
-  the item is clicked, so the menu reflects the change immediately even
-  before the callback has run.
-- Registering an item whose `label` is already registered **replaces** that
-  item instead of adding a second one: it keeps its position in the menu, and
-  the new `type`, `options`, `onGetValue` and `onChange` take over. This is how
-  a script changes the entries of a menu at runtime, e.g. re-registering
-  "Active input" with a different number of options when a setting changes.
-- `rack.unregisterContextMenu(label)` removes the item registered under
-  `label` and returns `true`, or returns `false` if there was none. Registering
-  the label again afterwards adds a new item at the end of the menu.
-- All registered items are cleared when the script is reloaded or cleared.
+**Fields**
+
+| Field | Required | Rule |
+| --- | --- | --- |
+| `type` | yes | `"boolean"` or `"options"` |
+| `label` | yes | non-empty string |
+| `options` | for `"options"` | non-empty array of strings |
+| `onChange` | yes | function |
+| `onGetValue` | no | function returning the current value: a boolean, or an index for `"options"`. Defaults to `false` / `0` when absent |
+
+**`onGetValue`** is evaluated on the worker thread every time the menu is opened, so the checkmark always reflects the script's live state, including config restored by `onLoad()` on a patch reload. It runs while the menu is built and must not send anything.
+
+**`onChange`**
+
+- Runs on the worker thread, when the item is clicked, and may call any other `rack.*` function. An exception inside it is logged as `Context menu callback error: ...` and does not crash anything.
+- It can send. Like `rack.onLoad` it is a callback without an event: MIDI built with `midi.create()` and sent with `midiOut.send()` (or any other `midiOut.*` sender) goes out when `onChange` returns, and trigger, voltage and Tipsy outputs work as usual. Timing is "as soon as possible", and `rack.getEventFrame()` is `-1`.
+- The checkmark or selection is updated as soon as the item is clicked, before the callback has run, so the menu reflects the change immediately.
+
+**Changing items at runtime**
+
+- Registering an item whose `label` already exists **replaces** it. It keeps its position, and the new `type`, `options`, `onGetValue` and `onChange` take over. That is how a script changes a menu, for example re-registering "Active input" with a different number of options when a setting changes.
+- `rack.unregisterContextMenu(label)` removes the item and returns `true`, or returns `false` if there was none. Registering the label again afterwards adds a new item at the end.
+- All items are cleared when the script is reloaded or cleared.
 
 ### Persistence
 
-`rack.getConfig(key [, default])` and `rack.setConfig(key, value)` are how a
-script persists settings across a patch save/reload. They are a plain
-key/value store, not hooks (see [Hooks and predefined objects are resolved
-once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)):
-call them from anywhere — top-level code, `rack.onLoad()`, `rack.onUnload()`,
-`midi.onMessage`, a context-menu `onChange` — at any time, as many times as
-you like.
+`rack.getConfig(key [, default])` and `rack.setConfig(key, value)` persist a script's settings across a patch save and reload. They are a plain key/value store and not hooks (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)). Call them from anywhere, at any time, as often as you like: top-level code, `rack.onLoad()`, `rack.onUnload()`, `midi.onMessage`, a context-menu `onChange`.
 
-- **`rack.setConfig(key, value)`** persists `value` under `key`, overwriting
-  whatever was there before. Call it the moment a setting changes — a
-  context-menu `onChange` is the most common place — rather than waiting for
-  some later "save" step, because there isn't one: whatever was last written
-  is what a patch save writes out.
-- **`rack.getConfig(key)`** returns the persisted value, or `undefined`
-  (QuickJs) / `nil` (Lua) if `key` was never set.
-- **`rack.getConfig(key, default)`** returns the persisted value, or
-  `default` if `key` was never set. Reading every setting this way at
-  top-level (or in `rack.onLoad()`) needs no read-modify-write step, so there
-  is nothing to get wrong the way a merge-over-defaults could (forgetting a
-  key, merging in the wrong order):
+#### Reading and writing
 
-  ```js
+| Call | Effect |
+| --- | --- |
+| `rack.setConfig(key, value)` | store `value` under `key`, overwriting the previous one |
+| `rack.setConfig(key, undefined)` (JS), `rack.setConfig(key, nil)` (Lua) | remove `key` |
+| `rack.getConfig(key)` | the stored value, or `undefined` (QuickJs) / `nil` (Lua) if `key` was never set |
+| `rack.getConfig(key, default)` | the stored value, or `default` if `key` was never set |
+
+There is no separate "save" step. Call `setConfig()` the moment a setting changes, typically in a context-menu `onChange`: a patch save writes out whatever was last set. `setConfig()` only updates engine-owned state, so it is cheap and cannot time out.
+
+Read every setting with a default at the top level or in `rack.onLoad()`. That needs no read-modify-write step and nothing to get wrong, unlike merging over a defaults object:
+
+```js
 let config = {
    channel:     rack.getConfig("channel", 1),
    passThrough: rack.getConfig("passThrough", false)
 };
-  ```
+```
 
-  ```lua
+```lua
 local config = {
    channel     = rack.getConfig("channel", 1),
    passThrough = rack.getConfig("passThrough", false)
 }
-  ```
+```
 
-  `rack.onLoad()`/`rack.onUnload()` still exist and cover the rest of a
-  script's lifecycle (initializing runtime state, sending an all-notes-off on
-  teardown), while `getConfig`/`setConfig` cover persistence alone.
+`rack.onLoad()` and `rack.onUnload()` still cover the rest of a script's lifecycle, such as initializing runtime state or sending an all-notes-off on teardown. `getConfig` and `setConfig` only handle persistence.
 
-- **`rack.setConfig(key, undefined)`** (JS) / **`rack.setConfig(key, nil)`**
-  (Lua) removes `key` from the persisted config.
+#### Keys and values
 
-**Keys** must start with a letter or underscore and contain only letters,
-digits, and underscores, up to 64 characters — `channel`, `_scale`,
-`noteLength2`. A key containing anything else, including a dot, is
-rejected; `.` is reserved.
+| | Rule |
+| --- | --- |
+| **Key** | starts with a letter or underscore, then letters, digits and underscores, up to 64 characters (`channel`, `_scale`, `noteLength2`). Anything else, including a dot, is rejected. `.` is reserved |
+| **Value** | boolean, number, string, array or plain object, nested up to **4 levels** |
+| **Size** | the whole config is capped at **64 KB** once serialized |
 
-**Values** may be a boolean, number, string, array, or plain object. Nested
-values are supported up to **4 levels** deep. The whole config is capped at
-**64 KB** once serialized.
+An invalid key, a value that is not JSON-serializable (a function), a cyclic or too deeply nested value, or one that would push the config past the size cap is **rejected**. The config keeps its previous contents and one line is written to the module log.
 
-An invalid key, a value that is not JSON-serializable (a function), a cyclic
-value, one exceeding the nesting depth, or one that would push the config
-past the size cap is **rejected**: the config keeps its previous contents
-and one line is written to the module log.
+#### Example
 
-A typical pattern, with a context-menu setting persisted the moment it
-changes:
+A context-menu setting persisted the moment it changes:
 
 ```js
 let config = {
@@ -1100,20 +1048,11 @@ rack.registerContextMenu({
 })
 ```
 
-Notes:
-
-- Config is written when the script writes it; a patch save stores whatever
-  was last written. There is no separate "capture" step and nothing to time
-  out — `setConfig()` only updates engine-owned state, so it is free to call
-  as often as you like.
-- Calling `setConfig()`/`getConfig()` is a script-thread-only operation, same
-  as every other `rack.*`/`midi.*`/`trig.*` call — there is nothing special
-  to do to make it safe from any of the callback contexts listed above.
-- Switching to a different script (loading a new one over the current one)
-  starts that script with an empty config — persisted settings belong to the
-  script that wrote them and are not carried over.
+Loading a different script over the current one starts it with an empty config. Persisted settings belong to the script that wrote them and are not carried over.
 
 ### Messages between modules
+
+`rack.sendBroadcast(value [, topic])` sends a value to the other MIDI-KIT modules in the patch, and `rack.onBroadcast(value, topic)` receives one. No cable is needed. See [Broadcast a transport to other modules](#broadcast-a-transport-to-other-modules) for a worked example.
 
 ```js
 rack.sendBroadcast({ state: "start" }, "transport");   // returns the receiver count
@@ -1131,21 +1070,44 @@ function rack.onBroadcast(msg, topic)
 end
 ```
 
-- **Who receives.** Every *other* MIDI-KIT module whose script defines `rack.onBroadcast`. A script without the hook is ignored and does not count in the return value. Like every hook, `rack.onBroadcast` is read once at load (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)), so defining it later has no effect. A module stops receiving when its script is replaced, cleared or removed.
-- **No self-echo.** A script never receives its own broadcast, even if it defines `rack.onBroadcast`.
-- **Values.** Anything `rack.setConfig()` accepts: booleans, numbers, strings, arrays and plain objects (tables in Lua), nested up to **4 levels**. A Lua table is an array when its keys are exactly 1..n, and an object otherwise. The receiver gets its own copy, never a reference to the sender's value. A function, a cyclic value or one nested too deeply is rejected: one line is logged, `0` is returned and the script keeps running. Calling `rack.sendBroadcast()` with no value is a script error.
-- **Size.** At most **4 KB** once serialized as JSON. A larger value is rejected the same way.
-- **Topic.** The optional second argument is a string of at most **64 bytes**, passed to the receiver as the second argument of `rack.onBroadcast(value, topic)`. It is `undefined` (QuickJs) / `nil` (Lua) if the sender gave none. A topic that is not a string, or is too long, is rejected like a bad value: one line is logged and `0` is returned.
-- **Routing is the script's job.** There is no subscription: every receiver gets every broadcast, whatever its topic, and its script ignores the topics it does not know.
-- **Delivery is asynchronous.** A broadcast is handled on the receiver's next processing pass, a few samples later, not before `rack.sendBroadcast()` returns. Messages from one sender arrive in send order. The order across receivers is not defined.
-- **Timing.** A receiver handling a broadcast sees the frame of the event that caused it, so `rack.getEventFrame()` and the `midiOut.send*()` placement in [timing mode](#enabling-sample-accurate-timing) refer to the sender's event. Outside an event (`rack.onLoad`, a context-menu callback) there is none, and `rack.getEventFrame()` is `-1`.
-- **Each receiver queues up to 16 broadcasts.** More than that between two passes are dropped, and "Broadcast input queue full" is logged once per episode.
-- **Bypass.** A bypassed module still sends and receives.
-- **No replay.** A module that loads after a broadcast never sees it. Scripts that need to catch up on state must ask for it. Which module sent a message is not available either; put an id in the value if you need one.
-- **Scope.** All MIDI-KIT modules that share the module worker. Today that is every MIDI-KIT module in the process.
-- **`rack.onLoad` and `rack.onUnload`.** Sending from `rack.onLoad()` announces a newly loaded module. A script that defines `rack.onBroadcast` can receive from other modules' `rack.onLoad()` during the same patch load. Sending from `rack.onUnload()` is allowed, and receivers handle the message after the sender is gone.
+#### Who receives
 
-**Do not reply unconditionally.** If two scripts both send from `rack.onBroadcast`, they keep answering each other forever: each reply is handled on the next pass, so the modules stay responsive, but they never stop. Reply only to requests, never to replies, for example by using a different topic for each.
+- Every *other* MIDI-KIT module whose script defines `rack.onBroadcast`. A script never receives its own broadcast.
+- A script without the hook is ignored and does not count in the return value.
+- Like every hook, `rack.onBroadcast` is read once at load (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)), so defining it later has no effect. A module stops receiving when its script is replaced, cleared or removed.
+- A bypassed module still sends and receives.
+- All MIDI-KIT modules that share the module worker are one group. Today that is every MIDI-KIT module in the process.
+
+#### What is sent
+
+| | Rule |
+| --- | --- |
+| **Value** | anything `rack.setConfig()` accepts: booleans, numbers, strings, arrays and plain objects (tables in Lua), nested up to **4 levels**. A Lua table is an array when its keys are exactly 1..n, and an object otherwise |
+| **Size** | at most **4 KB** once serialized as JSON |
+| **Topic** | optional string of at most **64 bytes**. The receiver gets it as the second argument, or `undefined` (QuickJs) / `nil` (Lua) if there was none |
+
+The receiver gets its own copy of the value, never a reference to the sender's. A value or topic that is rejected (a function, a cyclic or too deeply nested value, a topic that is not a string, anything too large) logs one line, returns `0` and the script keeps running. Calling `rack.sendBroadcast()` with no value is a script error.
+
+#### Routing
+
+There is no subscription. Every receiver gets every broadcast, whatever its topic, and its script ignores the topics it does not know. A receiver cannot tell which module sent a message. Put an id in the value if you need one.
+
+#### Delivery
+
+- **Asynchronous.** A broadcast is handled on the receiver's next processing pass, a few samples later, not before `rack.sendBroadcast()` returns. Messages from one sender arrive in send order. The order across receivers is not defined.
+- **Timing.** A receiver sees the frame of the event that caused the broadcast, so `rack.getEventFrame()` and the `midiOut.send*()` placement in [timing mode](#enabling-sample-accurate-timing) refer to the sender's event. Outside an event (`rack.onLoad`, a context-menu callback) there is none, and `rack.getEventFrame()` is `-1`.
+- **Queue.** Each receiver queues up to 16 broadcasts. More than that between two passes are dropped, and "Broadcast input queue full" is logged once per episode.
+- **No replay.** A module that loads after a broadcast never sees it. A script that needs to catch up on state must ask for it.
+
+#### Load and unload
+
+- Sending from `rack.onLoad()` announces a newly loaded module.
+- A script that defines `rack.onBroadcast` can receive other modules' `rack.onLoad()` broadcasts during the same patch load.
+- Sending from `rack.onUnload()` is allowed. Receivers handle the message after the sender is gone.
+
+#### Do not reply unconditionally
+
+If two scripts both send from `rack.onBroadcast`, they keep answering each other forever. Each reply is handled on the next pass, so the modules stay responsive, but it never stops. Reply only to requests, never to replies, for example by using a different topic for each.
 
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
@@ -1160,81 +1122,68 @@ these even though `math.*` is also available, for script portability).
 - `input.count` — number of CV inputs on this module variant (4, or 2 on MIDI-µKIT).
 
 ### `trig.*` (dedicated trigger/gate ports)
-- `trig.enableIn(trigPort [, ch])` — enable trigger input `trigPort` (polyphonic
-  channel defaults to 1) for trigger processing and the `trig.onTrigger`
-  callback. **The trigger input does nothing until this is called**: a
-  channel that is never enabled counts no ticks (`trig.getTicks()` stays 0),
-  drains no tick-scheduled (`sendAfterTrigger`) messages, and never fires
-  `trig.onTrigger`. Call once per (port, channel) the script wants to hear; a
-  polyphonic clock is enabled per channel, e.g. `trig.enableIn(1, 1)` plus
-  `trig.enableIn(1, 2)`.
-- `trig.onTrigger(trigPort, ch)` — the trigger callback, assigned on the
-  `trig` object (resolved once at load, like the `rack` hooks). Called on
-  every rising edge of an *enabled* (port, channel); `trigPort` is 1-based
-  (`1` or `2`), `ch` is the 1-based polyphonic channel that fired. Without a
-  matching `trig.enableIn()` call it is never called.
-- `trig.getTicks(i [, ch])` — clock tick counter for trigger input `i` (1 or 2;
-  polyphonic channel defaults to 1). Each port and channel counts on its own.
-- `trig.isHigh(i [, ch])`, `trig.isLow(i [, ch])` — state of trigger input `i`.
-- `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])`, `trig.setTrigger(i [, ch])`
-  (momentary trigger), `trig.setGate(i [, ch], durationMs)` — drive trigger
-  output `i` (1 or 2). An index beyond the module's two ports is a script error.
-  Without `midiOut.enableTiming()` the output changes when the script runs on
-  the worker thread, so it jitters by the worker latency (at least one process
-  divider, often an audio block). With `enableTiming()`, a write made while
-  handling an event is stamped with the event's frame plus one audio block and
-  applied on exactly that frame — the same offset as the MIDI sent for the same
-  event, so the two stay together. See
-  [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
-- `trig.inCount`, `trig.outCount` — number of trigger inputs and outputs (2 and 2 on both variants).
+
+Trigger inputs and outputs are numbered 1 and 2, and each input is polyphonic: the optional `ch` argument is a 1-based channel that defaults to 1.
+
+#### Inputs
+
+| Function | Effect |
+| --- | --- |
+| `trig.enableIn(trigPort [, ch])` | enable a trigger input channel for tick counting and `trig.onTrigger`. See below |
+| `trig.onTrigger(trigPort, ch)` | callback on every rising edge of an *enabled* (port, channel). Assigned on the `trig` object and resolved once at load, like the `rack` hooks |
+| `trig.getTicks(i [, ch])` | clock tick counter of input `i`. Each port and channel counts on its own |
+| `trig.isHigh(i [, ch])`, `trig.isLow(i [, ch])` | current state of input `i` |
+| `trig.inCount`, `trig.outCount` | number of trigger inputs and outputs (2 and 2 on both variants) |
+
+**A trigger input does nothing until `trig.enableIn()` is called.** A channel that was never enabled counts no ticks (`trig.getTicks()` stays 0), drains no tick-scheduled (`sendAfterTrigger`) messages and never fires `trig.onTrigger`. Call it once per (port, channel) the script wants to hear. A polyphonic clock is enabled per channel, for example `trig.enableIn(1, 1)` plus `trig.enableIn(1, 2)`.
+
+#### Outputs
+
+| Function | Effect |
+| --- | --- |
+| `trig.setHigh(i [, ch])`, `trig.setLow(i [, ch])` | set output `i` high or low |
+| `trig.setTrigger(i [, ch])` | momentary trigger |
+| `trig.setGate(i [, ch], durationMs)` | gate of a given length |
+
+An index beyond the module's two ports is a script error.
+
+Without `midiOut.enableTiming()` an output changes when the script runs on the worker thread, so it jitters by the worker latency (at least one process divider, often an audio block). With `enableTiming()`, a write made while handling an event is stamped with the event's frame plus one audio block and applied on exactly that frame, the same offset as the MIDI sent for the same event, so the two stay together. See [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
 
 #### Tipsy
 
-All three Tipsy functions — the output sender, the input decoder, and the
-input callback — are described together here; a worked send/receive example
-is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-receive-over-cv).
+[Tipsy](https://github.com/baconpaul/tipsy-encoder) streams arbitrary data between modules as CV voltages. Sending uses trigger output 1, and receiving uses trigger input 1. Tipsy is only supported on the first input and output, so there is no port argument. A worked example is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-receive-over-cv).
 
-- `trig.sendTipsy(data [, mimeType])` — encode `data` (a string) with the
-  [Tipsy protocol](https://github.com/baconpaul/tipsy-encoder) and stream it
-  out trigger output 1 as CV voltages, one voltage per sample until the
-  message is complete. The optional `mimeType` (a string) specifies the
-  content type and defaults to `"text/plain"`; the payload is capped at
-  256 bytes. The stream is meant for modules that understand the Tipsy
-  protocol (such as [TRANSIT](../../transit/Transit.md)) and temporarily
-  takes over trigger output 1 while it is being transmitted. Unlike the
-  `midiOut.*` senders, `sendTipsy` sends no MIDI: it is not routed through
-  `midiOut.selectPort()` and does not consume a message-handle slot.
-  ```js
-   trig.enableIn(1);
-   trig.onTrigger = function(trigPort, channel) {
-      trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
-      trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
-   };
-  ```
-- `trig.enableTipsyIn([enabled])` — decode an incoming Tipsy stream from
-  trigger input 1, delivering each completed message to `trig.onTipsyMessage`.
-  The optional boolean `enabled` defaults to `true`; pass `false` to release
-  the trigger input again. Tipsy is only supported on the first trigger
-  input and output, so — like `trig.sendTipsy()` — there is no port argument.
+| Function | Effect |
+| --- | --- |
+| `trig.sendTipsy(data [, mimeType])` | encode `data` (a string) and stream it out trigger output 1 |
+| `trig.enableTipsyIn([enabled])` | decode an incoming stream from trigger input 1 into `trig.onTipsyMessage`. `false` releases the input |
+| `trig.onTipsyMessage(data, mimeType)` | callback for each complete message, resolved once at load |
 
-  While trigger input 1 is claimed, it stops behaving as a trigger on
-  channel 1: `trig.onTrigger` doesn't fire and `trig.getTicks()` doesn't
-  advance there, and `trig.isHigh()`/`trig.isLow()` on channel 1 read `0` —
-  the encoded voltages are protocol, not a gate a script should act on.
-  Other channels and trigger input 2 are unaffected. A Tipsy stream would otherwise fire
-  `trig.onTrigger` continuously as the encoded voltages cross the trigger
-  threshold.
-  ```js
-   rack.onLoad = function() {
-      trig.enableTipsyIn();        // decode from the trigger input
-   };
-  ```
-- `trig.onTipsyMessage(data, mimeType)` — the Tipsy input callback, assigned
-  on the `trig` object (resolved once at load, like the `rack` hooks). Called
-  once for every complete Tipsy message decoded from trigger input 1 claimed
-  with `trig.enableTipsyIn()`; see that entry above. `data` and `mimeType` are
-  strings; `data` may contain arbitrary bytes (including NULs) and is capped
-  at 256 bytes.
+**`trig.sendTipsy`**
+
+- `mimeType` is a string and defaults to `"text/plain"`. The payload is capped at 256 bytes.
+- It sends one voltage per sample until the message is complete, and temporarily takes over trigger output 1. The stream is meant for modules that understand Tipsy, such as [TRANSIT](../../transit/Transit.md).
+- Unlike the `midiOut.*` senders it sends no MIDI: it ignores `midiOut.selectPort()` and uses no message-handle slot.
+
+```js
+trig.enableIn(1);
+trig.onTrigger = function(trigPort, channel) {
+   trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
+   trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
+};
+```
+
+**`trig.enableTipsyIn`**
+
+While trigger input 1 is claimed it stops being a trigger on channel 1: `trig.onTrigger` doesn't fire, `trig.getTicks()` doesn't advance, and `trig.isHigh()`/`trig.isLow()` read `0`. The encoded voltages are protocol, not a gate, and would otherwise fire `trig.onTrigger` continuously. Other channels and trigger input 2 are unaffected.
+
+```js
+rack.onLoad = function() {
+   trig.enableTipsyIn();        // decode from the trigger input
+};
+```
+
+**`trig.onTipsyMessage`** is called once for every complete message. `data` and `mimeType` are strings. `data` may contain arbitrary bytes, including NULs, and is capped at 256 bytes.
 
 ### `param.*` (panel knobs)
 - `param.enable(i)` — activate param `i`.
@@ -1243,30 +1192,21 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
 - `param.count` — number of panel knobs on this module variant (4, or 2 on MIDI-µKIT). An index above it is a script error: check `param.count` before `param.enable(i)`, and pass a fallback to `param.getValue(i, fallback)`.
 
 ### `midi.*` — message construction/inspection
-Messages are opaque handles (into an internal store, 32 live per callback by
-default, see `@requires messages=N`) created with `midi.create()`, `midi.createNRPN()`, `midi.createRPN()`, or
-`midi.createCc14bit()`; `midi.onMessage` also receives the incoming message as
-a handle (its `msg` argument). Treat handle values as opaque: they are not small
-numbers, and a handle is only valid inside the callback that got or created it.
-Using one in a later callback, or outside any callback, is a script error
-rather than silently reading whatever message that callback built.
 
-**Reuse a handle instead of creating one per message.** Sending copies the
-message, so a handle can be changed and sent again (see below): a loop over a
-chord, a clock burst or an all-notes-off needs one `midi.create()` and then
-`midi.setNoteOff(m, ...)` / `midiOut.send(m)` per message. That is the normal way
-to send many messages.
+Messages are opaque **handles** into an internal message store. Create one with `midi.create()`, `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()`. `midi.onMessage` also receives the incoming message as a handle (its `msg` argument).
 
-**The store holds 32 live handles per callback by default** (slot 0 of the
-incoming-MIDI callbacks is the incoming message). A script that really needs
-more *distinct* messages at once asks for them with
-`@requires messages=N` in its header, up to 512. Once the store is full,
-`midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()`, and
-`midi.createCc14bit()` raise a script error that aborts the rest of the callback
-("midi.create: message store full (32 handles; reuse a handle or raise it with
-@requires messages=N)"). Messages sent before the error have already gone out, so
-a multi-message sequence (e.g. an NRPN pair, or a wide chord release) can be
-emitted partially — a message created but never sent is dropped.
+**Handles**
+
+- Treat a handle as opaque: it is not a small number.
+- A handle is valid only inside the callback that got or created it. Using one in a later callback, or outside any callback, is a script error, rather than silently reading whatever message that callback built.
+- **Reuse a handle instead of creating one per message.** Sending copies the message, so a handle can be changed and sent again. A loop over a chord, a clock burst or an all-notes-off needs one `midi.create()` and then `midi.setNoteOff(m, ...)` / `midiOut.send(m)` per message. That is the normal way to send many messages.
+
+**The message store**
+
+- It holds **32 live handles per callback** by default. Slot 0 of the incoming-MIDI callbacks is the incoming message.
+- A script that really needs more *distinct* messages at once asks for them with `@requires messages=N` in its header, up to 512.
+- When the store is full, `midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()` and `midi.createCc14bit()` raise a script error that aborts the rest of the callback: "midi.create: message store full (32 handles; reuse a handle or raise it with @requires messages=N)".
+- Messages sent before the error have already gone out, so a multi-message sequence (an NRPN pair, a wide chord release) can be emitted partially. A message created but never sent is dropped.
 
 #### Entry points
 
@@ -1362,13 +1302,7 @@ LSB = fractional part × 128), clamped to 0-127.99 and not rounded — see the `
 
 #### Assembled extended input (NRPN / RPN / 14-bit CC)
 
-`midi.onMessage` sees the MIDI stream as it arrives — including the raw CCs
-that make up a spec-compliant NRPN/RPN parameter change or a 14-bit CC pair.
-Reading those by hand (a select handshake on CC 99/98, data entry on 6/38, an
-MSB/LSB pair on CC `n`/`n + 32`) is exactly the boilerplate the old
-`NRPN to CC` example shipped. If you want *parameter changes*, not raw CCs,
-the engine can assemble them for you — the mirror image of `midi.setNRPN()` /
-`midi.setCc14bit()` on the way out.
+`midi.onMessage` sees the MIDI stream as it arrives, including the raw CCs that make up an NRPN/RPN parameter change (a select handshake on CC 99/98, data entry on 6/38) or a 14-bit CC pair (MSB/LSB on CC `n`/`n + 32`). To get *parameter changes* instead of raw CCs, enable assembly and the engine does the bookkeeping. It is the mirror image of `midi.setNRPN()` and `midi.setCc14bit()` on the way out.
 
 **Enabling and callbacks**
 
@@ -1380,10 +1314,7 @@ the engine can assemble them for you — the mirror image of `midi.setNRPN()` /
 | `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` / `midi.onCc14bit(midiPort, msg)` | called once per completed, enabled parameter change, with `msg` an ordinary handle read through the usual accessors |
 | `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` | true only for an assembled message of that kind; useful when a handle is passed to a helper or inspected later — redundant inside the matching callback, but makes the handle self-describing |
 
-**Enabling a kind without defining its callback is a mistake**: the message
-then reaches nothing at all, and its component CCs are withheld from
-`midi.onMessage` (see Consumption below), so the script sees strictly less
-MIDI than before.
+**Enabling a kind without defining its callback is a mistake.** The message then reaches nothing at all, and its component CCs are withheld from `midi.onMessage` (see Consumption below), so the script sees strictly less MIDI than before.
 
 **Reading an assembled message**
 
@@ -1403,12 +1334,7 @@ MIDI than before.
 
 **Consumption**
 
-Once a kind is enabled, the CCs it is built from stop reaching
-`midi.onMessage` — a script that asked for assembled events should not also
-have to filter the parts they were assembled from. This mirrors
-`trig.enableTipsyIn()`, which stops `trig.onTrigger` while the trigger input
-is claimed. The raw CCs are swallowed, not released: if a device drops a
-message mid-quad, the consumed components are gone. Rules:
+Once a kind is enabled, the CCs it is built from stop reaching `midi.onMessage`. A script that asked for assembled events should not also have to filter the parts they were built from. This mirrors `trig.enableTipsyIn()`, which stops `trig.onTrigger` while the trigger input is claimed. The raw CCs are swallowed, not released: if a device drops a message mid-quad, the consumed components are gone. The rules:
 
 - **Matching-enable only.** `midi.onMessage` keeps its meaning — "a message
   arrived that nothing else claimed". A component CC is withheld only when
@@ -1436,89 +1362,65 @@ message mid-quad, the consumed components are gone. Rules:
 
 ### Enabling MIDI ports
 
-MIDI-KIT has four MIDI inputs and four MIDI outputs, but only input 1 and
-output 1 are enabled by default. A script that wants any other port calls, at
-top level (like `param.enable()` / `trig.enableIn()`):
+MIDI-KIT has four MIDI inputs and four MIDI outputs, but only input 1 and output 1 are enabled by default. A script that wants another port calls, at top level (like `param.enable()` and `trig.enableIn()`):
 
 ```js
 midi.enablePorts(3);      // deliver messages from MIDI inputs 1-3 to midi.onMessage
 midiOut.enablePorts(2);   // allow sending on MIDI outputs 1-2
 ```
 
-`midi.enablePorts(n)` and `midiOut.enablePorts(n)` enable the first `n` ports
-(`n` is 1..4; `1` is a no-op, anything else out of range is an error). Until a port is enabled, messages arriving on that input
-never reach the script, and messages sent to that output are dropped (logged
-once per output). Enabled ports are forgotten when the script is reloaded,
-cleared or the module is reset, so they always reflect what the loaded script
-asked for.
+- `midi.enablePorts(n)` and `midiOut.enablePorts(n)` enable the first `n` ports. `n` is 1..4. `1` does nothing, and anything out of range is an error.
+- Until an input is enabled, its messages never reach the script. Until an output is enabled, messages sent to it are dropped (logged once per output).
+- Enabled ports are forgotten when the script is reloaded or cleared, or the module is reset, so they always reflect what the loaded script asked for.
 
 ### `midiOut.*` — sending
 
-`midiOut.portCount` — number of MIDI output ports (4). `midi.portCount` is the same for MIDI inputs.
+`midiOut.portCount` is the number of MIDI output ports (4). `midi.portCount` is the same for inputs.
 
-- `midiOut.enablePorts(count)` — enables MIDI outputs 1..`count`.
-  Output 1 is always enabled; a message sent to any other output is dropped
-  (with a one-time log line) until the script enables it. See
-  [Enabling MIDI ports](#enabling-midi-ports).
-- `midiOut.enableTiming([reportLate])` — opts the script into sample-accurate
-  output; with `true`, messages that arrive too late are logged. See
-  [Enabling sample-accurate timing](#enabling-sample-accurate-timing).
-- `midiOut.selectPort(midiPort)` — selects the output port (1-based) that every
-  subsequent `midiOut.*` call sends on, until `selectPort` is called again.
-  The selection is sticky across `midi.onMessage` invocations, not reset per
-  callback. An out-of-range index is an error.
+#### Choosing the output
 
-The sending functions below take no port argument — the destination is
-whatever `midiOut.selectPort()` last selected (port 1 if it was never called):
+| Function | Effect |
+| --- | --- |
+| `midiOut.enablePorts(count)` | enable MIDI outputs 1..`count`. Output 1 is always enabled. A message sent to any other output is dropped (logged once) until the script enables it. See [Enabling MIDI ports](#enabling-midi-ports) |
+| `midiOut.selectPort(midiPort)` | select the output (1-based) that every following `midiOut.*` call sends on, until it is called again. The selection is sticky across callbacks. An out-of-range index is an error |
+| `midiOut.enableTiming([reportLate])` | opt in to sample-accurate output. With `true`, messages that arrive too late are logged. See [Enabling sample-accurate timing](#enabling-sample-accurate-timing) |
 
-- `midiOut.send(msg)` — send immediately; with
-  [`midiOut.enableTiming()`](#enabling-sample-accurate-timing), on the frame of
-  the event being handled.
-- `midiOut.send(nrpnHandle)` / `midiOut.send(cc14Handle)` — sending the first
-  handle of an NRPN quad (4 messages) or a 14-bit CC pair (2 messages)
-  sends the whole group in order.
-- `midiOut.sendAfterMs(msg, ms)` — delayed send. The delay counts from the
-  latest frame the module had processed when the script ran, or, with
-  `midiOut.enableTiming()`, from the frame of the event being handled. `-1` instead
-  of a time means "after Rack's output queue": two audio blocks and a frame (see
-  [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
-- `midiOut.sendAtFrame(msg, frame)` — send at an absolute engine frame, held
-  until then. A negative frame means "now". Frames come from
-  `rack.getEventFrame()`.
-- `midiOut.sendAfterTrigger(msg, ticks [, trigPort [, channel]])` — send
-  after `ticks` clock ticks counted from `trigPort` (1-based, defaults to
-  trig input 1) on polyphonic `channel` (defaults to 1).
+The sending functions take no port argument: the destination is whatever `midiOut.selectPort()` last selected (port 1 if it was never called).
 
-**Every send call sends the message as it is at that moment.** `midiOut.send(msg)`
-(and the `sendAfter*` variants) copy the message and send the copy right away,
-with its own schedule. Calling it again sends again, a later change to the
-handle doesn't affect what was already sent, and `sendAfterTrigger(msg, 5)`
-followed by `send(msg)` sends two messages. To send the same bytes on several
-ports, change `midiOut.selectPort()` between the calls. Messages reach the
-output queue while the callback runs, in call order; a very long callback can
-have its first messages on the wire before it returns. Up to 2048 messages are queued
-for output. A burst goes out at up to 128 messages every 8 samples (about 2.7 ms
-for 2048 at 48 kHz). What doesn't fit in the queue is dropped and logged.
+#### Sending
 
-Delayed messages wait in queues of fixed size: up to 256 per output for
-`sendAfterMs()`/`sendAtFrame()`, and up to 32 per trigger input channel for
-`sendAfterTrigger()`. A message that finds its queue full is sent at once
-instead of being dropped (a dropped Note-Off would leave a note hanging), and
-the log says so once per script. Release a long tail of delayed notes in
-steps, or keep the number of pending messages below these limits.
+| Function | Sends |
+| --- | --- |
+| `midiOut.send(msg)` | immediately. With [`midiOut.enableTiming()`](#enabling-sample-accurate-timing), on the frame of the event being handled |
+| `midiOut.send(nrpnHandle)`, `midiOut.send(cc14Handle)` | the first handle of an NRPN quad (4 messages) or a 14-bit CC pair (2 messages) sends the whole group, in order |
+| `midiOut.sendAfterMs(msg, ms)` | delayed. The delay counts from the latest frame the module had processed when the script ran, or, with `enableTiming()`, from the frame of the event being handled. `-1` instead of a time means "after Rack's output queue": two audio blocks and a frame |
+| `midiOut.sendAtFrame(msg, frame)` | at an absolute engine frame, held until then. A negative frame means "now". Frames come from `rack.getEventFrame()` |
+| `midiOut.sendAfterTrigger(msg, ticks [, trigPort [, channel]])` | after `ticks` clock ticks counted from `trigPort` (1-based, default trig input 1) on `channel` (default 1) |
+
+**Every send call sends the message as it is at that moment.** It copies the message and sends the copy with its own schedule.
+
+- Calling it again sends again, and a later change to the handle doesn't affect what was already sent.
+- `sendAfterTrigger(msg, 5)` followed by `send(msg)` sends two messages.
+- To send the same bytes on several ports, change `midiOut.selectPort()` between the calls.
+- Messages reach the output queue while the callback runs, in call order. A very long callback can have its first messages on the wire before it returns.
+
+#### Queues and limits
+
+| Queue | Capacity | When full |
+| --- | --- | --- |
+| output | 2048 messages, sent at up to 128 every 8 samples (about 2.7 ms for 2048 at 48 kHz) | the message is dropped and logged |
+| `sendAfterMs()` / `sendAtFrame()` | 256 per output | the message is sent at once, logged once per script |
+| `sendAfterTrigger()` | 32 per trigger input channel | the message is sent at once, logged once per script |
+
+A delayed message that finds its queue full is sent at once instead of being dropped, because a dropped Note-Off would leave a note hanging. Release a long tail of delayed notes in steps, or keep the number of pending messages below these limits.
 
 ### Enabling sample-accurate timing
 
-By default MIDI-KIT writes a message to the MIDI output as soon as it has it,
-from the audio thread, at the first audio block boundary after the script ran.
-That is the lowest latency, but the moment a message leaves jitters by up to one
-audio block (5.3 ms at 256 samples and 48 kHz) — fine for a filter, a merge or a
-panic button, audible in a clock, an arpeggiator or a sequencer.
+By default MIDI-KIT writes a message to the MIDI output as soon as it has it, from the audio thread, at the first audio block boundary after the script ran. That is the lowest latency, but the moment a message leaves jitters by up to one audio block (5.3 ms at 256 samples and 48 kHz). That is fine for a filter, a merge or a panic button, and audible in a clock, an arpeggiator or a sequencer.
 
-**Trigger outputs.** With `enableTiming()`, `trig.setTrigger`, `setGate`, `setHigh` and `setLow` are stamped too when they are called inside an event (`midi.onMessage`, `trig.onTrigger`, `trig.onTipsyMessage` and the other event callbacks): the module applies the write on the audio thread at the event's frame plus one audio block, which is the delay Rack puts on framed MIDI. A "MIDI note to trigger" script therefore produces trigger and note together, without the worker's jitter. Outside an event (`rack.onLoad`, context-menu callbacks) a write happens when the script runs, as without timing; in `rack.onUnload` it is ignored. A write whose frame has already passed (a slow script) is applied at once. Up to 64 stamped writes can be pending; beyond that a write is applied immediately instead.
+#### Enabling it
 
-A script that needs better calls `midiOut.enableTiming()` once, in `rack.onLoad`
-or at top level:
+A script that needs better calls `midiOut.enableTiming()` once, in `rack.onLoad` or at top level:
 
 ```js
 rack.onLoad = function() {
@@ -1526,21 +1428,30 @@ rack.onLoad = function() {
 };
 ```
 
-With it, every message leaves with an *engine frame* (Rack's sample counter) and
-Rack's MIDI output thread transmits it at exactly that frame, to within about
-100 µs, instead of MIDI-KIT writing it at a block boundary. A script that does
-not call it behaves exactly as before. `enableTiming()` applies to the messages
-sent after it, there is no way to switch it off again, and, like the port
-enables, it is forgotten when the script is reloaded, cleared or the module is
-reset.
+- Every message then leaves with an *engine frame* (Rack's sample counter), and Rack's MIDI output thread transmits it at exactly that frame, to within about 100 µs, instead of MIDI-KIT writing it at a block boundary.
+- A script that does not call it behaves exactly as before.
+- It applies to messages sent after the call. There is no way to switch it off again.
+- Like the port enables, it is forgotten when the script is reloaded, cleared or the module is reset.
 
-**What it costs.** Rack delays framed output by one audio block (5.3 ms at 256
-samples and 48 kHz). Every message is delayed by the same amount, so a clock or
-a sequence keeps its shape, but a script that answers a MIDI message answers
-about one block later than without timing. Do not use it where the lowest
-possible latency matters more than a steady rhythm.
+#### Trigger outputs
 
-**Which frame a message gets.** The calls below differ only in how they choose
+With `enableTiming()`, `trig.setTrigger`, `setGate`, `setHigh` and `setLow` are stamped too when called inside an event (`midi.onMessage`, `trig.onTrigger`, `trig.onTipsyMessage` and the other event callbacks). The module applies the write on the audio thread at the event's frame plus one audio block, the delay Rack puts on framed MIDI. A "MIDI note to trigger" script therefore produces trigger and note together, without the worker's jitter.
+
+- Outside an event (`rack.onLoad`, context-menu callbacks) a write happens when the script runs, as without timing. In `rack.onUnload` it is ignored.
+- A write whose frame has already passed (a slow script) is applied at once.
+- Up to 64 stamped writes can be pending. Beyond that a write is applied immediately.
+
+#### What it costs
+
+Rack delays framed output by one audio block (5.3 ms at 256 samples and 48 kHz).
+
+- Every message is delayed by the same amount, so a clock or a sequence keeps its shape.
+- A script that answers a MIDI message answers about one block later than without timing.
+- Do not use it where the lowest possible latency matters more than a steady rhythm.
+
+#### Which frame a message gets
+
+The calls below differ only in how they choose
 the frame. Messages for the same frame leave in the order they were sent; a
 message for an earlier frame leaves before one for a later frame, whatever the
 order of the calls.
@@ -1559,7 +1470,9 @@ pulses over it (see
 [Multiply a clock into MIDI clock](#multiply-a-clock-into-midi-clock-sample-accurately)). A frame is a
 sample count: one second is as many frames as the sample rate.
 
-**Converting between milliseconds and frames.** Frames depend on the sample rate
+#### Converting between milliseconds and frames
+
+Frames depend on the sample rate
 (441 frames are 10 ms at 44.1 kHz, 480 at 48 kHz), so a script should not hard-code
 them. Two functions convert at the sample rate the module currently runs at:
 
@@ -1568,14 +1481,14 @@ them. Two functions convert at the sample rate the module currently runs at:
 - `rack.framesToMs(frames)` returns the milliseconds for `frames` frames, as a
   float (not rounded).
 
-Neither needs an event or `midiOut.enableTiming()`; they only read the sample
-rate, so they also work in `rack.onLoad`. Use them whenever a script mixes
-time with frame numbers. `midiOut.sendAfterMs(msg, ms)` already does "event
-plus *N* ms" by itself, so reach for `msToFrames` when the offset is combined
-with other frame arithmetic, as in the swing example below, and for
-`framesToMs` when a measured distance has to become a time.
+Neither needs an event or `midiOut.enableTiming()`. They only read the sample rate, so they also work in `rack.onLoad`.
 
-*Show the tempo of a clock and detect that it stopped.* The script measures
+- Use them whenever a script mixes time with frame numbers.
+- `midiOut.sendAfterMs(msg, ms)` already does "event plus *N* ms" by itself. Reach for `msToFrames` when the offset is combined with other frame arithmetic, as in the swing example below, and for `framesToMs` when a measured distance has to become a time.
+
+#### Example: show the tempo of a clock
+
+The script measures
 the distance between two trigger edges in frames, turns it into a tempo (the
 input is a clock with one tick per beat) and treats a gap of more than two
 seconds as a stopped clock:
@@ -1624,7 +1537,9 @@ trig.onTrigger = function(trigPort, channel)
 end
 ```
 
-*Swing.* In the [clock multiplier](#multiply-a-clock-into-midi-clock-sample-accurately)
+#### Example: swing
+
+In the [clock multiplier](#multiply-a-clock-into-midi-clock-sample-accurately)
 above, delay every second pulse by a fixed time. The loop already works in
 frames (the period is measured in frames), so the time offset is converted once
 and added:
@@ -1645,7 +1560,9 @@ for k = 1, 23 do
 end
 ```
 
-**Unloading.** A note-on sent just before a reload may still be waiting in Rack's
+#### Unloading
+
+A note-on sent just before a reload may still be waiting in Rack's
 output queue, up to one audio block. A note-off sent at once would overtake it and
 leave the note stuck, so the module holds what `rack.onUnload` sends with
 `midiOut.send()` for two audio blocks and a frame, whatever the block size, which
@@ -1654,7 +1571,9 @@ its note-offs and all-notes-off from `rack.onUnload`, as the `Arpeggiator` and
 `Euclidean rhythm generator` presets do. When the module is removed the messages
 go out at once: Rack's output queue goes away with the device.
 
-**Finding out when it does not hold.** Rack can only place a message that reaches
+#### Finding out when it does not hold
+
+Rack can only place a message that reaches
 it in time, one audio block after its frame at the latest. A script that is too
 slow, or a busy worker thread that runs all MIDI-KIT scripts in the patch, makes
 messages arrive late; Rack then sends them at once, which is the timing you had
@@ -1669,7 +1588,9 @@ The report is off by default and costs nothing when off. A message that is only
 a few samples behind its frame is not late: waiting for the script is normal and
 Rack's block of delay absorbs it.
 
-**Order.** Messages sent on the same frame are moved one sample apart, in the
+#### Order
+
+Messages sent on the same frame are moved one sample apart, in the
 order they were sent, so an NRPN, a 14-bit CC pair or a note-off followed by a
 note-on of the same note always arrives in order. Messages that are only a few
 samples apart can swap places if Rack hands them to its output thread in
@@ -1677,38 +1598,38 @@ different audio blocks; Rack's own MIDI-CV and CV-MIDI have the same limit. The
 order is kept per MIDI output of the module: two outputs, or two modules, sending
 to the same device are not ordered against each other.
 
-**Output devices.** Only drivers that honour a message's frame place it; a driver
+#### Output devices
+
+Only drivers that honour a message's frame place it; a driver
 that ignores it sends the message when MIDI-KIT hands it over, which is the same
 as not using timing.
 
 ### MIDI status/type reference used internally
-CC=0xb, NoteOn=0x9, NoteOff=0x8, KeyPressure=0xa, ChanPressure=0xd,
-ProgramChange=0xc, PitchWheel=0xe, SysEx=0xf0/0xf7-wrapped. Realtime:
-Clock=0xF8, Start=0xFA, Continue=0xFB, Stop=0xFC (encoded as status 0xf with
-"channel" nibble 0x8/0xa/0xb/0xc respectively — use the `is*` predicates
-rather than decoding this by hand).
+
+| Message | Status |
+| --- | --- |
+| NoteOff, NoteOn, KeyPressure | `0x8`, `0x9`, `0xa` |
+| CC, ProgramChange, ChanPressure, PitchWheel | `0xb`, `0xc`, `0xd`, `0xe` |
+| SysEx | `0xf0` ... `0xf7` |
+| Clock, Start, Continue, Stop | `0xF8`, `0xFA`, `0xFB`, `0xFC` |
+
+Realtime messages are encoded as status `0xf` with a "channel" nibble of `0x8`, `0xa`, `0xb` and `0xc`. Use the `is*` predicates instead of decoding this by hand.
 
 ## Part 4 — Gotchas
-- Message handles are only valid within the callback that got or created
-  them — the store resets each callback invocation. Creating a message at top
-  level, or in `param.getName`/`input.getName`/`onGetValue`, is an error (the
-  load fails with the script line at top level), and using a handle from an
-  earlier callback is an error too, so build messages inside the callback that
-  sends them. `rack.onLoad()`/`rack.onUnload()`/`trig.onTrigger()` and
-  context-menu `onChange` are full callbacks in this sense — a message created
-  and sent inside any of them is delivered normally.
-- `midi.setCc14bit`/`setNRPN` split a 14-bit value across two 7-bit CC
-  messages (`cc` = MSB, `cc + 32` = LSB per the NRPN/14-bit CC convention);
-  see the `NRPN to CC` preset
-  ([JS](../../presets/MidiKit/JavaScript/NRPN%20to%20CC.js)/[Lua](../../presets/MidiKit/Lua/NRPN%20to%20CC.lua))
-  for a full worked example, and the `NRPN Generator` preset
-  ([JS](../../presets/MidiKit/JavaScript/NRPN%20Generator.js)/[Lua](../../presets/MidiKit/Lua/NRPN%20Generator.lua))
-  for constructing NRPN messages.
-  Use `midi.createCc14bit()` + the 4-arg `setCc14bit` for a 14-bit CC pair
-  that must land atomically; the two-handle form sends two independent
-  messages.
-- Lua's sandboxed stdlib excludes `io`, `os`, `package`, `debug` — no file
-  access, no OS calls, by design.
-- Both engines only see `@engine`-matching scripts; loading a QuickJs script
-  into what expects `@engine minilua@v1` (or vice versa) fails with an explicit
-  "not compatible" log message rather than silently misinterpreting it.
+
+**Message handles**
+
+- A handle is valid only within the callback that got or created it. The store resets on every callback.
+- Creating a message at top level, or in `param.getName`, `input.getName` or `onGetValue`, is an error (at top level the load fails with the script line). Using a handle from an earlier callback is an error too. Build messages inside the callback that sends them.
+- `rack.onLoad()`, `rack.onUnload()`, `trig.onTrigger()` and a context-menu `onChange` are full callbacks in this sense: a message created and sent inside any of them is delivered normally.
+
+**14-bit values and NRPN**
+
+- `midi.setCc14bit` and `midi.setNRPN` split a 14-bit value across two 7-bit CC messages (`cc` = MSB, `cc + 32` = LSB, per the NRPN and 14-bit CC convention).
+- For a 14-bit CC pair that must land atomically, use `midi.createCc14bit()` with the 4-argument `setCc14bit`. The two-handle form sends two independent messages.
+- Worked examples: the `NRPN to CC` preset ([JS](../../presets/MidiKit/JavaScript/NRPN%20to%20CC.js), [Lua](../../presets/MidiKit/Lua/NRPN%20to%20CC.lua)) and the `NRPN Generator` preset ([JS](../../presets/MidiKit/JavaScript/NRPN%20Generator.js), [Lua](../../presets/MidiKit/Lua/NRPN%20Generator.lua)) for constructing NRPN messages.
+
+**Engines**
+
+- Lua's sandboxed standard library excludes `io`, `os`, `package` and `debug`: no file access and no OS calls, by design.
+- A script is only run by the engine its `@engine` tag names. Loading a QuickJs script into a module that expects `@engine minilua@v1` (or the reverse) fails with an explicit "not compatible" log message instead of being silently misinterpreted.
