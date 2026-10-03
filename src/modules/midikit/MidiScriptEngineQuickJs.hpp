@@ -1747,6 +1747,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		getEngine(ctx)->msgStore[*s + 0] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 0].isNrpn = true;
 		getEngine(ctx)->msgStore[*s + 0].isRpn = rpn;
+		getEngine(ctx)->msgStore[*s + 0].in.type = rpn ? StoermelderPackOne::MessageEx::Type::RPN : StoermelderPackOne::MessageEx::Type::NRPN;
 		getEngine(ctx)->msgStore[*s + 1] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 2] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 3] = ScriptMessage();
@@ -1772,6 +1773,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// CC cc+32 (value LSB), sent atomically as a pair.
 		getEngine(ctx)->msgStore[*s + 0] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 0].isCc14bit = true;
+		getEngine(ctx)->msgStore[*s + 0].in.type = StoermelderPackOne::MessageEx::Type::CC_14BIT;
 		getEngine(ctx)->msgStore[*s + 1] = ScriptMessage();
 		size_t _s = *s;
 		(*s) += 2;
@@ -2003,22 +2005,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!getMsgArg(ctx, argv[0], idx1) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3])) {
 				return jsThrow(ctx, "midi.setCc14bit: invalid msg");
 			}
-			ScriptMessage& s1 = e->msgStore[idx1];
-			if (!s1.isCc14bit) return jsThrow(ctx, "midi.setCc14bit: message is not a 14-bit CC pair");
-			ScriptMessage& s2 = e->msgStore[idx1 + 1];
+			if (!e->msgStore[idx1].isCc14bit) return jsThrow(ctx, "midi.setCc14bit: message is not a 14-bit CC pair");
 			uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 			uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 31);
 			double value = clampCc14bitValue(argNum(ctx, argv[3]));
-			if (s1.in.msg.getSize() != 3) s1.in.msg.setSize(3);
-			if (s2.in.msg.getSize() != 3) s2.in.msg.setSize(3);
-			s1.in.msg.setStatus(0xb);
-			s2.in.msg.setStatus(0xb);
-			s1.in.msg.setChannel(ch - 1);
-			s2.in.msg.setChannel(ch - 1);
-			s1.in.msg.setNote(cc);
-			s2.in.msg.setNote(cc + 32);
-			s1.in.msg.setValue(static_cast<int8_t>(value));
-			s2.in.msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
+			// MSB = integer part, LSB = fraction * 128, as one 14-bit value.
+			int msb = static_cast<int8_t>(value);
+			int lsb = static_cast<int8_t>((value - msb) * 128.f);
+			e->fillGroup(idx1, OutGroup::CC14, ch - 1, cc, uint16_t(msb * 128 + lsb));
 			return JS_UNDEFINED;
 		}
 
@@ -2151,32 +2145,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		ScriptMessage* s1 = &getEngine(ctx)->msgStore[idx];
 		if (!s1->isNrpn || s1->isRpn != rpn) return jsThrow(ctx, std::string(name) + (rpn ? ": invalid rpn message" : ": invalid nrpn message"));
-		ScriptMessage* s2 = &getEngine(ctx)->msgStore[idx + 1];
-		ScriptMessage* s3 = &getEngine(ctx)->msgStore[idx + 2];
-		ScriptMessage* s4 = &getEngine(ctx)->msgStore[idx + 3];
-
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint16_t number = clampInt<uint16_t>(argNum(ctx, argv[2]), 0, 16383);
 		uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[3]), 0, 16383);
-		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
-		// sendEntry() sends s1..s4 in this order, as MidiProcessor's NRPN
-		// state machine requires (CC99/98 select the number, CC6/38 the value).
-		s1->in.msg.setStatus(0xb);
-		s1->in.msg.setChannel(ch - 1);
-		s1->in.msg.setNote(rpn ? 101 : 99);
-		s1->in.msg.setValue((number >> 7) & 0x7f);
-		s2->in.msg.setStatus(0xb);
-		s2->in.msg.setChannel(ch - 1);
-		s2->in.msg.setNote(rpn ? 100 : 98);
-		s2->in.msg.setValue(number & 0x7f);
-		s3->in.msg.setStatus(0xb);
-		s3->in.msg.setChannel(ch - 1);
-		s3->in.msg.setNote(6);
-		s3->in.msg.setValue((value >> 7) & 0x7f);
-		s4->in.msg.setStatus(0xb);
-		s4->in.msg.setChannel(ch - 1);
-		s4->in.msg.setNote(38);
-		s4->in.msg.setValue(value & 0x7f);
+		getEngine(ctx)->fillGroup(idx, rpn ? OutGroup::RPN : OutGroup::NRPN, ch - 1, number, value);
 		return JS_UNDEFINED;
 	}
 
@@ -2284,7 +2256,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setValue: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setValue: %s", groupErr).c_str());
+		if (const char* groupErr = groupSetterError(s)) {
+			// A group: the combined 14-bit value, once its setter has given it a number.
+			uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[1]), 0, 16383);
+			if (!getEngine(ctx)->setGroupValue(idx, value)) return jsThrow(ctx, string::f("midi.setValue: %s", groupErr).c_str());
+			return JS_UNDEFINED;
+		}
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[1]), 0, 127);
 		s.in.msg.setValue(value);
 		return JS_UNDEFINED;

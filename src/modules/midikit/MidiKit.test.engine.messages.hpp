@@ -964,10 +964,10 @@ TEST_CASE("The group setter overrides an earlier setChannel, and setChannel on a
 }
 
 TEST_CASE("Single-message setters raise an error on a group handle and leave it unchanged", "[MidiKit][CrossEngine]") {
-	// Each call is valid on a plain handle. `p` is a plain handle.
+	// Each call is valid on a plain handle. `p` is a plain handle. (setValue is
+	// not here: on a group it sets the combined 14-bit value.)
 	struct Setter { const char* fn; const char* args; };
 	const Setter setters[] = {
-		{ "setValue", "g, 1" },
 		{ "setNote", "g, 1" },
 		{ "setCc", "g, 1, 7, 1" },
 		{ "setNoteOn", "g, 1, 60, 100" },
@@ -1087,4 +1087,105 @@ TEST_CASE("midi.clone of a group needs room for the whole group", "[MidiKit][Cro
 	REQUIRE(js.sent == lua.sent);
 	REQUIRE(js.log.find("message store full") != std::string::npos);
 	REQUIRE(lua.log.find("message store full") != std::string::npos);
+}
+
+
+// A created group answers the type-aware accessors like a received one: its
+// type is set by the constructor, its number and value by the setter.
+
+TEST_CASE("A created group handle answers isNrpn, getControl and getValue", "[MidiKit][CrossEngine]") {
+	struct Case { const char* name; const char* js; const char* lua; const char* unset; const char* set; };
+	const Case cases[] = {
+		{ "NRPN", "let g = midi.createNRPN();", "local g = midi.createNRPN()", "true false false -1 -1",
+		  "midi.setNRPN(g, 2, 300, 1000);" },
+		{ "RPN", "let g = midi.createRPN();", "local g = midi.createRPN()", "false true false -1 -1",
+		  "midi.setRPN(g, 2, 300, 1000);" },
+		{ "14-bit CC", "let g = midi.createCc14bit();", "local g = midi.createCc14bit()", "false false true -1 -1",
+		  "midi.setCc14bit(g, 2, 300, 100.5);" },
+	};
+	const char* setExpected[] = { "true false false 300 1000 2", "false true false 300 1000 2", "false false true 31 12864 2" };
+	// 14-bit CC: cc 300 clamps to 31, value 100.5 -> MSB 100, LSB 64 -> 100 * 128 + 64.
+	const char* jsLog = "rack.log([midi.isNrpn(g), midi.isRpn(g), midi.isCc14bit(g), midi.getControl(g), midi.getValue(g), midi.getChannel(g)].join(' '));";
+	const char* luaLog = "rack.log(table.concat({tostring(midi.isNrpn(g)), tostring(midi.isRpn(g)), tostring(midi.isCc14bit(g)), midi.getControl(g), midi.getValue(g), midi.getChannel(g)}, ' '))";
+	size_t i = 0;
+	for (const Case& c : cases) {
+		CATCH_INFO(c.name);
+		// Fresh handle: the type is known, the number and value are not yet.
+		EngineResult js = run(jsOnMessage(std::string(c.js) + " " + jsLog));
+		EngineResult lua = run(luaOnMessage(std::string(c.lua) + "; " + luaLog));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.log.find(c.unset) != std::string::npos);
+		REQUIRE(lua.log.find(c.unset) != std::string::npos);
+
+		// Set: the number, the combined value and the channel.
+		EngineResult jsSet = run(jsOnMessage(std::string(c.js) + " " + c.set + " " + jsLog));
+		EngineResult luaSet = run(luaOnMessage(std::string(c.lua) + "; " + c.set + " " + luaLog));
+		CATCH_INFO(jsSet.log);
+		CATCH_INFO(luaSet.log);
+		REQUIRE(jsSet.log.find(setExpected[i]) != std::string::npos);
+		REQUIRE(luaSet.log.find(setExpected[i]) != std::string::npos);
+		i++;
+	}
+}
+
+TEST_CASE("setValue on a group sets the combined 14-bit value and keeps number and channel", "[MidiKit][CrossEngine]") {
+	// 5000 = 39 * 128 + 8. NRPN/RPN: data entry CC 6 and CC 38. 14-bit CC (MSB 5): CC 5 and CC 37.
+	struct Case { const char* name; const char* js; const char* lua; std::vector<std::vector<uint8_t>> bytes; };
+	const Case cases[] = {
+		{ "NRPN", "let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000);", "local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000)",
+		  { {0xb4, 99, 2}, {0xb4, 98, 44}, {0xb4, 6, 39}, {0xb4, 38, 8} } },
+		{ "RPN", "let g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000);", "local g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000)",
+		  { {0xb4, 101, 2}, {0xb4, 100, 44}, {0xb4, 6, 39}, {0xb4, 38, 8} } },
+		{ "14-bit CC", "let g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5);", "local g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5)",
+		  { {0xb4, 5, 39}, {0xb4, 37, 8} } },
+	};
+	for (const Case& c : cases) {
+		CATCH_INFO(c.name);
+		// The channel is set between the group setter and setValue: it stays.
+		EngineResult js = run(jsOnMessage(std::string(c.js) + " midi.setChannel(g, 5); midi.setValue(g, 5000); midiOut.send(g); rack.log(midi.getValue(g));"));
+		EngineResult lua = run(luaOnMessage(std::string(c.lua) + "; midi.setChannel(g, 5); midi.setValue(g, 5000); midiOut.send(g); rack.log(midi.getValue(g))"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.sent.size() == c.bytes.size());
+		REQUIRE(lua.sent.size() == c.bytes.size());
+		for (size_t i = 0; i < c.bytes.size(); i++) {
+			REQUIRE(js.sent[i].bytes == c.bytes[i]);
+			REQUIRE(lua.sent[i].bytes == c.bytes[i]);
+		}
+		REQUIRE(js.log.find("5000") != std::string::npos);
+		REQUIRE(lua.log.find("5000") != std::string::npos);
+
+		// Clamped to the 14-bit range, like the group setters.
+		EngineResult big = run(jsOnMessage(std::string(c.js) + " midi.setValue(g, 99999); rack.log(midi.getValue(g));"));
+		EngineResult bigLua = run(luaOnMessage(std::string(c.lua) + "; midi.setValue(g, 99999); rack.log(midi.getValue(g))"));
+		REQUIRE(big.log.find("16383") != std::string::npos);
+		REQUIRE(bigLua.log.find("16383") != std::string::npos);
+
+		// A group whose setter has not run has no number to keep: an error.
+		std::string create = c.js; create = create.substr(0, create.find(" midi.set"));
+		std::string createLua = c.lua; createLua = createLua.substr(0, createLua.find("; midi.set"));
+		EngineResult unset = run(jsOnMessage(create + " " + jsGuarded("midi.setValue(g, 5);")));
+		EngineResult unsetLua = run(luaOnMessage(createLua + "; " + luaGuarded("midi.setValue(g, 5)")));
+		CATCH_INFO(unset.log);
+		CATCH_INFO(unsetLua.log);
+		REQUIRE(unset.log.find("midi.setValue: message is a") != std::string::npos);
+		REQUIRE(unsetLua.log.find("midi.setValue: message is a") != std::string::npos);
+	}
+
+	// A plain handle still takes the 7-bit data byte.
+	EngineResult plain = run(jsOnMessage("let m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midi.setValue(m, 300); midiOut.send(m);"));
+	REQUIRE(plain.sent.size() == 1);
+	REQUIRE(plain.sent[0].bytes[2] == 127);
+}
+
+TEST_CASE("A clone of a set group keeps its number and value, and is independent", "[MidiKit][CrossEngine]") {
+	const char* js = "let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); let c = midi.clone(g); midi.setValue(c, 7); rack.log([midi.isNrpn(c), midi.getControl(c), midi.getValue(c), midi.getValue(g)].join(' '));";
+	const char* lua = "local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); local c = midi.clone(g); midi.setValue(c, 7); rack.log(table.concat({tostring(midi.isNrpn(c)), midi.getControl(c), midi.getValue(c), midi.getValue(g)}, ' '))";
+	EngineResult rjs = run(jsOnMessage(js));
+	EngineResult rlua = run(luaOnMessage(lua));
+	CATCH_INFO(rjs.log);
+	CATCH_INFO(rlua.log);
+	REQUIRE(rjs.log.find("true 300 7 1000") != std::string::npos);
+	REQUIRE(rlua.log.find("true 300 7 1000") != std::string::npos);
 }

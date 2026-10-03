@@ -114,10 +114,68 @@ struct MidiScriptEngine {
 		return nullptr;
 	}
 
+	// The group handle's kind from its chain flags.
+	static OutGroup::Kind groupKind(const ScriptMessage& s) {
+		return s.isCc14bit ? OutGroup::CC14 : s.isRpn ? OutGroup::RPN : OutGroup::NRPN;
+	}
+
+	// Writes a group into msgStore[slot..]: the wire bytes of its messages and, on
+	// the lead, the decode fields (type, number, value) that midi.isNrpn(),
+	// getControl() and getValue() answer from. Bytes and decode fields are always
+	// written together, so every accessor agrees. The chain flags are set when the
+	// handle is created. kind NRPN/RPN: number and value 0-16383, 4 messages
+	// (spec order: parameter MSB, parameter LSB, data MSB, data LSB, as
+	// MidiProcessor's state machine requires). CC14: number is the MSB controller
+	// 0-31, value 0-16383, 2 messages (MSB at `number`, LSB at `number + 32`).
+	void fillGroup(size_t slot, OutGroup::Kind kind, uint8_t channel, uint16_t number, uint16_t value) {
+		bool cc14 = kind == OutGroup::CC14;
+		size_t n = cc14 ? 2 : 4;
+		uint8_t controller[4];
+		uint8_t data[4];
+		if (cc14) {
+			controller[0] = uint8_t(number);
+			controller[1] = uint8_t(number + 32);
+			data[0] = (value >> 7) & 0x7f;
+			data[1] = value & 0x7f;
+		}
+		else {
+			controller[0] = kind == OutGroup::RPN ? 101 : 99;
+			controller[1] = kind == OutGroup::RPN ? 100 : 98;
+			controller[2] = 6;
+			controller[3] = 38;
+			data[0] = (number >> 7) & 0x7f;
+			data[1] = number & 0x7f;
+			data[2] = (value >> 7) & 0x7f;
+			data[3] = value & 0x7f;
+		}
+		for (size_t k = 0; k < n; k++) {
+			Message& m = msgStore[slot + k].in.msg;
+			if (m.getSize() != 3) m.setSize(3);
+			m.setStatus(0xb);
+			m.setChannel(channel);
+			m.setNote(controller[k]);
+			m.setValue(data[k]);
+		}
+		QueuedMessage& lead = msgStore[slot].in;
+		lead.type = kind == OutGroup::NRPN ? MessageEx::Type::NRPN : kind == OutGroup::RPN ? MessageEx::Type::RPN : MessageEx::Type::CC_14BIT;
+		lead.paramNumber = int16_t(number);
+		lead.extraValue = int16_t(value);
+	}
+
+	// midi.setValue() on a group handle: the combined 14-bit value, keeping the
+	// group's channel and number. False for a group whose setter has not run yet
+	// (no number to keep). `slot` from handleToSlot().
+	bool setGroupValue(size_t slot, uint16_t value) {
+		const ScriptMessage& lead = msgStore[slot];
+		if (lead.in.paramNumber < 0) return false;
+		fillGroup(slot, groupKind(lead), lead.in.msg.bytes[0] & 0x0F, uint16_t(lead.in.paramNumber), value);
+		return true;
+	}
+
 	// midi.clone(): appends a copy of the handle at slot `src` to the store, a whole
-	// group (with its chain flags) for a group handle, and returns the new slot.
-	// Only the MIDI payload is copied: the clone starts unsent, and a received
-	// message's decode result is not carried over. The caller has checked that
+	// group (with its chain flags and decode fields) for a group handle, and returns
+	// the new slot. For a plain message only the MIDI payload is copied: the clone
+	// starts unsent, and a received message's decode result is not carried over. The caller has checked that
 	// groupSize() slots are free.
 	size_t cloneGroup(size_t src) {
 		size_t n = groupSize(msgStore[src]);
@@ -130,6 +188,13 @@ struct MidiScriptEngine {
 		msgStore[dst].isNrpn = msgStore[src].isNrpn;
 		msgStore[dst].isRpn = msgStore[src].isRpn;
 		msgStore[dst].isCc14bit = msgStore[src].isCc14bit;
+		// A group's decode fields are part of its state (they are what isNrpn(),
+		// getControl() and getValue() answer from), unlike a plain message's.
+		if (n > 1) {
+			msgStore[dst].in.type = msgStore[src].in.type;
+			msgStore[dst].in.paramNumber = msgStore[src].in.paramNumber;
+			msgStore[dst].in.extraValue = msgStore[src].in.extraValue;
+		}
 		msgCount += n;
 		return dst;
 	}

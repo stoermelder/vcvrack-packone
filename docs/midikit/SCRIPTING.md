@@ -1304,8 +1304,10 @@ Messages are opaque **handles** into an internal message store. Create one with 
 `isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`, `isChanPressure`,
 `isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`, `isStart`,
 `isContinue`, `isStop` — all `is*(msg)`. Plus `isNrpn`, `isRpn`, `isCc14bit`,
-true only for assembled extended messages (see
-[Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)).
+true for assembled extended messages (see
+[Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)) and
+for handles from `midi.createNRPN()`, `midi.createRPN()` and
+`midi.createCc14bit()`, from the moment they are created.
 
 #### Setters
 
@@ -1333,9 +1335,9 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setProgramChange(msg, ch, program)` | |
 | `setSysEx(msg, hexString)` | payload only — `f0`/`f7` framing added automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`; capped at 256 bytes, every byte must be 7-bit (`00`-`7f`) |
 | `setRaw(msg, hexString)` | writes the exact bytes with no framing added, e.g. `"f11a"` for an MTC quarter-frame — use for message types with no dedicated setter |
-| `setValue(msg, value)` | |
+| `setValue(msg, value)` | on an NRPN, RPN or 14-bit CC handle whose setter has run: the combined 14-bit value, 0-16383, keeping its channel and number (the mirror of `getValue`). On such a handle that has not been set yet it raises an error |
 
-**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()` stands for a whole group of messages. Besides its own setter (`setNRPN`, `setRPN`, `setCc14bit`), only `setChannel` accepts it, and it sets the channel of every message in the group. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
+**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()` stands for a whole group of messages. It answers `midi.isNrpn()`, `isRpn()` or `isCc14bit()` from the moment it is created. After its setter has run (`setNRPN`, `setRPN`, `setCc14bit`), `midi.getControl()` returns the parameter number (the MSB controller for a 14-bit CC) and `midi.getValue()` the combined 14-bit value (0-16383, while `setCc14bit` takes the value as MSB plus a fraction); before that both return -1. Besides its own setter, `setChannel` sets the channel of every message in the group and `setValue` sets the combined value. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
 
 Both `setCc14bit` forms take `value` as a float (MSB = integer part,
 LSB = fractional part × 128), clamped to 0-127.99 and not rounded — see the `NRPN to CC` preset
@@ -1354,7 +1356,7 @@ LSB = fractional part × 128), clamped to 0-127.99 and not rounded — see the `
 | `midi.enableRpnIn(midiPort [, channel])` | same, for RPN (kind 1) into `midi.onRpn` |
 | `midi.enableCc14bitIn(midiPort [, cc] [, channel])` | assemble 14-bit CC pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every 14-bit CC |
 | `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` / `midi.onCc14bit(midiPort, msg)` | called once per completed, enabled parameter change, with `msg` an ordinary handle read through the usual accessors |
-| `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` | true only for an assembled message of that kind; useful when a handle is passed to a helper or inspected later — redundant inside the matching callback, but makes the handle self-describing |
+| `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` | true for an assembled message of that kind, and for a handle created with `midi.createNRPN()`, `createRPN()` or `createCc14bit()`; useful when a handle is passed to a helper or inspected later — redundant inside the matching callback, but makes the handle self-describing |
 
 **Enabling a kind without defining its callback is a mistake.** The message then reaches nothing at all, and its component CCs are withheld from `midi.onMessage` (see Consumption below), so the script sees strictly less MIDI than before.
 

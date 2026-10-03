@@ -147,7 +147,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("setProgramChange", kSetters, {{"msg", MSG}, {"ch", CH}, {"program", "program number 0-127"}}),
 		ApiFunction("setSysEx", kSetters, {{"msg", MSG}, {"hexString", "payload as hex, without f0/f7 framing"}}),
 		ApiFunction("setRaw", kSetters, {{"msg", MSG}, {"hexString", "exact bytes as hex, no framing added"}}),
-		ApiFunction("setValue", kSetters, {{"msg", MSG}, {"value", "data byte 0-127"}}),
+		ApiFunction("setValue", kSetters, {{"msg", MSG}, {"value", "data byte 0-127, on an NRPN, RPN or 14-bit CC handle the combined value 0-16383"}}),
 
 		ApiFunction("enablePorts", "", {{"n", "deliver MIDI inputs 1-n, n is 1-4"}}),
 		ApiFunction("enableNrpnIn", kExtended, {{"midiPort", PORT}, {"channel", CHANNEL_OPT, true}}),
