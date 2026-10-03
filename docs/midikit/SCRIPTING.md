@@ -100,7 +100,7 @@ A script is a single text file with two kinds of code:
 | `trig.onTipsyMessage(data, mimeType)` | on every complete [Tipsy](#tipsy) message decoded from trigger input 1 | `trig.enableTipsyIn()` |
 | `rack.onBroadcast(value, topic)` | when another MIDI-KIT module broadcasts, see [Messages between modules](#messages-between-modules) | nothing |
 | `rack.onLoad()`, `rack.onUnload()` | on script load and teardown, see [Persistence](#persistence) | nothing |
-| `input.getName(i)`, `param.getName(i)`, `param.getValueFormat(i)` | when a panel tooltip is shown. Looked up live, so they may be reassigned at runtime | nothing |
+| `input.onTooltip(i)`, `param.onTooltip(i)`, `param.onValueText(i)` | when a panel tooltip is shown. Looked up live, so they may be reassigned at runtime | nothing |
 
 Rules for callbacks:
 
@@ -215,18 +215,18 @@ end
 ```
 
 ### Dynamic MIDI channel routing for CC messages by knob (2)
-The script handles MIDI messages like the previous example, but MIDI-KIT provides additional programming interface for user interface configuration: `param.getName` configures the text "MIDI Channel" for the tooltip of the first panel parameter, the display value is scaled to the integer range 1..16 by `param.getValueFormat`.
+The script handles MIDI messages like the previous example, but MIDI-KIT provides additional programming interface for user interface configuration: `param.onTooltip` configures the text "MIDI Channel" for the tooltip of the first panel parameter, the display value is scaled to the integer range 1..16 by `param.onValueText`.
 
 JavaScript:
 ```js
 param.enable(1);
 
-param.getName = function(port) {
+param.onTooltip = function(port) {
     if (port === 1) return "MIDI Channel";
     return "";
 };
 
-param.getValueFormat = function(port) {
+param.onValueText = function(port) {
     if (port === 1) return number.toString(Math.ceil(param.getValue(1) * 16));
     return number.toString(param.getValue(port));
 };
@@ -245,12 +245,12 @@ Lua:
 ```lua
 param.enable(1)
 
-param.getName = function(port)
+param.onTooltip = function(port)
     if port == 1 then return "MIDI Channel" end
     return ""
 end
 
-param.getValueFormat = function(port)
+param.onValueText = function(port)
     if port == 1 then return number.toString(math.ceil(param.getValue(1) * 16)) end
     return number.toString(param.getValue(port))
 end
@@ -856,7 +856,7 @@ Write every hook once, at the top level, during the initial load. Every shipped 
 
 - `trig.enableIn()`, `param.enable()` and the other `enable*` calls are ordinary API calls. Calling them at any time takes effect for later events.
 - `rack.getConfig()` and `rack.setConfig()` are live too, so they can be called from any callback, any number of times (see [Persistence](#persistence)).
-- The tooltip functions `input.getName`, `param.getName` and `param.getValueFormat` are looked up each time a tooltip is shown. A script can reassign them at runtime, for example from `midi.onMessage`, to change a tooltip as its state changes. The cost is one lookup per tooltip, which is negligible.
+- The tooltip functions `input.onTooltip`, `param.onTooltip` and `param.onValueText` are looked up each time a tooltip is shown. A script can reassign them at runtime, for example from `midi.onMessage`, to change a tooltip as its state changes. The cost is one lookup per tooltip, which is negligible.
 
 **Do not clobber the predefined globals.** Reassigning `rack`, `midi`, `midiOut`, `trig`, `input`, `param` or `number` (for example `rack = 42`) is unsupported. Neither engine crashes. Expect the assignment to be ignored (for a hook) or a logged script error on the next statement that uses the clobbered value. The exact behavior is undefined and its wording differs between QuickJs and Lua. Treat it as a bug in the script.
 
@@ -1118,7 +1118,7 @@ these even though `math.*` is also available, for script portability).
 - `input.enable(i)` — activate input `i` so it appears on the panel.
 - `input.getVoltage(i [, ch])`, `input.isHigh(i [, ch])`, `input.isLow(i [, ch])`
   (channel defaults to 1; high/low threshold is 0.7V).
-- Override `input.getName(i)` to customize the panel label.
+- Override `input.onTooltip(i)` to customize the panel label.
 - `input.count` — number of CV inputs on this module variant (4, or 2 on MIDI-µKIT).
 
 ### `trig.*` (dedicated trigger/gate ports)
@@ -1188,7 +1188,7 @@ rack.onLoad = function() {
 ### `param.*` (panel knobs)
 - `param.enable(i)` — activate param `i`.
 - `param.getValue(i [, fallback])` — normalized 0..1 value. If `i` is above `param.count` (e.g. param 3 on MIDI-µKIT) and a `fallback` is given, the fallback is returned instead of raising an error.
-- Override `param.getName(i)` and `param.getValueFormat(i)` for panel display.
+- Override `param.onTooltip(i)` and `param.onValueText(i)` for panel display.
 - `param.count` — number of panel knobs on this module variant (4, or 2 on MIDI-µKIT). An index above it is a script error: check `param.count` before `param.enable(i)`, and pass a fallback to `param.getValue(i, fallback)`.
 
 ### `midi.*` — message construction/inspection
@@ -1620,7 +1620,7 @@ Realtime messages are encoded as status `0xf` with a "channel" nibble of `0x8`, 
 **Message handles**
 
 - A handle is valid only within the callback that got or created it. The store resets on every callback.
-- Creating a message at top level, or in `param.getName`, `input.getName` or `onGetValue`, is an error (at top level the load fails with the script line). Using a handle from an earlier callback is an error too. Build messages inside the callback that sends them.
+- Creating a message at top level, or in `param.onTooltip`, `input.onTooltip` or `onGetValue`, is an error (at top level the load fails with the script line). Using a handle from an earlier callback is an error too. Build messages inside the callback that sends them.
 - `rack.onLoad()`, `rack.onUnload()`, `trig.onTrigger()` and a context-menu `onChange` are full callbacks in this sense: a message created and sent inside any of them is delivered normally.
 
 **14-bit values and NRPN**

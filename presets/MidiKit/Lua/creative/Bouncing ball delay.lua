@@ -114,14 +114,14 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then return "Gravity" end
     if i == 2 then return "Bounciness" end
     if i == 3 then return "Min velocity" end
     return ""
 end
 
-param.getValueFormat = function(i)
+param.onValueText = function(i)
     if i == 1 then return number.toString(gravityParam()) end
     if i == 2 then return string.format("%.0f", bouncinessParam() * 100) .. " %" end
     if i == 3 then return number.toString(minVelocityParam()) end

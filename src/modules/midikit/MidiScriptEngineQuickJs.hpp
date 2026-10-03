@@ -600,7 +600,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Calls a global "name(i+1)" function returning a string, e.g.
-	// input.getName(i)/param.getName(i)/param.getValueFormat(i). Falls back to
+	// input.onTooltip(i)/param.onTooltip(i)/param.onValueText(i). Falls back to
 	// "" if unset or the call raises.
 	std::string callGlobalStringFn(const char* objName, const char* fnName, int i) {
 		if (!ctx) return "";
@@ -628,15 +628,15 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	std::string getInputName(int i) override {
-		return callGlobalStringFn("input", "getName", i);
+		return callGlobalStringFn("input", "onTooltip", i);
 	}
 
 	std::string getParamName(int i) override {
-		return callGlobalStringFn("param", "getName", i);
+		return callGlobalStringFn("param", "onTooltip", i);
 	}
 
 	std::string getParamFormatValue(int i) override {
-		return callGlobalStringFn("param", "getValueFormat", i);
+		return callGlobalStringFn("param", "onValueText", i);
 	}
 
 	// Frees the stored script callbacks. Called only from unloadScriptOnWorker(),
@@ -812,10 +812,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// input
 		JSValue _input = JS_Eval(ctx,
 			"(function() { return {"
-			"	getName: function(i) { return \"Port \" + number.toString(i); }"
+			"	onTooltip: function(i) { return \"Port \" + number.toString(i); }"
 			"}; })();", strlen(
 			"(function() { return {"
-			"	getName: function(i) { return \"Port \" + number.toString(i); }"
+			"	onTooltip: function(i) { return \"Port \" + number.toString(i); }"
 			"}; })();"), "<input>", JS_EVAL_TYPE_GLOBAL);
 		JS_SetPropertyStr(ctx, glob, "input", _input);
 		JS_SetPropertyStr(ctx, _input, "count", JS_NewInt32(ctx, inputCount));
@@ -843,8 +843,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// param
 		const char* paramSrc =
 			"(function() { return {"
-			"	getName: function(i) { return \"Param \" + number.toString(i); },"
-			"	getValueFormat: function(i) { return \"\"; }"
+			"	onTooltip: function(i) { return \"Param \" + number.toString(i); },"
+			"	onValueText: function(i) { return \"\"; }"
 			"}; })();";
 		JSValue _param = JS_Eval(ctx, paramSrc, strlen(paramSrc), "<param>", JS_EVAL_TYPE_GLOBAL);
 		JS_SetPropertyStr(ctx, glob, "param", _param);
@@ -1585,7 +1585,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Extracts the message-handle argument shared by every midi.* accessor and
 	// resolves it to a store slot. Fails for anything that is not a live handle
 	// of the running callback: a non-integer, NaN, a handle from an earlier
-	// callback, one used outside a callback (top level, param.getName, ...).
+	// callback, one used outside a callback (top level, param.onTooltip, ...).
 	static bool getMsgArg(JSContext* ctx, JSValueConst v, size_t& idx) {
 		if (!JS_IsNumber(v)) return false;
 		double d = 0;
@@ -1668,7 +1668,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// A message handle is only valid inside the callback that created it, so
-	// the creators refuse to run anywhere else (top level, param.getName, ...).
+	// the creators refuse to run anywhere else (top level, param.onTooltip, ...).
 	// Raised before the store is touched.
 	static bool inCallbackOrThrow(JSContext* ctx, const std::string& fn, JSValue& exc) {
 		if (getEngine(ctx)->inCallback) return true;

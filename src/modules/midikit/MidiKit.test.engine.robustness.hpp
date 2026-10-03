@@ -1011,7 +1011,7 @@ TEST_CASE("The incoming message handle of one onMessage is invalid in the next, 
 static const char* JS_GETNAME_CREATE = R"(/**
  * @engine QuickJs@v1
  */
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) {
         let m = midi.create();
         return "A";
@@ -1023,7 +1023,7 @@ param.getName = function(i) {
 static const char* LUA_GETNAME_CREATE = R"(--[[
 @engine minilua@v1
 --]]
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then
         local m = midi.create()
         return "A"
@@ -1032,7 +1032,7 @@ param.getName = function(i)
 end
 )";
 
-TEST_CASE("midi.create inside param.getName raises and the name falls back, in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("midi.create inside param.onTooltip raises and the name falls back, in both engines", "[MidiKit][CrossEngine]") {
 	for (const char* script : { JS_GETNAME_CREATE, LUA_GETNAME_CREATE }) {
 		CATCH_INFO(script);
 		MidiKitModule* m = createModule();

@@ -97,12 +97,12 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(port) {
+param.onTooltip = function(port) {
     if (port === config.curveParam) return "Velocity curve";
     return "";
 };
 
-param.getValueFormat = function(port) {
+param.onValueText = function(port) {
     if (port === config.curveParam) {
         let v = param.getValue(config.curveParam);
         // Report the curve as a signed shape amount rather than a raw 0..1,

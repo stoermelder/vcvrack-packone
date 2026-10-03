@@ -83,13 +83,13 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) return "Center";
     if (i === 2) return "Strength";
     return "";
 };
 
-param.getValueFormat = function(i) {
+param.onValueText = function(i) {
     if (i === 1) return centerParam() + " (" + noteName(centerParam()) + ")";
     if (i === 2) return number.toString(strengthParam());
     return number.toString(param.getValue(i));

@@ -108,13 +108,13 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) return "Bank";
     if (i === 2) return "Program in bank";
     return "";
 };
 
-param.getValueFormat = function(i) {
+param.onValueText = function(i) {
     if (i === 1) return number.toString(bankIndex());
     if (i === 2) return number.toString(programNumber());
     return number.toString(param.getValue(i));

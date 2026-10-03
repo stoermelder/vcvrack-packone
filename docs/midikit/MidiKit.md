@@ -157,9 +157,9 @@ and the worked examples are in [SCRIPTING.md](SCRIPTING.md).
 | --- | --- | --- |
 | `midi.*` | message construction/inspection: `onMessage`, the assembled-input callbacks `onNrpn`/`onRpn`/`onCc14bit` (enabled with `enableNrpnIn`/`enableRpnIn`/`enableCc14bitIn`), `enablePorts(count)` for more MIDI inputs, constructors `create`/`createNRPN`/`createRPN`/`createCc14bit`/`clone`, getters (`getChannel`, `getControl`, `getValue`, …), type predicates (`isCc`, `isNrpn`, …), and setters (`setCc`, `setCc14bit`, `setNRPN`, `setRPN`, …) | [midi.*](SCRIPTING.md#midi-message-constructioninspection) |
 | `midiOut.*` | sending on the selected output port: `enablePorts(count)` (more outputs), `selectPort`, `send`, `sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`, and `enableTiming([reportLate])` for [sample-accurate output](SCRIPTING.md#enabling-sample-accurate-timing) | [midiOut.*](SCRIPTING.md#midiout-sending) |
-| `input.*` | read the module's CV inputs: `enable`, `getVoltage`, `isHigh`, `isLow`, `getName` | [input.*](SCRIPTING.md#input-cv-inputs-on-the-module-1-based) |
+| `input.*` | read the module's CV inputs: `enable`, `getVoltage`, `isHigh`, `isLow`, `onTooltip` | [input.*](SCRIPTING.md#input-cv-inputs-on-the-module-1-based) |
 | `trig.*` | the dedicated trigger/gate ports: `enableIn`, `onTrigger`, `onTipsyMessage`, `getTicks`, `isHigh`, `isLow`, `setGate`/`setHigh`/`setLow`/`setTrigger`, `sendTipsy`, `enableTipsyIn` | [trig.*](SCRIPTING.md#trig-dedicated-triggergate-ports) |
-| `param.*` | read the module's panel parameters: `enable`, `getValue`, `getName`, `getValueFormat` | [param.*](SCRIPTING.md#param-panel-knobs) |
+| `param.*` | read the module's panel parameters: `enable`, `getValue`, `onTooltip`, `onValueText` | [param.*](SCRIPTING.md#param-panel-knobs) |
 | `number.*` | numeric helpers: `rescale`, `crossfade`, `toString` | [number.*](SCRIPTING.md#number) |
 | `rack.*` | module services: `log`, `overlay`, `random`, `getEventFrame`, `msToFrames`/`framesToMs`, `registerContextMenu`, `getConfig`/`setConfig` (persistence), and the `onLoad`/`onUnload` hooks | [rack.*](SCRIPTING.md#rack) · [Persistence](SCRIPTING.md#persistence) |
 

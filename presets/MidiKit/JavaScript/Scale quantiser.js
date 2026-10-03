@@ -225,7 +225,7 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-input.getName = function(port) {
+input.onTooltip = function(port) {
     if (port === 1) return "Root (1V/oct)";
     return "";
 };

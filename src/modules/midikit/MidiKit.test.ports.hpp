@@ -534,7 +534,7 @@ static const char* JS_UI_QUERY = R"(/**
  * @engine QuickJs@v1
  */
 input.enable(1);
-input.getName = function(i) { rack.log("Q"); return "Name"; };
+input.onTooltip = function(i) { rack.log("Q"); return "Name"; };
 midi.onMessage = function(midiPort, msg) { rack.log("M"); };
 )";
 

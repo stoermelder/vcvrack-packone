@@ -185,7 +185,7 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then return "Clock division" end
     if i == 2 then return "Octave range" end
     if i == 3 then return "Note length" end
@@ -193,7 +193,7 @@ param.getName = function(i)
     return ""
 end
 
-param.getValueFormat = function(i)
+param.onValueText = function(i)
     if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
     if i == 2 then return number.toString(octaveRange()) .. " oct" end
     if i == 3 then return string.format("%.0f", param.getValue(3, 0.5) * 100) .. " %" end

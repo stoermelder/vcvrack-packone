@@ -5,7 +5,7 @@
 
 // midi.create() / midi.createNRPN() outside a callback
 // A message handle is only valid inside the callback that created it, so a
-// creator called anywhere else (top level, param.getName, ...) raises. At top
+// creator called anywhere else (top level, param.onTooltip, ...) raises. At top
 // level that fails the load with the script line. These tests pin the error
 // and that the two engines use the same wording for it (unlike parse-error
 // text, which #13's write-up notes differs deliberately).

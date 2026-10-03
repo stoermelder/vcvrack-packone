@@ -187,7 +187,7 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) return "Clock division";
     if (i === 2) return "Octave range";
     if (i === 3) return "Note length";
@@ -195,7 +195,7 @@ param.getName = function(i) {
     return "";
 };
 
-param.getValueFormat = function(i) {
+param.onValueText = function(i) {
     if (i === 1) return DIVISIONS[divisionIndex()] + " ticks/step";
     if (i === 2) return octaveRange() + " oct";
     if (i === 3) return (param.getValue(3, 0.5) * 100).toFixed(0) + " %";

@@ -646,17 +646,17 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	std::string getInputName(int i) override {
 		if (!L) return "";
-		return callLuaTableFunc("input", "getName", i + 1);
+		return callLuaTableFunc("input", "onTooltip", i + 1);
 	}
 
 	std::string getParamName(int i) override {
 		if (!L) return "";
-		return callLuaTableFunc("param", "getName", i + 1);
+		return callLuaTableFunc("param", "onTooltip", i + 1);
 	}
 
 	std::string getParamFormatValue(int i) override {
 		if (!L) return "";
-		return callLuaTableFunc("param", "getValueFormat", i + 1);
+		return callLuaTableFunc("param", "onValueText", i + 1);
 	}
 
 	// Releases the stored script callbacks. Called only from
@@ -982,7 +982,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// The store slot of the message handle at `stackPos`, or luaL_argerror for
 	// anything that is not a live handle of the running callback: a handle
 	// from an earlier callback, one used outside a callback (top level,
-	// param.getName, ...), out of range.
+	// param.onTooltip, ...), out of range.
 	static size_t checkHandle(lua_State* L, int stackPos, const char* what = "invalid message index") {
 		auto* e = getEngine(L);
 		if (!lua_isinteger(L, stackPos) && !lua_isnumber(L, stackPos)) {
@@ -1007,7 +1007,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// A message handle is only valid inside the callback that created it, so
-	// the creators refuse to run anywhere else (top level, param.getName, ...).
+	// the creators refuse to run anywhere else (top level, param.onTooltip, ...).
 	// Raised before the store is touched.
 	static void requireCallback(lua_State* L, const char* fn) {
 		if (!getEngine(L)->inCallback) luaL_error(L, "%s: only allowed inside a callback", fn);
@@ -1039,10 +1039,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_setglobal(L, "number");
 
 		// ── input table ──────────────────────────────────────────────────────
-		// Default getName provided in Lua; scripts may override.
+		// Default onTooltip provided in Lua; scripts may override.
 		luaL_dostring(L,
 			"input = {\n"
-			"    getName = function(i) return 'Port ' .. i end\n"
+			"    onTooltip = function(i) return 'Port ' .. i end\n"
 			"}\n"
 		);
 		lua_getglobal(L, "input");
@@ -1072,8 +1072,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// ── param table ──────────────────────────────────────────────────────
 		luaL_dostring(L,
 			"param = {\n"
-			"    getName        = function(i) return 'Param ' .. i end,\n"
-			"    getValueFormat = function(i) return '' end\n"
+			"    onTooltip   = function(i) return 'Param ' .. i end,\n"
+			"    onValueText = function(i) return '' end\n"
 			"}\n"
 		);
 		lua_getglobal(L, "param");

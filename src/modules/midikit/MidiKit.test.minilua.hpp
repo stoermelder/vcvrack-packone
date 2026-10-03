@@ -20,10 +20,10 @@ TEST_CASE("Lua-tagged script loads and creates Lua state", "[MidiKit][Lua]") {
 static const char* LUA_INPUT_NAME = R"(--[[
 @engine minilua@v1
 --]]
-input.getName = function(i) return 'CV-' .. i end
+input.onTooltip = function(i) return 'CV-' .. i end
 )";
 
-TEST_CASE("Script can override input.getName", "[MidiKit][Lua]") {
+TEST_CASE("Script can override input.onTooltip", "[MidiKit][Lua]") {
 	ModuleScaffold mods;
 	MidiKitModule* m = mods.create();
 
