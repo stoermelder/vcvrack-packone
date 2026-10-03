@@ -1160,6 +1160,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("sendAfterMs",        lua_midiOut_sendAfterMs);
 		setTableFunc("sendAtFrame",        lua_midiOut_sendAtFrame);
 		setTableFunc("sendAfterTrigger",   lua_midiOut_sendAfterTrigger);
+		setTableFunc("cancel",             lua_midiOut_cancel);
 		setTableInt("portCount",           midiOutputCount);
 		lua_setglobal(L, "midiOut");
 	}
@@ -2294,7 +2295,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		double ms = luaL_checknumber(L, 2);
 
 		size_t idx = checkHandle(L, 1);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(ms));
+		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(ms), 0, 0, 0, true);
 		return 0;
 	}
 
@@ -2304,7 +2305,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		double frame = luaL_checknumber(L, 2);
 
 		size_t idx = checkHandle(L, 1);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, frameAtFrame(frame));
+		// A negative frame means "now": a plain send, which cancel() leaves alone.
+		int64_t f = frameAtFrame(frame);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, f, 0, 0, 0, f >= 0);
 		return 0;
 	}
 
@@ -2324,6 +2327,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_rack_framesToMs(lua_State* L) {
 		lua_pushnumber(L, getEngine(L)->framesToMs(luaL_checknumber(L, 1)));
 		return 1;
+	}
+
+	// midiOut.cancel([msg]) — drop scheduled messages on the selected port: all of
+	// them, or those with msg's address. Every check comes before cancelEntry()
+	// (luaL_error longjmps, see sendEntry()).
+	static int lua_midiOut_cancel(lua_State* L) {
+		auto* e = getEngine(L);
+		int n = lua_gettop(L);
+		if (n > 1) luaL_error(L, "midiOut.cancel: bad args");
+		if (n == 0) {
+			e->cancelEntry(nullptr);
+			return 0;
+		}
+		size_t idx = checkHandle(L, 1);
+		if (!isCancelPattern(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
+		e->cancelEntry(&e->msgStore[idx]);
+		return 0;
 	}
 
 	static int lua_midiOut_sendAfterTrigger(lua_State* L) {
@@ -2352,7 +2372,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		size_t idx = checkHandle(L, 1);
 		// Read now, so the schedule is relative to the tick count at the call.
 		int64_t currentTicks = e->handler->getTrigTicks(trigPort - 1, channel - 1);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1, true);
 		return 0;
 	}
 

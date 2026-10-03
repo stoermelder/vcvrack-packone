@@ -376,3 +376,160 @@ throw new Error("boom");
 	for (int i = 0; i < 100 && r.rec.notes(0x8).empty(); i++) r.step(100);
 	REQUIRE(r.rec.notes(0x8) == std::vector<int>{60});
 }
+
+
+// ── midiOut.cancel() ────────────────────────────────────────────────────────
+
+static const char* SWAP_JS_UNLOAD_CANCEL = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onUnload = function() {
+    let a = midi.create(); midi.setNoteOff(a, 1, 61, 0); midiOut.send(a);
+    midiOut.cancel();
+};
+)";
+
+static const char* SWAP_LUA_UNLOAD_CANCEL = R"(--[[
+@engine minilua@v1
+--]]
+rack.onUnload = function()
+    local a = midi.create(); midi.setNoteOff(a, 1, 61, 0); midiOut.send(a)
+    midiOut.cancel()
+end
+)";
+
+// A scheduled message `later` frames from now, as sendAtFrame() queues it.
+static bool sendScheduled(SwapRig& r, int note, int64_t later) {
+	midi::Message msg = noteOff(0, note);
+	msg.frame = r.frame + later;
+	OutTag tag;
+	tag.scheduled = true;
+	return r.m->sendMidi(0, &msg, 1, 0, 0, 0, tag);
+}
+
+TEST_CASE("Swap: midiOut.cancel() in onUnload() is ignored", "[MidiKit][Swap][cancel]") {
+	const char* script = GENERATE(SWAP_JS_UNLOAD_CANCEL, SWAP_LUA_UNLOAD_CANCEL);
+
+	SwapRig r;
+	r.m->loadScript(script);
+	r.step();
+	drainLog(r.m);
+
+	r.m->loadScript(SWAP_JS_PLAIN);
+	std::string unloadLog = drainLog(r.m);
+	CATCH_INFO("log: " << unloadLog);
+	REQUIRE(unloadLog.find("rror") == std::string::npos);
+
+	// The cancel never reached the queue: only onUnload()'s own message did.
+	int port, ticks;
+	midi::Message msg;
+	bool cancel = false;
+	int entries = 0;
+	while (processOutMessage(r.m, port, msg, ticks, &cancel)) {
+		REQUIRE_FALSE(cancel);
+		entries++;
+	}
+	REQUIRE(entries == 1);
+
+	// What the new script schedules is untouched.
+	REQUIRE(sendScheduled(r, 62, 100));
+	r.step(300);
+	REQUIRE(r.rec.notes(0x8) == std::vector<int>{62});
+}
+
+TEST_CASE("Swap: the unload message survives, and so does the new script's scheduled message", "[MidiKit][Swap][cancel]") {
+	const char* script = GENERATE(SWAP_JS_UNLOAD_CANCEL, SWAP_LUA_UNLOAD_CANCEL);
+
+	SwapRig r;
+	r.m->loadScript(script);
+	r.step();
+	r.m->loadScript(SWAP_JS_PLAIN);
+	REQUIRE(sendScheduled(r, 62, 100));
+	r.step(300);
+
+	REQUIRE(r.rec.notes(0x8) == std::vector<int>{61, 62});
+}
+
+TEST_CASE("Swap: a cancel of the replaced script does not touch the new script's messages", "[MidiKit][Swap][cancel]") {
+	// End to end: the old script's cancel is still in the worker -> audio queue
+	// when the new script loads, and the new script's scheduled message goes
+	// out. The queue is first-in first-out, so the new message is always behind
+	// the old cancel and this cannot catch a missing generation check: the next
+	// test does.
+	bool drainedFirst = GENERATE(false, true);
+	CATCH_INFO("drained first: " << drainedFirst);
+
+	SwapRig r;
+	r.m->loadScript(SWAP_JS_PLAIN);
+	r.step();
+
+	REQUIRE(sendScheduled(r, 60, 100));
+	if (drainedFirst) r.step(8);
+	REQUIRE(r.m->cancelMidi(0, CancelMode::ALL, midi::Message(), OutGroup()));
+
+	r.m->loadScript(SWAP_JS_PLAIN);
+	REQUIRE(sendScheduled(r, 61, 100));
+	r.step(300);
+
+	// 60 belongs to the replaced script: dropped, by the swap or by its cancel.
+	REQUIRE(r.rec.notes(0x8) == std::vector<int>{61});
+}
+
+TEST_CASE("Swap: the audio thread drops a cancel of an older generation", "[MidiKit][Swap][cancel]") {
+	// A message of the current script already waits in the port queue when a
+	// cancel of an older generation is drained. Through the ring this order
+	// cannot happen, so the guard is exercised on the queue directly.
+	SwapRig r;
+	r.m->loadScript(SWAP_JS_PLAIN);
+	r.step();
+	uint32_t gen = r.m->scriptGen.load();
+
+	midi::Message msg = noteOff(0, 60);
+	msg.frame = r.frame + 100000;
+	OutTag tag;
+	tag.scheduled = true;
+	r.m->midiOuts.ports[0].send(msg, 0, 0, 0, -1, false, tag);
+	REQUIRE(r.m->midiOuts.ports[0].frameQueue.size() == 1);
+
+	SECTION("an older generation is dropped") {
+		REQUIRE(r.m->midiOuts.enqueueCancel(0, CancelMode::ALL, midi::Message(), OutGroup(), gen - 1));
+		r.step(16);
+		REQUIRE(r.m->midiOuts.ports[0].frameQueue.size() == 1);
+	}
+	SECTION("the current generation applies (control)") {
+		REQUIRE(r.m->midiOuts.enqueueCancel(0, CancelMode::ALL, midi::Message(), OutGroup(), gen));
+		r.step(16);
+		REQUIRE(r.m->midiOuts.ports[0].frameQueue.empty());
+	}
+}
+
+TEST_CASE("Swap: a cancel still queued at teardown never reaches the device", "[MidiKit][Swap][cancel]") {
+	// flush() sends what the queue holds; a cancel entry holds a pattern, not a
+	// message, and would go out as three zero bytes.
+	SwapRig r;
+	r.m->loadScript(SWAP_JS_PLAIN);
+	midi::Message msg = noteOff(0, 60);
+	REQUIRE(r.m->sendMidi(0, &msg, 1, 0, 0));
+	REQUIRE(r.m->cancelMidi(0, CancelMode::ALL, midi::Message(), OutGroup()));
+
+	r.m->midiOuts.flush(0);
+
+	// The message went out, the cancel did not.
+	REQUIRE(r.rec.sent.size() == 1);
+	REQUIRE(r.rec.notes(0x8) == std::vector<int>{60});
+}
+
+TEST_CASE("Swap: a cancel that finds the output queue full is dropped and logged", "[MidiKit][Swap][cancel]") {
+	SwapRig r;
+	r.m->loadScript(SWAP_JS_PLAIN);
+	r.step();
+	drainLog(r.m);
+
+	// Fill the ring exactly, so that only the cancel is the one that does not fit.
+	midi::Message msg = noteOn(0, 60, 100);
+	while (r.m->midiOuts.queue.capacity() > 0) REQUIRE(r.m->sendMidi(0, &msg, 1, 0, 0));
+	REQUIRE_FALSE(r.m->cancelMidi(0, CancelMode::ALL, midi::Message(), OutGroup()));
+
+	r.step(16);
+	REQUIRE(drainLog(r.m).find("MIDI output queue full") != std::string::npos);
+}

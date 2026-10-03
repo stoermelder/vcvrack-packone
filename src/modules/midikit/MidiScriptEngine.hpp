@@ -105,15 +105,72 @@ struct MidiScriptEngine {
 	//
 	// Never raises: the Lua bindings rely on that (luaL_error longjmps past C++
 	// destructors), so every check comes before this call.
-	void sendEntry(const ScriptMessage& first, int port, int64_t frame, uint8_t channel = 0, uint64_t tick = 0, int trigPort = 0) {
+	//
+	// `scheduled`: sent by sendAfterMs/sendAtFrame/sendAfterTrigger, so
+	// midiOut.cancel() may drop it. A plain send() never is.
+	void sendEntry(const ScriptMessage& first, int port, int64_t frame, uint8_t channel = 0, uint64_t tick = 0, int trigPort = 0, bool scheduled = false) {
 		size_t n = first.isNrpn ? 4 : first.isCc14bit ? 2 : 1;
 		Message group[4];
 		for (size_t k = 0; k < n; k++) {
 			group[k] = (&first)[k].in.msg;
 			group[k].frame = frame;
 		}
+		OutTag tag;
+		tag.scheduled = scheduled;
+		if (first.isNrpn || first.isCc14bit) tag.group = groupOf(first);
 		// A drop is expected under output saturation; the module reports it.
-		handler->sendMidi(port, group, n, channel, tick, trigPort);
+		handler->sendMidi(port, group, n, channel, tick, trigPort, tag);
+	}
+
+	// The group a chain handle sends as: channel and parameter number from the
+	// CC 99/98 (101/100) pair of an NRPN/RPN, channel and MSB controller of a
+	// 14-bit pair. NONE for a single message, or a chain whose setter never ran.
+	static OutGroup groupOf(const ScriptMessage& first) {
+		OutGroup g;
+		if (!(first.isNrpn || first.isCc14bit) || !isCancelPattern(first)) return g;
+		const Message& lead = first.in.msg;
+		g.channel = lead.bytes[0] & 0x0F;
+		if (first.isNrpn) {
+			const Message& second = (&first)[1].in.msg;
+			if (lead.bytes.size() < 3 || second.bytes.size() < 3) return g;
+			g.kind = first.isRpn ? OutGroup::RPN : OutGroup::NRPN;
+			g.param = uint16_t(((lead.bytes[2] & 0x7f) << 7) | (second.bytes[2] & 0x7f));
+		}
+		else {
+			if (lead.bytes.size() < 2) return g;
+			g.kind = OutGroup::CC14;
+			g.param = lead.bytes[1];
+		}
+		return g;
+	}
+
+	// Whether `first` can be a midiOut.cancel() pattern: it has a status byte (a
+	// chain: its setter ran). Checked by the bindings before cancelEntry().
+	static bool isCancelPattern(const ScriptMessage& first) {
+		const Message& m = first.in.msg;
+		return !m.bytes.empty() && m.bytes[0] >= 0x80;
+	}
+
+	// Worker, from midiOut.cancel(): `first` null cancels everything on the
+	// selected port. Never raises (see sendEntry()).
+	void cancelEntry(const ScriptMessage* first) {
+		CancelMode mode = CancelMode::ALL;
+		Message pattern;
+		OutGroup group;
+		if (first != nullptr) {
+			if (first->isNrpn || first->isCc14bit) {
+				group = groupOf(*first);
+				// An unset chain would match every plain message as NONE.
+				if (group.kind == OutGroup::NONE) return;
+				mode = CancelMode::GROUP;
+			}
+			else {
+				pattern = first->in.msg;
+				mode = CancelMode::MESSAGE;
+			}
+		}
+		// A full queue is normal under saturation; the module reports it.
+		handler->cancelMidi(selectedPort, mode, pattern, group);
 	}
 
 	// The module this engine runs in, injected at construction.

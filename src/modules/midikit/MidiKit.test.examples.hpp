@@ -133,8 +133,14 @@ struct OutEvent {
 	uint8_t note;
 	uint8_t value;
 	int ticks;
+	// A midiOut.cancel() in the queue, with its pattern in the fields above. A
+	// constructor and not a defaulted member: `{status, channel, note, value,
+	// ticks}` lists stay valid without -Wmissing-field-initializers firing.
+	bool cancel;
+	OutEvent(uint8_t status, uint8_t channel, uint8_t note, uint8_t value, int ticks, bool cancel = false)
+		: status(status), channel(channel), note(note), value(value), ticks(ticks), cancel(cancel) {}
 	bool operator==(const OutEvent& o) const {
-		return status == o.status && channel == o.channel && note == o.note && value == o.value && ticks == o.ticks;
+		return status == o.status && channel == o.channel && note == o.note && value == o.value && ticks == o.ticks && cancel == o.cancel;
 	}
 };
 
@@ -146,8 +152,9 @@ static std::vector<OutEvent> drainOut(MidiKitModule* m) {
 	std::vector<OutEvent> events;
 	int port, ticks;
 	midi::Message out;
-	while (processOutMessage(m, port, out, ticks)) {
-		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), ticks});
+	bool cancel;
+	while (processOutMessage(m, port, out, ticks, &cancel)) {
+		events.push_back({out.getStatus(), out.getChannel(), out.getNote(), out.getValue(), ticks, cancel});
 	}
 	return events;
 }
@@ -2030,9 +2037,11 @@ TEST_CASE("'Note length quantiser.js/.lua' schedules the Note-Off lengthTicks af
 	MidiKitModule* m = loadPreset(path);
 	m->triggerIns.triggerTick[0][0] = 40;
 
-	// Note-On passes through, and its Note-Off is scheduled at 40 + 12.
+	// The note's old scheduled Note-Off is cancelled first (a no-op here: there
+	// is none), then the Note-On passes through and its Note-Off is scheduled at
+	// 40 + 12.
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
-	REQUIRE(ev == std::vector<OutEvent>{{0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 60, 0, 0, true}, {0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
 
 	Test::destroyModule(m);
 }
@@ -2059,14 +2068,93 @@ TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-art
 	m->triggerIns.triggerTick[0][0] = 40;
 	feedCollect(m, noteOn(1, 60, 100));   // drains [on, off@52]; sounding[60] stays true
 
-	// Retriggering 60 while it's still sounding cuts the old note immediately
-	// (Note-Off, tick 0), then sends the fresh Note-On and its scheduled
-	// Note-Off. The engine sends in send() order: cut, Note-On, scheduled
-	// Note-Off.
+	// Retriggering 60 while it's still sounding cancels the old scheduled
+	// Note-Off (the cancel entry carries its address), cuts the old note
+	// immediately (Note-Off, tick 0), then sends the fresh Note-On and its
+	// scheduled Note-Off. The engine queues in call order: cancel, cut, Note-On,
+	// scheduled Note-Off.
 	auto ev = feedCollect(m, noteOn(1, 60, 100));
-	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 60, 0, 0}, {0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
+	REQUIRE(ev == std::vector<OutEvent>{{0x8, 1, 60, 0, 0, true}, {0x8, 1, 60, 0, 0}, {0x9, 1, 60, 100, 0}, {0x8, 1, 60, 0, 52}});
 
 	Test::destroyModule(m);
+}
+
+// What reaches the MIDI output device, in order.
+struct NoteLengthRecorder : midi::OutputDevice {
+	std::vector<std::pair<uint8_t, uint8_t>> sent;   // status, note
+	void sendMessage(const midi::Message& msg) override {
+		sent.push_back({msg.getStatus(), msg.getNote()});
+	}
+	int count(uint8_t status) const {
+		int n = 0;
+		for (const auto& s : sent) n += s.first == status ? 1 : 0;
+		return n;
+	}
+};
+
+TEST_CASE("'Note length quantiser.js/.lua' a retriggered note keeps its full new length", "[MidiKit][NoteLength]") {
+	// The regression: the old note's scheduled Note-Off used to stay queued and
+	// fire at its own tick, cutting the retriggered note short. Runs the real
+	// process() with trigger edges, so the tick queues really release.
+	std::string path = GENERATE(presetPaths("Note length quantiser"));
+	// The player lets go of the key before retriggering: the usual way to play a
+	// fixed length, and the case where the preset's own "sounding" bookkeeping
+	// used to hide the pending Note-Off from the retrigger.
+	bool released = GENERATE(false, true);
+	CATCH_INFO("preset: " << path << ", released before retrigger: " << released);
+
+	// Declared first: it must outlive the module, whose teardown flushes through it.
+	NoteLengthRecorder rec;
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create("MidiKit");
+	m->midiOuts.ports[0].outputDevice = &rec;
+	m->midiOuts.ports[0].channel = -1;
+	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	m->loadScript(readFile(repoRoot() + "/" + path));
+
+	int64_t frame = 0;
+	auto step = [&]() { m->process(Test::makeProcessArgs(frame++)); };
+	auto run = [&](int n) { for (int i = 0; i < n; i++) step(); };
+	auto play = [&](int note) {
+		midi::Message msg = noteOn(1, note, 100);
+		msg.frame = frame;
+		m->midiIns.ports[0].processor.getInput().onMessage(msg);
+		run(16);   // past the callback and the next drain
+	};
+	auto edges = [&](int n) {
+		for (int i = 0; i < n; i++) {
+			m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+			step();
+			m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+			step();
+		}
+		run(16);
+	};
+
+	run(16);          // loaded, trigger input primed low
+	REQUIRE(rec.sent.empty());
+
+	play(60);         // tick 0: Note-Off scheduled for tick 12
+	edges(2);
+	if (released) {
+		midi::Message up = noteOff(1, 60);
+		up.frame = frame;
+		m->midiIns.ports[0].processor.getInput().onMessage(up);
+		run(16);      // the preset drops it; the scheduled one still ends the note
+		REQUIRE(rec.count(0x8) == 0);
+	}
+	edges(3);
+	play(60);         // tick 5: cut, re-articulation, Note-Off scheduled for tick 17
+	REQUIRE(rec.count(0x9) == 2);
+	REQUIRE(rec.count(0x8) == 1);   // the cut
+
+	edges(7);         // tick 12: where the first note's release used to fire
+	REQUIRE(rec.count(0x8) == 1);
+
+	edges(5);         // tick 17
+	REQUIRE(rec.count(0x8) == 2);
+
+	m->midiOuts.ports[0].outputDevice = nullptr;
 }
 
 TEST_CASE("'Note length quantiser.js/.lua' releases the sounding note on unload", "[MidiKit][NoteLength]") {

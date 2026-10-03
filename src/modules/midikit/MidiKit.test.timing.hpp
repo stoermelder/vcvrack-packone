@@ -1721,3 +1721,512 @@ TEST_CASE("Input queue overflow raises one notice per saturation", "[MidiKit][ti
 	}
 	REQUIRE(lines == 1);
 }
+
+
+// ── midiOut.cancel() ────────────────────────────────────────────────────────
+// Matching rules are in MidiKit.test.cancel.hpp; these go through the module:
+// worker -> ring -> port queues -> recorder. Every case runs in both engines.
+
+static const char* JS_CANCEL_HEAD = R"(/**
+ * @engine QuickJs@v1
+ */
+function off(n) { let m = midi.create(); midi.setNoteOff(m, 1, n, 0); return m; }
+)";
+
+static const char* LUA_CANCEL_HEAD = R"(--[[
+@engine minilua@v1
+--]]
+local function off(n) local m = midi.create(); midi.setNoteOff(m, 1, n, 0); return m end
+)";
+
+struct CancelScripts {
+	std::string js;
+	std::string lua;
+	std::string get(bool isLua) const { return isLua ? lua : js; }
+};
+
+static CancelScripts cancelScripts(const std::string& js, const std::string& lua) {
+	return { std::string(JS_CANCEL_HEAD) + js, std::string(LUA_CANCEL_HEAD) + lua };
+}
+
+// The note numbers of everything the recorder got, in send order.
+static std::vector<int> sentNotes(const TimingRecorder& rec) {
+	std::vector<int> notes;
+	for (const TimingRecorder::Sent& s : rec.sent) notes.push_back(s.note);
+	return notes;
+}
+
+// Frames to run so that a 10 ms delay scheduled at about frame 20 is long over.
+static int64_t cancelRunUntil() {
+	return 100 + 2 * int64_t(0.010 * Test::sampleRate());
+}
+
+TEST_CASE("Cancel: a message handle drops only the scheduled messages with its address", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(off(60), 10);
+    midiOut.sendAfterMs(off(61), 10);
+    midiOut.cancel(off(60));
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterMs(off(60), 10)
+    midiOut.sendAfterMs(off(61), 10)
+    midiOut.cancel(off(60))
+end
+)");
+	for (bool lua : { false, true }) {
+		for (bool timing : { false, true }) {
+			CATCH_INFO(std::string(lua ? "lua" : "js") + (timing ? " timing" : " legacy"));
+			std::string script = timing ? withTiming(s.get(lua).c_str()) : s.get(lua);
+			TimingRig rig(script.c_str());
+			rig.inject(noteOn(0, 60, 100), 8);
+			rig.run(cancelRunUntil());
+
+			REQUIRE(sentNotes(rig.rec) == std::vector<int>{61});
+			REQUIRE(rig.rec.sent[0].status == 0x8);
+		}
+	}
+}
+
+TEST_CASE("Cancel: a trigger-scheduled message is dropped before its edge", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+trig.enableIn(1);
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterTrigger(off(60), 1);
+    midiOut.sendAfterTrigger(off(61), 1);
+    midiOut.cancel(off(60));
+};
+)", R"(
+trig.enableIn(1)
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterTrigger(off(60), 1)
+    midiOut.sendAfterTrigger(off(61), 1)
+    midiOut.cancel(off(60))
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(s.get(lua).c_str());
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+
+		rig.run(8);
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(45);
+		REQUIRE(rig.rec.sent.empty());
+
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		rig.step();
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		rig.run(80);
+
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{61});
+	}
+}
+
+TEST_CASE("Cancel: without an argument it clears the selected port only", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+midiOut.enablePorts(2);
+midi.onMessage = function(port, msg) {
+    midiOut.selectPort(1);
+    midiOut.sendAfterMs(off(60), 10);
+    midiOut.sendAfterMs(off(61), 10);
+    midiOut.selectPort(2);
+    midiOut.sendAfterMs(off(62), 10);
+    midiOut.selectPort(1);
+    midiOut.cancel();
+};
+)", R"(
+midiOut.enablePorts(2)
+midi.onMessage = function(port, msg)
+    midiOut.selectPort(1)
+    midiOut.sendAfterMs(off(60), 10)
+    midiOut.sendAfterMs(off(61), 10)
+    midiOut.selectPort(2)
+    midiOut.sendAfterMs(off(62), 10)
+    midiOut.selectPort(1)
+    midiOut.cancel()
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		// Declared first: it must outlive the rig, whose teardown flushes through it.
+		TimingRecorder rec2;
+		TimingRig rig(s.get(lua).c_str());
+		rig.m->midiOuts.ports[1].outputDevice = &rec2;
+		rig.m->midiOuts.ports[1].channel = -1;
+		rig.inject(noteOn(0, 60, 100), 8);
+		rec2.now = 0;
+		for (int64_t f = rig.frame; f < cancelRunUntil(); f++) {
+			rec2.now = f;
+			rig.step();
+		}
+
+		REQUIRE(rig.rec.sent.empty());
+		REQUIRE(sentNotes(rec2) == std::vector<int>{62});
+		rig.m->midiOuts.ports[1].outputDevice = nullptr;
+	}
+}
+
+TEST_CASE("Cancel: a timing-mode send() in the same callback is not cancelled", "[MidiKit][cancel][timing]") {
+	// In timing mode send() waits in the frame queue until the end of the pump,
+	// next to the scheduled messages: only the `scheduled` flag tells them apart.
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    midiOut.send(off(60));
+    midiOut.cancel();
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    midiOut.send(off(60))
+    midiOut.cancel()
+end
+)");
+	for (bool lua : { false, true }) {
+		for (bool timing : { false, true }) {
+			CATCH_INFO(std::string(lua ? "lua" : "js") + (timing ? " timing" : " legacy"));
+			std::string script = timing ? withTiming(s.get(lua).c_str()) : s.get(lua);
+			TimingRig rig(script.c_str());
+			rig.inject(noteOn(0, 60, 100), 8);
+			rig.run(60);
+
+			REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+		}
+	}
+}
+
+TEST_CASE("Cancel: sendAtFrame with a negative frame is a plain send", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    midiOut.sendAtFrame(off(60), -1);
+    midiOut.cancel();
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    midiOut.sendAtFrame(off(60), -1)
+    midiOut.cancel()
+end
+)");
+	for (bool lua : { false, true }) {
+		for (bool timing : { false, true }) {
+			CATCH_INFO(std::string(lua ? "lua" : "js") + (timing ? " timing" : " legacy"));
+			std::string script = timing ? withTiming(s.get(lua).c_str()) : s.get(lua);
+			TimingRig rig(script.c_str());
+			rig.inject(noteOn(0, 60, 100), 8);
+			rig.run(60);
+
+			REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+		}
+	}
+}
+
+TEST_CASE("Cancel: it applies in call order", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(off(60), 10);
+    midiOut.cancel();
+    midiOut.sendAfterMs(off(61), 10);
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterMs(off(60), 10)
+    midiOut.cancel()
+    midiOut.sendAfterMs(off(61), 10)
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(s.get(lua).c_str());
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(cancelRunUntil());
+
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{61});
+	}
+}
+
+TEST_CASE("Cancel: a group is taken whole by its handle and never split by a member", "[MidiKit][cancel][timing]") {
+	// The incoming note picks the cancel: 1 = a plain CC 99 (a member of the
+	// scheduled NRPN), 2 = the NRPN handle itself, 3 = another NRPN number.
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    let n = midi.createNRPN();
+    midi.setNRPN(n, 1, 300, 1000);
+    midiOut.sendAfterMs(n, 10);
+    let k = midi.getNote(msg);
+    if (k == 1) { let c = midi.create(); midi.setCc(c, 1, 99, 2); midiOut.cancel(c); }
+    else if (k == 2) { midiOut.cancel(n); }
+    else if (k == 3) { let o = midi.createNRPN(); midi.setNRPN(o, 1, 301, 0); midiOut.cancel(o); }
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    local n = midi.createNRPN()
+    midi.setNRPN(n, 1, 300, 1000)
+    midiOut.sendAfterMs(n, 10)
+    local k = midi.getNote(msg)
+    if k == 1 then local c = midi.create(); midi.setCc(c, 1, 99, 2); midiOut.cancel(c)
+    elseif k == 2 then midiOut.cancel(n)
+    elseif k == 3 then local o = midi.createNRPN(); midi.setNRPN(o, 1, 301, 0); midiOut.cancel(o)
+    end
+end
+)");
+	struct Case { int note; std::vector<int> controllers; };
+	// Number 300 = 2 * 128 + 44: CC 99 and 98 select it, CC 6 and 38 carry the value.
+	std::vector<Case> cases = {
+		{ 1, { 99, 98, 6, 38 } },
+		{ 2, { } },
+		{ 3, { 99, 98, 6, 38 } },
+	};
+	for (bool lua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(lua ? "lua" : "js") + " note " + std::to_string(c.note));
+			TimingRig rig(s.get(lua).c_str());
+			rig.inject(noteOn(0, c.note, 100), 8);
+			rig.run(cancelRunUntil());
+
+			REQUIRE(sentNotes(rig.rec) == c.controllers);
+		}
+	}
+}
+
+TEST_CASE("Cancel: a message already past its frame is not recalled", "[MidiKit][cancel][timing]") {
+	// Note 60 schedules for 1 ms; note 61, long after, cancels what it was.
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    if (midi.getNote(msg) == 60) midiOut.sendAfterMs(off(60), 1);
+    else midiOut.cancel(off(60));
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    if midi.getNote(msg) == 60 then midiOut.sendAfterMs(off(60), 1)
+    else midiOut.cancel(off(60)) end
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(s.get(lua).c_str());
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(300);
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+
+		rig.inject(noteOn(0, 61, 100), 320);
+		rig.run(400);
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+	}
+}
+
+TEST_CASE("Cancel: 40 cancels in one callback all apply, over several drains", "[MidiKit][cancel][timing]") {
+	// A cancel weighs 8 of the drain's 128 units, so 40 of them (and the 41 sends
+	// before them) need more than one drain. One handle is reused: a callback has
+	// only a few message slots.
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    let m = midi.create();
+    for (let i = 0; i < 40; i++) { midi.setNoteOff(m, 1, i, 0); midiOut.sendAfterMs(m, 10); }
+    midi.setNoteOff(m, 1, 100, 0);
+    midiOut.sendAfterMs(m, 10);
+    for (let i = 0; i < 40; i++) { midi.setNoteOff(m, 1, i, 0); midiOut.cancel(m); }
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    local m = midi.create()
+    for i = 0, 39 do midi.setNoteOff(m, 1, i, 0); midiOut.sendAfterMs(m, 10) end
+    midi.setNoteOff(m, 1, 100, 0)
+    midiOut.sendAfterMs(m, 10)
+    for i = 0, 39 do midi.setNoteOff(m, 1, i, 0); midiOut.cancel(m) end
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(s.get(lua).c_str());
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(cancelRunUntil());
+
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{100});
+	}
+}
+
+TEST_CASE("Cancel: bad arguments raise a script error and cancel nothing", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+function t(name, f) {
+    try { f(); rack.log("ok " + name); }
+    catch (e) { rack.log("err " + name); }
+}
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(off(60), 10);
+    t("empty", function() { midiOut.cancel(midi.create()); });
+    t("unsetNrpn", function() { midiOut.cancel(midi.createNRPN()); });
+    t("twoArgs", function() { midiOut.cancel(off(60), off(61)); });
+    t("notHandle", function() { midiOut.cancel("x"); });
+    t("staleHandle", function() { midiOut.cancel(123456789); });
+};
+)", R"(
+local function t(name, f)
+    local ok = pcall(f)
+    if ok then rack.log("ok " .. name) else rack.log("err " .. name) end
+end
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterMs(off(60), 10)
+    t("empty", function() midiOut.cancel(midi.create()) end)
+    t("unsetNrpn", function() midiOut.cancel(midi.createNRPN()) end)
+    t("twoArgs", function() midiOut.cancel(off(60), off(61)) end)
+    t("notHandle", function() midiOut.cancel("x") end)
+    t("staleHandle", function() midiOut.cancel(123456789) end)
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(s.get(lua).c_str());
+		drainLog(rig.m);
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(cancelRunUntil());
+
+		std::string log = drainLog(rig.m);
+		CATCH_INFO("log: " << log);
+		for (const char* name : { "empty", "unsetNrpn", "twoArgs", "notHandle", "staleHandle" }) {
+			CATCH_INFO(name);
+			REQUIRE(log.find(std::string("err ") + name) != std::string::npos);
+			REQUIRE(log.find(std::string("ok ") + name) == std::string::npos);
+		}
+		// The scheduled note was not touched by any of the failed calls.
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+	}
+}
+
+
+TEST_CASE("Cancel: without an argument it clears every tick queue", "[MidiKit][cancel][timing]") {
+	// Messages on trigger input 1 and on input 2, channels 1 and 3. Note 2 skips
+	// the cancel: the control that shows all three really are released.
+	CancelScripts s = cancelScripts(R"(
+trig.enableIn(1, 1);
+trig.enableIn(2, 1);
+trig.enableIn(2, 3);
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterTrigger(off(60), 1, 1, 1);
+    midiOut.sendAfterTrigger(off(61), 1, 2, 3);
+    midiOut.sendAfterTrigger(off(62), 1, 2, 1);
+    if (midi.getNote(msg) == 1) midiOut.cancel();
+};
+)", R"(
+trig.enableIn(1, 1)
+trig.enableIn(2, 1)
+trig.enableIn(2, 3)
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterTrigger(off(60), 1, 1, 1)
+    midiOut.sendAfterTrigger(off(61), 1, 2, 3)
+    midiOut.sendAfterTrigger(off(62), 1, 2, 1)
+    if midi.getNote(msg) == 1 then midiOut.cancel() end
+end
+)");
+	struct Case { int note; std::vector<int> sent; };
+	std::vector<Case> cases = { { 1, { } }, { 2, { 60, 61, 62 } } };
+	for (bool lua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(lua ? "lua" : "js") + " note " + std::to_string(c.note));
+			TimingRig rig(s.get(lua).c_str());
+			rig.m->inputs[MidiKitModule::INPUT_TRIG + 0].channels = 1;
+			rig.m->inputs[MidiKitModule::INPUT_TRIG + 1].channels = 3;
+
+			rig.run(8);
+			rig.inject(noteOn(0, c.note, 100), 8);
+			rig.run(45);
+			REQUIRE(rig.rec.sent.empty());
+
+			rig.m->inputs[MidiKitModule::INPUT_TRIG + 0].setVoltage(10.f, 0);
+			for (int ch = 0; ch < 3; ch++) rig.m->inputs[MidiKitModule::INPUT_TRIG + 1].setVoltage(10.f, ch);
+			rig.step();
+			rig.m->inputs[MidiKitModule::INPUT_TRIG + 0].setVoltage(0.f, 0);
+			for (int ch = 0; ch < 3; ch++) rig.m->inputs[MidiKitModule::INPUT_TRIG + 1].setVoltage(0.f, ch);
+			rig.run(80);
+
+			std::vector<int> got = sentNotes(rig.rec);
+			std::sort(got.begin(), got.end());
+			REQUIRE(got == c.sent);
+		}
+	}
+}
+
+TEST_CASE("Cancel: 14-bit CC and RPN handles go through the bindings as groups", "[MidiKit][cancel][timing]") {
+	// The incoming note picks the scenario (see `cases`). A scheduled message
+	// is a 14-bit CC (MSB 5, so CC 5 and 37) or an RPN 300 (CC 101, 100, 6, 38).
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    let k = midi.getNote(msg);
+    if (k <= 3) {
+        let h = midi.createCc14bit(); midi.setCc14bit(h, 1, 5, 100.5);
+        midiOut.sendAfterMs(h, 10);
+        if (k == 1) midiOut.cancel(h);
+        else if (k == 2) { let c = midi.create(); midi.setCc(c, 1, 5, 1); midiOut.cancel(c); }
+        else { let o = midi.createCc14bit(); midi.setCc14bit(o, 1, 6, 100.5); midiOut.cancel(o); }
+    } else {
+        let h = midi.createRPN(); midi.setRPN(h, 1, 300, 1000);
+        midiOut.sendAfterMs(h, 10);
+        if (k == 4) { let n = midi.createNRPN(); midi.setNRPN(n, 1, 300, 1000); midiOut.cancel(n); }
+        else { midiOut.cancel(h); }
+    }
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    local k = midi.getNote(msg)
+    if k <= 3 then
+        local h = midi.createCc14bit(); midi.setCc14bit(h, 1, 5, 100.5)
+        midiOut.sendAfterMs(h, 10)
+        if k == 1 then midiOut.cancel(h)
+        elseif k == 2 then local c = midi.create(); midi.setCc(c, 1, 5, 1); midiOut.cancel(c)
+        else local o = midi.createCc14bit(); midi.setCc14bit(o, 1, 6, 100.5); midiOut.cancel(o) end
+    else
+        local h = midi.createRPN(); midi.setRPN(h, 1, 300, 1000)
+        midiOut.sendAfterMs(h, 10)
+        if k == 4 then local n = midi.createNRPN(); midi.setNRPN(n, 1, 300, 1000); midiOut.cancel(n)
+        else midiOut.cancel(h) end
+    end
+end
+)");
+	struct Case { int note; std::vector<int> controllers; };
+	std::vector<Case> cases = {
+		{ 1, { } },                      // the 14-bit handle removes the pair
+		{ 2, { 5, 37 } },                // a plain CC 5 never splits it
+		{ 3, { 5, 37 } },                // another MSB controller is another group
+		{ 4, { 101, 100, 6, 38 } },      // an NRPN of the same number is not the RPN
+		{ 5, { } },                      // the RPN handle removes the quad
+	};
+	for (bool lua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(lua ? "lua" : "js") + " note " + std::to_string(c.note));
+			TimingRig rig(s.get(lua).c_str());
+			rig.inject(noteOn(0, c.note, 100), 8);
+			rig.run(cancelRunUntil());
+
+			REQUIRE(sentNotes(rig.rec) == c.controllers);
+		}
+	}
+}
+
+TEST_CASE("Cancel: on a port that is not enabled it does nothing, silently", "[MidiKit][cancel][timing]") {
+	CancelScripts s = cancelScripts(R"(
+midi.onMessage = function(port, msg) {
+    midiOut.sendAfterMs(off(60), 10);
+    midiOut.selectPort(2);
+    midiOut.cancel();
+};
+)", R"(
+midi.onMessage = function(port, msg)
+    midiOut.sendAfterMs(off(60), 10)
+    midiOut.selectPort(2)
+    midiOut.cancel()
+end
+)");
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(s.get(lua).c_str());
+		drainLog(rig.m);
+		rig.inject(noteOn(0, 60, 100), 8);
+		rig.run(cancelRunUntil());
+
+		std::string log = drainLog(rig.m);
+		CATCH_INFO("log: " << log);
+		REQUIRE(log.find("rror") == std::string::npos);
+		REQUIRE(log.find("not enabled") == std::string::npos);
+		// Port 1's scheduled message is untouched.
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+	}
+}

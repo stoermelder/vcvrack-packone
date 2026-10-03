@@ -731,7 +731,7 @@ TEST_CASE("Trigger input drains tick-scheduled messages via process()", "[MidiKi
 	// The stale entry sorts to the head, so with "==" it blocks both forever.
 	midi::Message msg = makeCc();
 	m->midiOuts.ports[0].send(msg, 0, 2);
-	m->midiOuts.ports[0].tickQueue[0].push(std::remove_reference<decltype(m->midiOuts.ports[0])>::type::TickSchedule{msg, 0, 0});
+	m->midiOuts.ports[0].tickQueue[0].push(std::remove_reference<decltype(m->midiOuts.ports[0])>::type::TickSchedule{msg, 0, 0, OutGroup()});
 	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 2);
 
 	int64_t frame = 1;

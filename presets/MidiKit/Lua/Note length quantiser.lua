@@ -25,9 +25,10 @@
 --     lengthTicks 12 -> 8th note
 --     lengthTicks 24 -> quarter note
 --
--- Retriggering the same note while it is still sounding is handled by sending
--- the pending Note-Off immediately, so the note is re-articulated rather than
--- being cut short later by a stale scheduled release.
+-- Retriggering the same note while it is still sounding is handled by
+-- cancelling its pending scheduled Note-Off with midiOut.cancel() and sending a
+-- Note-Off immediately instead, so the note is re-articulated and the new note
+-- gets its full length: the old release can no longer fire later and cut it short.
 
 
 -- Configuration - change these values as needed
@@ -46,7 +47,8 @@ local config = {
 }
 
 -- Internal state.
--- sounding[n] is true while note number n has a scheduled Note-Off pending.
+-- sounding[n] is true from the first Note-On of note number n on: the note may still
+-- be sounding, with a scheduled Note-Off pending.
 local state = {
     sounding = {}
 }
@@ -176,11 +178,16 @@ midi.onMessage = function(midiPort, msg)
     if midi.isNoteOn(msg) and matchesChannel(ch) then
         local note = midi.getNote(msg)
 
-        -- Same note still sounding: release it now so the re-articulation is
-        -- clean and its pending scheduled Note-Off cannot clip the new note.
+        -- Cancel the note's pending scheduled Note-Off on every Note-On, so that
+        -- it cannot clip the new note when its tick comes. A cancel that matches
+        -- nothing costs nothing.
+        local cut = midi.create()
+        midi.setNoteOff(cut, ch, note)
+        midiOut.cancel(cut)
+
+        -- Same note possibly still sounding: release it now so the
+        -- re-articulation is clean.
         if state.sounding[note] then
-            local cut = midi.create()
-            midi.setNoteOff(cut, ch, note)
             midiOut.send(cut)
         end
 
@@ -196,11 +203,11 @@ midi.onMessage = function(midiPort, msg)
 
     if midi.isNoteOff(msg) and matchesChannel(ch) then
         -- Dropped on purpose: the scheduled Note-Off is what ends the note.
-        -- Note that state.sounding is cleared here rather than when the
-        -- scheduled release fires - the script has no callback for that - so a
-        -- note held longer than lengthTicks is already marked free by the time
-        -- the player lifts the key, which is the same moment it stopped sounding.
-        state.sounding[midi.getNote(msg)] = false
+        -- state.sounding is not cleared here: the note keeps sounding until
+        -- that scheduled release fires, however early the key is lifted, and
+        -- the script has no callback for that. The flag therefore means "may
+        -- still be sounding" - a retrigger or the unload then sends a release
+        -- that is redundant for a note that has already ended, which is harmless.
         return
     end
 

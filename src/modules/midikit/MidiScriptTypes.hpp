@@ -180,5 +180,65 @@ inline bool menuCallArgs(const ScriptMenuItem& item, const ScriptMenuClick& clic
 	return false;
 }
 
+
+// The group a queued message belongs to: midiOut.send*() of an NRPN/RPN or
+// 14-bit CC handle queues it as consecutive messages that carry the same
+// OutGroup, so midiOut.cancel() can take the group whole and never splits it.
+struct OutGroup {
+	enum Kind : uint8_t { NONE, NRPN, RPN, CC14 };
+	Kind kind = NONE;
+	uint8_t channel = 0;   // 0-based
+	uint16_t param = 0;    // NRPN/RPN: 14-bit parameter number; CC14: MSB controller
+	bool operator==(const OutGroup& o) const { return kind == o.kind && channel == o.channel && param == o.param; }
+};
+
+// What a queued message carries besides its bytes.
+struct OutTag {
+	// From sendAfterMs/sendAtFrame/sendAfterTrigger. Only these can be cancelled:
+	// a timing-mode send() waits in the same frame queue.
+	bool scheduled = false;
+	OutGroup group;
+};
+
+// midiOut.cancel(): everything, one address, or one group address.
+enum class CancelMode : uint8_t { ALL, MESSAGE, GROUP };
+
+// The type nibble, with a velocity-0 Note-On folded into Note-Off (0x8).
+inline uint8_t addressType(const Message& m) {
+	uint8_t type = m.bytes[0] >> 4;
+	if (type == 0x9 && m.bytes.size() >= 3 && m.bytes[2] == 0) return 0x8;
+	return type;
+}
+
+// Same address under the rules of midiOut.cancel() (see SCRIPTING.md). False for
+// anything without a status byte. A default midi::Message has size 3 (zeros), so
+// "empty" is a status byte below 0x80, not bytes.empty().
+inline bool sameAddress(const Message& pattern, const Message& m) {
+	if (pattern.bytes.empty() || m.bytes.empty()) return false;
+	uint8_t a = pattern.bytes[0];
+	uint8_t b = m.bytes[0];
+	if (a < 0x80 || b < 0x80) return false;
+	// SysEx matches any SysEx, other system messages their whole status byte.
+	if (a >= 0xF0 || b >= 0xF0) return a == b;
+	if ((a & 0x0F) != (b & 0x0F)) return false;
+	uint8_t type = addressType(pattern);
+	if (type != addressType(m)) return false;
+	// Note, poly aftertouch and control change also address a data byte.
+	if (type >= 0x8 && type <= 0xB) {
+		if (pattern.bytes.size() < 2 || m.bytes.size() < 2) return false;
+		return pattern.bytes[1] == m.bytes[1];
+	}
+	return true;
+}
+
+inline bool cancelMatches(CancelMode mode, const Message& p, const OutGroup& pg, const Message& m, const OutGroup& mg) {
+	switch (mode) {
+		case CancelMode::ALL: return true;
+		case CancelMode::GROUP: return mg == pg;
+		case CancelMode::MESSAGE: return mg.kind == OutGroup::NONE && sameAddress(p, m);
+	}
+	return false;
+}
+
 } // namespace MidiScript
 } // namespace StoermelderPackOne

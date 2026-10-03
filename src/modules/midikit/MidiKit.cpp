@@ -64,6 +64,10 @@ struct MidiOutput : midi::Output {
 		uint64_t seq;
 		// Sent by the onUnload() of a replaced script: survives the swap's clear.
 		bool unload;
+		// From sendAfterMs/sendAtFrame (MidiScript::OutTag): midiOut.cancel() only
+		// drops these, never a timing-mode send() waiting in the same queue.
+		bool scheduled;
+		MidiScript::OutGroup group;
 		bool operator<(const FrameSchedule& other) const {
 			if (msg.frame != other.msg.frame) return msg.frame > other.msg.frame;
 			return seq > other.seq;
@@ -76,18 +80,13 @@ struct MidiOutput : midi::Output {
 	// Messages that can wait for a trigger tick, per (trigger input, channel).
 	static constexpr size_t TICK_QUEUE_MAX = 32;
 
-	struct FrameQueue : BoundedPriorityQueue<FrameSchedule, FRAME_QUEUE_MAX> {
-		template <typename Pred>
-		void removeIf(Pred pred) {
-			this->c.erase(std::remove_if(this->c.begin(), this->c.end(), pred), this->c.end());
-			std::make_heap(this->c.begin(), this->c.end(), this->comp);
-		}
-	};
+	using FrameQueue = BoundedPriorityQueue<FrameSchedule, FRAME_QUEUE_MAX>;
 
 	struct TickSchedule {
 		midi::Message msg;
 		uint64_t tick;
 		uint64_t seq;
+		MidiScript::OutGroup group;
 		bool operator<(const TickSchedule& other) const {
 			if (tick != other.tick) return tick > other.tick;
 			return seq > other.seq;
@@ -172,6 +171,22 @@ struct MidiOutput : midi::Output {
 		clearTickQueues();
 	}
 
+	// Audio thread, midiOut.cancel(): drops the scheduled messages that
+	// `mode`/`pattern`/`group` select from the frame queue and every tick queue.
+	// Immediate messages (a timing-mode send() waiting for this pump) and
+	// onUnload() output are never scheduled, so they stay.
+	void cancelScheduled(MidiScript::CancelMode mode, const midi::Message& pattern, const MidiScript::OutGroup& group) {
+		frameQueue.removeIf([&](const FrameSchedule& s) {
+			return s.scheduled && MidiScript::cancelMatches(mode, pattern, group, s.msg, s.group);
+		});
+		for (TickQueue& q : tickQueue) {
+			if (q.empty()) continue;
+			q.removeIf([&](const TickSchedule& s) {
+				return MidiScript::cancelMatches(mode, pattern, group, s.msg, s.group);
+			});
+		}
+	}
+
 	void reset() {
 		Output::reset();
 		while (!frameQueue.empty()) frameQueue.pop();
@@ -184,14 +199,15 @@ struct MidiOutput : midi::Output {
 
 	// `now`: the current engine frame, for frame-less messages in timing mode.
 	// `unload`: see FrameSchedule::unload.
+	// `tag`: what midiOut.cancel() needs to know about the message.
 	// `msg` is consumed (moved into a queue).
-	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1, bool unload = false) {
+	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1, bool unload = false, const MidiScript::OutTag& tag = MidiScript::OutTag()) {
 		if (tick != 0) {
 			TickQueue& q = tickQueue[tickQueueIndex(channel, trigPort)];
 			if (!q.full()) {
 				// Built from the moved message: a default-constructed
 				// midi::Message allocates its bytes.
-				q.push(TickSchedule{std::move(msg), tick, nextSeq++});
+				q.push(TickSchedule{std::move(msg), tick, nextSeq++, tag.group});
 				return;
 			}
 			// A full queue sends at once, as a message without a schedule would
@@ -209,7 +225,7 @@ struct MidiOutput : midi::Output {
 
 		if (msg.frame != -1) {
 			if (!frameQueue.full()) {
-				frameQueue.push(FrameSchedule{std::move(msg), nextSeq++, unload});
+				frameQueue.push(FrameSchedule{std::move(msg), nextSeq++, unload, tag.scheduled, tag.group});
 				return;
 			}
 			scheduleFull = true;
@@ -575,12 +591,21 @@ struct MidiOutputs {
 		uint32_t gen;
 		// Sent by the onUnload() of a replaced script.
 		bool unload;
+		// What midiOut.cancel() needs to know about the message.
+		MidiScript::OutTag tag;
+		// A midiOut.cancel() instead of a message: `msg` is the pattern (MESSAGE
+		// mode) and `tag.group` the group pattern (GROUP mode).
+		bool cancel;
+		MidiScript::CancelMode cancelMode;
 	};
 
 	// Entries handed to the ports per drain. The ring absorbs a burst, the
 	// budget spreads it over later drains (every 8 samples), so a single
 	// process() call does no more work than it did with a 128-entry ring.
 	static constexpr int DRAIN_BUDGET = 128;
+	// One cancel scans up to FRAME_QUEUE_MAX + 32 tick queues' worth of entries,
+	// so it weighs more than a send: at most 16 cancels per drain.
+	static constexpr int CANCEL_WEIGHT = 8;
 
 	/** [Stored to Json] */
 	Port ports[NOUT];
@@ -644,7 +669,7 @@ struct MidiOutputs {
 	// Worker. Queues a group of messages, tagged with the script generation that
 	// sent them and whether its onUnload() did; false (group dropped) for an
 	// unknown or disabled port, or a full queue.
-	bool enqueue(int port, const MidiScript::Message* msgs, size_t n, uint8_t channel, uint64_t tick, int trigPort = 0, uint32_t gen = 0, bool unload = false) {
+	bool enqueue(int port, const MidiScript::Message* msgs, size_t n, uint8_t channel, uint64_t tick, int trigPort = 0, uint32_t gen = 0, bool unload = false, const MidiScript::OutTag& tag = MidiScript::OutTag()) {
 		if (port < 0 || port >= NOUT) return false;
 		if (!isEnabled(port)) {
 			// Once per port, not per message.
@@ -661,8 +686,24 @@ struct MidiOutputs {
 			return false;
 		}
 		for (size_t i = 0; i < n; i++) {
-			queue.push(Entry{port, msgs[i], channel, tick, trigPort, gen, unload});
+			queue.push(Entry{port, msgs[i], channel, tick, trigPort, gen, unload, tag, false, MidiScript::CancelMode::ALL});
 		}
+		return true;
+	}
+
+	// Worker. Queues a cancel for `port` behind what the script already sent, so
+	// it applies in call order. True without queuing for a disabled port (nothing
+	// can be scheduled there); false, logged as OUTPUT_QUEUE_FULL, on a full queue.
+	bool enqueueCancel(int port, MidiScript::CancelMode mode, const MidiScript::Message& pattern, const MidiScript::OutGroup& group, uint32_t gen) {
+		if (port < 0 || port >= NOUT) return false;
+		if (!isEnabled(port)) return true;
+		if (queue.capacity() < 1) {
+			overflow.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		MidiScript::OutTag tag;
+		tag.group = group;
+		queue.push(Entry{port, pattern, 0, 0, 0, gen, false, tag, true, mode});
 		return true;
 	}
 
@@ -694,6 +735,13 @@ struct MidiOutputs {
 			// Taken from the slot by move: copying the entry out (shift())
 			// would allocate the message's bytes on this thread.
 			Entry& t = frontRing(queue);
+			if (t.cancel) {
+				// A replaced script's cancel has nothing left to cancel: the swap cleared it.
+				if (age == 0) ports[t.port].cancelScheduled(t.cancelMode, t.msg, t.tag.group);
+				budget -= CANCEL_WEIGHT - 1;
+				queue.start++;
+				continue;
+			}
 			bool unload = t.unload;
 			if (age < 0 && !unload && !isDue(t, frame)) {
 				queue.start++;
@@ -704,8 +752,9 @@ struct MidiOutputs {
 			uint8_t channel = t.channel;
 			uint64_t tick = t.tick;
 			int trigPort = t.trigPort;
+			MidiScript::OutTag tag = t.tag;
 			queue.start++;
-			ports[port].send(msg, channel, tick, trigPort, frame, unload);
+			ports[port].send(msg, channel, tick, trigPort, frame, unload, tag);
 		}
 		// All ports, not just enabled ones: a replaced script may have left framed
 		// messages behind.
@@ -740,7 +789,7 @@ struct MidiOutputs {
 	void flush(int64_t now) {
 		while (!queue.empty()) {
 			Entry& t = frontRing(queue);
-			if (!t.unload && !isDue(t, now)) {
+			if (t.cancel || (!t.unload && !isDue(t, now))) {
 				queue.start++;
 				continue;
 			}
@@ -1742,10 +1791,17 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
-	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) override {
+	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0, const MidiScript::OutTag& tag = MidiScript::OutTag()) override {
 		uint32_t gen = scriptGen.load(std::memory_order_relaxed);
 		if (unloading) return tick == 0 && sendMidiOnUnload(midiPort, msgs, count, gen);
-		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort, gen);
+		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort, gen, false, tag);
+	}
+
+	// MidiScriptEngineHandler — ignored in onUnload(), silently: the swap drops
+	// everything the old script scheduled anyway.
+	bool cancelMidi(int midiPort, MidiScript::CancelMode mode, const MidiScript::Message& pattern, const MidiScript::OutGroup& group) override {
+		if (unloading) return true;
+		return midiOuts.enqueueCancel(midiPort, mode, pattern, group, scriptGen.load(std::memory_order_relaxed));
 	}
 
 	// Worker, onUnload() of a replaced script (see beginUnload()), messages

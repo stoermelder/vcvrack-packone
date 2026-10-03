@@ -911,6 +911,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterMs", JS_NewCFunction(ctx, js_midiOut_sendAfterMs, "sendAfterMs", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAtFrame", JS_NewCFunction(ctx, js_midiOut_sendAtFrame, "sendAtFrame", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterTrigger", JS_NewCFunction(ctx, js_midiOut_sendAfterTrigger, "sendAfterTrigger", 3));
+		JS_SetPropertyStr(ctx, _midiOut, "cancel", JS_NewCFunction(ctx, js_midiOut_cancel, "cancel", 1));
 
 		JS_FreeValue(ctx, glob);
 	}
@@ -2295,7 +2296,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAfterMs: bad args");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(argNum(ctx, argv[1])));
+		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(argNum(ctx, argv[1])), 0, 0, 0, true);
 		return JS_UNDEFINED;
 	}
 
@@ -2304,7 +2305,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAtFrame: bad args");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, frameAtFrame(argNum(ctx, argv[1])));
+		// A negative frame means "now": a plain send, which cancel() leaves alone.
+		int64_t f = frameAtFrame(argNum(ctx, argv[1]));
+		e->sendEntry(e->msgStore[idx], e->selectedPort, f, 0, 0, 0, f >= 0);
 		return JS_UNDEFINED;
 	}
 
@@ -2323,6 +2326,22 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_rack_framesToMs(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "rack.framesToMs: bad args");
 		return JS_NewFloat64(ctx, getEngine(ctx)->framesToMs(argNum(ctx, argv[0])));
+	}
+
+	// midiOut.cancel([msg]) — drop scheduled messages on the selected port: all of
+	// them, or those with msg's address.
+	static JSValue js_midiOut_cancel(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		if (argc == 0) {
+			e->cancelEntry(nullptr);
+			return JS_UNDEFINED;
+		}
+		if (argc > 1) return jsThrow(ctx, "midiOut.cancel: bad args");
+		size_t idx;
+		if (!getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midiOut.cancel: invalid msg");
+		if (!isCancelPattern(e->msgStore[idx])) return jsThrow(ctx, "midiOut.cancel: message has no status byte");
+		e->cancelEntry(&e->msgStore[idx]);
+		return JS_UNDEFINED;
 	}
 
 	static JSValue js_midiOut_sendAfterTrigger(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
@@ -2358,7 +2377,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
 		// Read now, so the schedule is relative to the tick count at the call.
 		int64_t currentTicks = e->handler->getTrigTicks(trigPort - 1, channel - 1);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1, true);
 		return JS_UNDEFINED;
 	}
 

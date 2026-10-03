@@ -51,6 +51,10 @@ namespace __timing {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.timing.hpp"
 }
+namespace __cancel {
+	namespace Catch = ::Catch;
+	#include "MidiKit.test.cancel.hpp"
+}
 namespace __messagesbus {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.broadcast.bus.hpp"

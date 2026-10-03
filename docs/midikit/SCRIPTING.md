@@ -370,7 +370,7 @@ end
 
 `rack.onUnload()` runs right before the script's state is torn down — the script is being replaced, the module is reset, or the module is removed from the patch. It's the only reliable place to clean up notes a script left sounding, since nothing runs afterward to release them. It never runs on a plain patch save — a save is not a lifecycle event at all (see [Persistence](#persistence): a save just writes out whatever `rack.setConfig()` last published). Note the JavaScript version assigns it to the `rack` object — `rack.onUnload = function() {...}` — like the other hooks (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)).
 
-When the script is replaced or the module is reset, `rack.onUnload()` may only send MIDI right away with `midiOut.send()`; that output always goes out. Everything else it does that would outlive the script is ignored: messages scheduled for later (`sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`), trigger output writes and `trig.sendTipsy()`. Whatever the script scheduled earlier and is still waiting is dropped with it, and the trigger outputs go back to 0 V.
+When the script is replaced or the module is reset, `rack.onUnload()` may only send MIDI right away with `midiOut.send()`; that output always goes out. Everything else it does that would outlive the script is ignored: messages scheduled for later (`sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`), `midiOut.cancel()`, trigger output writes and `trig.sendTipsy()`. Whatever the script scheduled earlier and is still waiting is dropped with it, and the trigger outputs go back to 0 V.
 
 The example sends CC 123 (All Notes Off) on all 16 channels with one reused handle, instead of one note-off per note. With `midiOut.enableTiming()` a note-on sent just before may still be waiting in Rack's output queue; the module holds what `rack.onUnload()` sends behind it, so the all-notes-off can't overtake a note-on and leave a note stuck (see [Enabling sample-accurate timing](#enabling-sample-accurate-timing)).
 
@@ -1433,6 +1433,7 @@ The sending functions take no port argument: the destination is whatever `midiOu
 | `midiOut.sendAfterMs(msg, ms)` | delayed. The delay counts from the latest frame the module had processed when the script ran, or, with `enableTiming()`, from the frame of the event being handled. `-1` instead of a time means "after Rack's output queue": two audio blocks and a frame |
 | `midiOut.sendAtFrame(msg, frame)` | at an absolute engine frame, held until then. A negative frame means "now". Frames come from `rack.getEventFrame()` |
 | `midiOut.sendAfterTrigger(msg, ticks [, trigPort [, channel]])` | after `ticks` clock ticks counted from `trigPort` (1-based, default trig input 1) on `channel` (default 1) |
+| `midiOut.cancel([msg])` | nothing: withdraws messages scheduled with the three calls above, see [Cancelling scheduled messages](#cancelling-scheduled-messages) |
 
 **Every send call sends the message as it is at that moment.** It copies the message and sends the copy with its own schedule.
 
@@ -1450,6 +1451,59 @@ The sending functions take no port argument: the destination is whatever `midiOu
 | `sendAfterTrigger()` | 32 per trigger input channel | the message is sent at once, logged once per script |
 
 A delayed message that finds its queue full is sent at once instead of being dropped, because a dropped Note-Off would leave a note hanging. Release a long tail of delayed notes in steps, or keep the number of pending messages below these limits.
+
+#### Cancelling scheduled messages
+
+`midiOut.cancel()` withdraws messages that `midiOut.sendAfterMs()`, `midiOut.sendAtFrame()` or `midiOut.sendAfterTrigger()` are still holding. Like the send calls it works on the output last selected with `midiOut.selectPort()`.
+
+```js
+midiOut.cancel();       // everything scheduled on the selected output
+midiOut.cancel(msg);    // the scheduled messages with the same address as msg
+```
+
+```lua
+midiOut.cancel()
+midiOut.cancel(msg)
+```
+
+With a message, only its *address* is compared, never its value:
+
+| `msg` | A scheduled message matches if it has the same … |
+| --- | --- |
+| Note-Off, or Note-On with velocity 0 | Note-Off (either form), channel and note |
+| Note-On (velocity above 0) | Note-On (velocity above 0), channel and note |
+| Poly aftertouch | type, channel and note |
+| Control change | type, channel and controller number |
+| Program change, channel pressure, pitch bend | type and channel |
+| SysEx | any scheduled SysEx |
+| Other system messages (clock, start, stop, MTC …) | status byte |
+| NRPN or RPN handle | the whole NRPN/RPN with the same channel and parameter number |
+| 14-bit CC handle | the whole 14-bit CC with the same channel and MSB controller |
+
+- Note-On and Note-Off are different addresses: cancelling both takes two calls. A Note-On with velocity 0 counts as a Note-Off here, as in the MIDI specification, but `midi.isNoteOff()` does not: it only checks the Note-Off status.
+- A group is never split. `midiOut.cancel(cc)` with a plain CC 99 leaves a scheduled NRPN whole, and only a handle of the same NRPN removes it. Without an argument, groups are removed whole too.
+- It never touches `midiOut.send()`, not even with `midiOut.enableTiming()`, and nothing that has already left.
+- A pattern that matches nothing is not an error. A message without a status byte (a fresh `midi.create()`), an NRPN or 14-bit CC handle that was never set, a second argument and an argument that is not a message handle are errors.
+- Calls apply in order: `sendAfterMs(a, 10); cancel(); sendAfterMs(b, 10)` sends only `b`.
+- **It is asynchronous.** The cancel takes effect when the audio thread drains its queue (every 8 samples), not at the frame of the event: a message that is due before that still goes out.
+- Stuck notes are up to the script. Cancelling a Note-Off whose Note-On has already gone out leaves the note hanging.
+- In `rack.onUnload()` the call is ignored: the script's scheduled messages are dropped anyway.
+
+Retriggering a note whose scheduled Note-Off is still pending, so that the old release doesn't end the new note early:
+
+```js
+let off = midi.create();
+midi.setNoteOff(off, 1, 60);
+midiOut.cancel(off);               // the old scheduled release
+midiOut.send(off);                 // release now, then play the note again
+```
+
+```lua
+local off = midi.create()
+midi.setNoteOff(off, 1, 60)
+midiOut.cancel(off)
+midiOut.send(off)
+```
 
 ### Enabling sample-accurate timing
 

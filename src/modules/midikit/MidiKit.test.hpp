@@ -148,13 +148,21 @@ static std::string publishedConfigJson(MidiScriptEngine* se) {
 // switches and clearScript(); this mirrors the old signature so call sites
 // only need m->activeEngine->processOutMessage(...) / engine->processOutMessage(...)
 // rewritten to m->processOutMessage(...).
-static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& msg, int& ticks) {
-	if (m->midiOuts.queue.empty()) return false;
-	auto t = m->midiOuts.queue.shift();
-	midiPort = t.port;
-	msg = t.msg;
-	ticks = (int)t.tick;
-	return true;
+//
+// A midiOut.cancel() waits in the same queue. With `cancel` null it is skipped,
+// so it never shows up as a message; otherwise it is returned with *cancel =
+// true, `msg` the pattern (as queued) and `ticks` 0.
+static bool processOutMessage(MidiKitModule* m, int& midiPort, midi::Message& msg, int& ticks, bool* cancel = nullptr) {
+	while (!m->midiOuts.queue.empty()) {
+		auto t = m->midiOuts.queue.shift();
+		if (t.cancel && cancel == nullptr) continue;
+		midiPort = t.port;
+		msg = t.msg;
+		ticks = t.cancel ? 0 : (int)t.tick;
+		if (cancel != nullptr) *cancel = t.cancel;
+		return true;
+	}
+	return false;
 }
 
 // Drains the module log and returns it as one string.

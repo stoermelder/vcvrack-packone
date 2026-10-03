@@ -74,7 +74,12 @@ struct MidiScriptEngineHandler {
 	// only matters for sendAfterTrigger(); others pass 0). Worker thread.
 	// All-or-nothing: a group (NRPN: 4, 14-bit CC: 2) is never partially queued,
 	// so false means none were. Saturation is normal, not an error.
-	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) = 0;
+	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0, const OutTag& tag = OutTag()) = 0;
+
+	// midiOut.cancel(). Queued behind the messages already sent, applied on the
+	// audio thread when it drains the queue. Ignored in onUnload(). False only on
+	// a full queue, which is normal like sendMidi(). Worker thread.
+	virtual bool cancelMidi(int midiPort, CancelMode mode, const Message& pattern, const OutGroup& group) = 0;
 
 	// Queues a Tipsy message for output on the trigger CV; the audio thread
 	// encodes it. False if rejected or full, which is normal like sendMidi().
