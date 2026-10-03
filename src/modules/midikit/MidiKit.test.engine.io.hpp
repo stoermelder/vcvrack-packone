@@ -27,10 +27,10 @@ TEST_CASE("input.enable sets identical module state in both engines", "[MidiKit]
 	auto checkEnabled = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
-		using StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo;
+		using StoermelderPackOne::MidiScript::ScriptPortInfo;
 		bool enabled[4];
 		for (int i = 0; i < 4; i++) {
-			enabled[i] = reinterpret_cast<MidiScriptEnginePortInfo*>(m->inputInfos[i])->enabled;
+			enabled[i] = reinterpret_cast<ScriptPortInfo*>(m->inputInfos[i])->enabled;
 		}
 		Test::destroyModule(m);
 		return std::vector<bool>(enabled, enabled + 4);
@@ -346,10 +346,10 @@ TEST_CASE("param.enable sets identical module state in both engines", "[MidiKit]
 	auto checkEnabled = [](const std::string& script) {
 		MidiKitModule* m = createModule();
 		m->loadScript(script);
-		using StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity;
+		using StoermelderPackOne::MidiScript::ScriptParamQuantity;
 		bool enabled[4];
 		for (int i = 0; i < 4; i++) {
-			enabled[i] = reinterpret_cast<MidiScriptEngineParamQuantity*>(m->paramQuantities[i])->enabled;
+			enabled[i] = reinterpret_cast<ScriptParamQuantity*>(m->paramQuantities[i])->enabled;
 		}
 		Test::destroyModule(m);
 		return std::vector<bool>(enabled, enabled + 4);

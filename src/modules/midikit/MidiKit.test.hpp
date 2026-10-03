@@ -60,8 +60,8 @@ static bool configBool(const std::string& json, const char* key) {
 // Bypass the dylib factory — create directly so the injected worker is used
 // instead of the module's default async TaskWorker. Tests default to a
 // synchronous worker; the perf harness passes a real (async) worker.
-static MidiKitModule* createModule(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>()) {
-	MidiKitModule* m = new MidiKitModule(std::move(worker));
+static MidiKitModule* createModule(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>(), std::shared_ptr<StoermelderPackOne::MidiScript::BroadcastBus> bus = nullptr) {
+	MidiKitModule* m = new MidiKitModule(std::make_shared<StoermelderPackOne::MidiKit::WorkerDomain>(std::move(worker), std::move(bus)));
 	m->id = rand();
 	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
 	m->onSampleRateChange(e);

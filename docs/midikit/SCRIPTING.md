@@ -14,7 +14,7 @@ from the header, not the file extension.
   pass-through to context menus and assembled NRPN input
 - [Part 3 — API reference](#part-3--api-reference): every `rack.*` /
   `input.*` / `trig.*` / `param.*` / `midi.*` / `midiOut.*` / `number.*`
-  function, persistence, sample-accurate timing, and the MIDI status/type reference
+  function, persistence, messages between modules, sample-accurate timing, and the MIDI status/type reference
 - [Part 4 — Gotchas](#part-4--gotchas)
 
 ## Part 1 — Writing a script
@@ -614,26 +614,26 @@ JavaScript:
 config.channel = 1;
 
 rack.registerContextMenu({
-    type: "options",
-    label: "MIDI channel",
-    options: ["1", "2", "3"],
-    onGetValue: function() {
-        return config.channel - 1;
-    },
-    onChange: function(idx) {
-        config.channel = idx + 1;
-    }
+   type: "options",
+   label: "MIDI channel",
+   options: ["1", "2", "3"],
+   onGetValue: function() {
+      return config.channel - 1;
+   },
+   onChange: function(idx) {
+      config.channel = idx + 1;
+   }
 });
 
 rack.registerContextMenu({
-    type: "boolean",
-    label: "Pass through",
-    onGetValue: function() {
-        return config.passThrough;
-    },
-    onChange: function(checked) {
-        config.passThrough = checked;
-    }
+   type: "boolean",
+   label: "Pass through",
+   onGetValue: function() {
+      return config.passThrough;
+   },
+   onChange: function(checked) {
+      config.passThrough = checked;
+   }
 });
 ```
 
@@ -642,26 +642,26 @@ Lua:
 config.channel = 1
 
 rack.registerContextMenu({
-    type = "options",
-    label = "MIDI channel",
-    options = { "1", "2", "3" },
-    onGetValue = function()
-        return config.channel - 1
-    end,
-    onChange = function(idx)
-        config.channel = idx + 1
-    end
+   type = "options",
+   label = "MIDI channel",
+   options = { "1", "2", "3" },
+   onGetValue = function()
+      return config.channel - 1
+   end,
+   onChange = function(idx)
+      config.channel = idx + 1
+   end
 })
 
 rack.registerContextMenu({
-    type = "boolean",
-    label = "Pass through",
-    onGetValue = function()
-        return config.passThrough
-    end,
-    onChange = function(checked)
-        config.passThrough = checked
-    end
+   type = "boolean",
+   label = "Pass through",
+   onGetValue = function()
+      return config.passThrough
+   end,
+   onChange = function(checked)
+      config.passThrough = checked
+   end
 })
 ```
 
@@ -672,79 +672,184 @@ This is the assembled-input alternative to the manual "Send NRPN message"-style 
 JavaScript:
 ```js
 let config = {
-    map: [
-        { nrpnNumber: 0, ccNumber: 0 },
-        { nrpnNumber: 1, ccNumber: 1 },
-        { nrpnNumber: 2, ccNumber: 2 }
-    ],
-    ccChannel: 1
+   map: [
+      { nrpnNumber: 0, ccNumber: 0 },
+      { nrpnNumber: 1, ccNumber: 1 },
+      { nrpnNumber: 2, ccNumber: 2 }
+   ],
+   ccChannel: 1
 };
 
 function findCcNumber(nrpnNumber) {
-    let ccNumber = -1;
-    for (let i = 0; i < config.map.length; i++) {
-        if (config.map[i].nrpnNumber === nrpnNumber) {
-            ccNumber = config.map[i].ccNumber;
-            break;
-        }
-    }
-    return ccNumber;
+   let ccNumber = -1;
+   for (let i = 0; i < config.map.length; i++) {
+      if (config.map[i].nrpnNumber === nrpnNumber) {
+         ccNumber = config.map[i].ccNumber;
+         break;
+      }
+   }
+   return ccNumber;
 }
 
 midi.enableNrpnIn(1);
 
 midi.onNrpn = function(midiPort, msg) {
-    let nrpnNumber = midi.getControl(msg);
-    let nrpnValue = midi.getValue(msg);
+   let nrpnNumber = midi.getControl(msg);
+   let nrpnValue = midi.getValue(msg);
 
-    let ccNumber = findCcNumber(nrpnNumber);
-    if (ccNumber < 0) return;   // not in config.map — ignore
+   let ccNumber = findCcNumber(nrpnNumber);
+   if (ccNumber < 0) return;   // not in config.map — ignore
 
-    let cc14 = midi.createCc14bit();
-    midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128);
-    midiOut.send(cc14);
+   let cc14 = midi.createCc14bit();
+   midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128);
+   midiOut.send(cc14);
 };
 ```
 
 Lua:
 ```lua
 local config = {
-    map = {
-        { nrpnNumber = 0, ccNumber = 0 },
-        { nrpnNumber = 1, ccNumber = 1 },
-        { nrpnNumber = 2, ccNumber = 2 }
-    },
-    ccChannel = 1
+   map = {
+      { nrpnNumber = 0, ccNumber = 0 },
+      { nrpnNumber = 1, ccNumber = 1 },
+      { nrpnNumber = 2, ccNumber = 2 }
+   },
+   ccChannel = 1
 }
 
 local function findCcNumber(nrpnNumber)
-    local ccNumber = -1
-    for i = 1, #config.map do
-        if config.map[i].nrpnNumber == nrpnNumber then
-            ccNumber = config.map[i].ccNumber
-            break
-        end
-    end
-    return ccNumber
+   local ccNumber = -1
+   for i = 1, #config.map do
+      if config.map[i].nrpnNumber == nrpnNumber then
+         ccNumber = config.map[i].ccNumber
+         break
+      end
+   end
+   return ccNumber
 end
 
 midi.enableNrpnIn(1)
 
 midi.onNrpn = function(midiPort, msg)
-    local nrpnNumber = midi.getControl(msg)
-    local nrpnValue = midi.getValue(msg)
+   local nrpnNumber = midi.getControl(msg)
+   local nrpnValue = midi.getValue(msg)
 
-    local ccNumber = findCcNumber(nrpnNumber)
-    if ccNumber < 0 then return end   -- not in config.map, ignore
+   local ccNumber = findCcNumber(nrpnNumber)
+   if ccNumber < 0 then return end   -- not in config.map, ignore
 
-    local cc14 = midi.createCc14bit()
-    midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128)
-    midiOut.send(cc14)
+   local cc14 = midi.createCc14bit()
+   midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128)
+   midiOut.send(cc14)
 end
 ```
 
 **Note:** The shipped preset `NRPN to CC (assembled)` is this script with a context-menu channel selector added — see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc) for the full rules.
 
+
+### Broadcast a transport to other modules
+
+`rack.sendBroadcast(value)` hands a value to every other MIDI-KIT module whose script defines `rack.onBroadcast`, with no cable. Here one module turns the clock on its trigger input 1 into broadcasts, and sends start and stop from a "Running" item in its context menu. Another module turns them into MIDI clock, start and stop. Every broadcast has a topic, so a receiver can ignore what it does not know. See [Messages between modules](#messages-between-modules) for the rules, and the `Transport broadcaster` and `Transport follower` presets for the full scripts.
+
+Broadcaster, JavaScript:
+```js
+let running = false;
+
+function setRunning(value) {
+   running = value;
+   let state = running ? "start" : "stop";
+   let n = rack.sendBroadcast({ state: state }, "transport");
+   rack.log("Transport " + state + " sent to " + number.toString(n) + " module(s)");
+}
+
+rack.onLoad = function() {
+   trig.enableIn(1);
+   rack.registerContextMenu({
+      type: "boolean",
+      label: "Running",
+      onGetValue: function() { return running; },
+      onChange: function(checked) { setRunning(checked); }
+   });
+};
+rack.onUnload = function() {
+   if (running) setRunning(false);
+};
+trig.onTrigger = function(trigPort, channel) {
+   rack.sendBroadcast({}, "clock");
+};
+```
+
+Broadcaster, Lua:
+```lua
+local running = false
+
+local function setRunning(value)
+   running = value
+   local state = running and "start" or "stop"
+   local n = rack.sendBroadcast({ state = state }, "transport")
+   rack.log("Transport " .. state .. " sent to " .. number.toString(n) .. " module(s)")
+end
+
+function rack.onLoad()
+   trig.enableIn(1)
+   rack.registerContextMenu({
+      type = "boolean",
+      label = "Running",
+      onGetValue = function() return running end,
+      onChange = function(checked) setRunning(checked) end
+   })
+end
+function rack.onUnload()
+   if running then setRunning(false) end
+end
+function trig.onTrigger(trigPort, channel)
+   rack.sendBroadcast({}, "clock")
+end
+```
+
+Follower, JavaScript:
+```js
+function sendRaw(hex) {
+   let msg = midi.create();
+   midi.setRaw(msg, hex);
+   midiOut.send(msg);
+}
+
+rack.onBroadcast = function(msg, topic) {
+   if (topic === "clock") sendRaw("f8");
+   else if (topic === "transport") {
+      if (msg.state === "start") {
+         rack.log("Transport start");
+         sendRaw("fa");
+      }
+      else if (msg.state === "stop") {
+         rack.log("Transport stop");
+         sendRaw("fc");
+      }
+   }
+};
+```
+
+Follower, Lua:
+```lua
+local function sendRaw(hex)
+    local msg = midi.create()
+    midi.setRaw(msg, hex)
+    midiOut.send(msg)
+end
+
+function rack.onBroadcast(msg, topic)
+    if topic == "clock" then sendRaw("f8")
+    elseif topic == "transport" then
+        if msg.state == "start" then
+            rack.log("Transport start")
+            sendRaw("fa")
+        elseif msg.state == "stop" then
+            rack.log("Transport stop")
+            sendRaw("fc")
+        end
+    end
+end
+```
 
 ## Part 3 — API reference
 
@@ -766,7 +871,7 @@ local length = param.getValue(3, 0.5)   -- 0.5 on µKIT, where param 3 doesn't e
 
 `midi.onMessage`, `midi.onNrpn`, `midi.onRpn` and `midi.onCc14bit` are read
 from the `midi` object **exactly once**;
-`rack.onLoad` and `rack.onUnload` from the `rack` object; and
+`rack.onLoad`, `rack.onUnload` and `rack.onBroadcast` from the `rack` object; and
 `trig.onTrigger`/`trig.onTipsyMessage` from the `trig` object — all right
 after the script's top-level code finishes running. **Reassigning any of them
 afterward, from inside a callback or anywhere else, has no effect.** The
@@ -817,9 +922,10 @@ technique.
 | `rack.framesToMs(frames)` | the inverse: milliseconds in `frames` frames, not rounded. For example, a measured clock period in frames becomes a time (and a BPM) |
 | `rack.random()` | a random number in [0, 1), drawn from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed/determinism |
 | `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. Rejects a malformed key the same way as `setConfig()` — see [Persistence](#persistence) |
+| `rack.sendBroadcast(value [, topic])` | send `value`, with an optional string topic, to every other MIDI-KIT module whose script defines `rack.onBroadcast`, and return how many modules it was queued for. See [Messages between modules](#messages-between-modules) |
 | `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. Rejects a malformed key, a non-JSON-serializable value, one nested too deeply, or one that would push the whole config past its size cap — see [Persistence](#persistence) |
 
-`rack.onLoad`/`rack.onUnload` (script lifecycle) and
+`rack.onLoad`/`rack.onUnload` (script lifecycle), `rack.onBroadcast` ([Messages between modules](#messages-between-modules)) and
 `rack.registerContextMenu`/`rack.unregisterContextMenu` (below) are documented in their own subsections.
 
 #### Context menu — `rack.registerContextMenu`
@@ -832,34 +938,34 @@ variants:
 *Boolean toggle* — a single menu line with a checkmark:
 ```js
 rack.registerContextMenu({
-    type: "boolean",
-    label: "Velocity to CC",
-    onGetValue: function() {
-        // Return true/false: the checkmark is read lazily, when the
-        // menu is opened, so it always reflects the current state
-        // (e.g. a config restored by onLoad()).
-        return config.emitTrigger;
-    },
-    onChange: function(checked) {
-        // checked: true/false (boolean)
-    }
+   type: "boolean",
+   label: "Velocity to CC",
+   onGetValue: function() {
+      // Return true/false: the checkmark is read lazily, when the
+      // menu is opened, so it always reflects the current state
+      // (e.g. a config restored by onLoad()).
+      return config.emitTrigger;
+   },
+   onChange: function(checked) {
+      // checked: true/false (boolean)
+   }
 });
 ```
 *Options submenu* — a submenu with one entry per option, checkmark on the
 current selection:
 ```js
 rack.registerContextMenu({
-    type: "options",
-    label: "Out mode",
-    options: ["Internal", "External", "Both"],
-    onGetValue: function() {
-        // Return the selected index, read lazily when the menu is
-        // opened. Return the index, or -1 for no selection.
-        return config.outMode;
-    },
-    onChange: function(selectedIndex, selectedLabel) {
-        // selectedIndex: number, selectedLabel: string
-    }
+   type: "options",
+   label: "Out mode",
+   options: ["Internal", "External", "Both"],
+   onGetValue: function() {
+      // Return the selected index, read lazily when the menu is
+      // opened. Return the index, or -1 for no selection.
+      return config.outMode;
+   },
+   onChange: function(selectedIndex, selectedLabel) {
+      // selectedIndex: number, selectedLabel: string
+   }
 });
 ```
 Lua uses an equivalent table: `{ type = "boolean", label = "...",
@@ -923,17 +1029,17 @@ you like.
   key, merging in the wrong order):
 
   ```js
-  let config = {
-      channel:     rack.getConfig("channel", 1),
-      passThrough: rack.getConfig("passThrough", false)
-  };
+let config = {
+   channel:     rack.getConfig("channel", 1),
+   passThrough: rack.getConfig("passThrough", false)
+};
   ```
 
   ```lua
-  local config = {
-      channel     = rack.getConfig("channel", 1),
-      passThrough = rack.getConfig("passThrough", false)
-  }
+local config = {
+   channel     = rack.getConfig("channel", 1),
+   passThrough = rack.getConfig("passThrough", false)
+}
   ```
 
   `rack.onLoad()`/`rack.onUnload()` still exist and cover the rest of a
@@ -962,35 +1068,35 @@ changes:
 
 ```js
 let config = {
-    channel:     rack.getConfig("channel", 1),
-    passThrough: rack.getConfig("passThrough", false)
+   channel:     rack.getConfig("channel", 1),
+   passThrough: rack.getConfig("passThrough", false)
 };
 
 rack.registerContextMenu({
-    type: "boolean",
-    label: "Pass through",
-    onGetValue: function() { return config.passThrough; },
-    onChange: function(checked) {
-        config.passThrough = checked;
-        rack.setConfig("passThrough", checked);
-    }
+   type: "boolean",
+   label: "Pass through",
+   onGetValue: function() { return config.passThrough; },
+   onChange: function(checked) {
+      config.passThrough = checked;
+      rack.setConfig("passThrough", checked);
+   }
 });
 ```
 
 ```lua
 local config = {
-    channel     = rack.getConfig("channel", 1),
-    passThrough = rack.getConfig("passThrough", false)
+   channel     = rack.getConfig("channel", 1),
+   passThrough = rack.getConfig("passThrough", false)
 }
 
 rack.registerContextMenu({
-    type = "boolean",
-    label = "Pass through",
-    onGetValue = function() return config.passThrough end,
-    onChange = function(checked)
-        config.passThrough = checked
-        rack.setConfig("passThrough", checked)
-    end
+   type = "boolean",
+   label = "Pass through",
+   onGetValue = function() return config.passThrough end,
+   onChange = function(checked)
+      config.passThrough = checked
+      rack.setConfig("passThrough", checked)
+   end
 })
 ```
 
@@ -1006,6 +1112,40 @@ Notes:
 - Switching to a different script (loading a new one over the current one)
   starts that script with an empty config — persisted settings belong to the
   script that wrote them and are not carried over.
+
+### Messages between modules
+
+```js
+rack.sendBroadcast({ state: "start" }, "transport");   // returns the receiver count
+
+rack.onBroadcast = function(msg, topic) {
+   if (topic === "transport") { /* ... */ }
+};
+```
+
+```lua
+rack.sendBroadcast({ state = "start" }, "transport")  -- returns the receiver count
+
+function rack.onBroadcast(msg, topic)
+   if topic == "transport" then ... end
+end
+```
+
+- **Who receives.** Every *other* MIDI-KIT module whose script defines `rack.onBroadcast`. A script without the hook is ignored and does not count in the return value. Like every hook, `rack.onBroadcast` is read once at load (see [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time)), so defining it later has no effect. A module stops receiving when its script is replaced, cleared or removed.
+- **No self-echo.** A script never receives its own broadcast, even if it defines `rack.onBroadcast`.
+- **Values.** Anything `rack.setConfig()` accepts: booleans, numbers, strings, arrays and plain objects (tables in Lua), nested up to **4 levels**. A Lua table is an array when its keys are exactly 1..n, and an object otherwise. The receiver gets its own copy, never a reference to the sender's value. A function, a cyclic value or one nested too deeply is rejected: one line is logged, `0` is returned and the script keeps running. Calling `rack.sendBroadcast()` with no value is a script error.
+- **Size.** At most **4 KB** once serialized as JSON. A larger value is rejected the same way.
+- **Topic.** The optional second argument is a string of at most **64 bytes**, passed to the receiver as the second argument of `rack.onBroadcast(value, topic)`. It is `undefined` (QuickJs) / `nil` (Lua) if the sender gave none. A topic that is not a string, or is too long, is rejected like a bad value: one line is logged and `0` is returned.
+- **Routing is the script's job.** There is no subscription: every receiver gets every broadcast, whatever its topic, and its script ignores the topics it does not know.
+- **Delivery is asynchronous.** A broadcast is handled on the receiver's next processing pass, a few samples later, not before `rack.sendBroadcast()` returns. Messages from one sender arrive in send order. The order across receivers is not defined.
+- **Timing.** A receiver handling a broadcast sees the frame of the event that caused it, so `rack.getEventFrame()` and the `midiOut.send*()` placement in [timing mode](#enabling-sample-accurate-timing) refer to the sender's event. Outside an event (`rack.onLoad`, a context-menu callback) there is none, and `rack.getEventFrame()` is `-1`.
+- **Each receiver queues up to 16 broadcasts.** More than that between two passes are dropped, and "Broadcast input queue full" is logged once per episode.
+- **Bypass.** A bypassed module still sends and receives.
+- **No replay.** A module that loads after a broadcast never sees it. Scripts that need to catch up on state must ask for it. Which module sent a message is not available either; put an id in the value if you need one.
+- **Scope.** All MIDI-KIT modules that share the module worker. Today that is every MIDI-KIT module in the process.
+- **`rack.onLoad` and `rack.onUnload`.** Sending from `rack.onLoad()` announces a newly loaded module. A script that defines `rack.onBroadcast` can receive from other modules' `rack.onLoad()` during the same patch load. Sending from `rack.onUnload()` is allowed, and receivers handle the message after the sender is gone.
+
+**Do not reply unconditionally.** If two scripts both send from `rack.onBroadcast`, they keep answering each other forever: each reply is handled on the next pass, so the modules stay responsive, but they never stop. Reply only to requests, never to replies, for example by using a different topic for each.
 
 ### `number.*`
 `rescale(x, xMin, xMax, yMin, yMax [, curve])`,
@@ -1065,11 +1205,11 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
   `midiOut.*` senders, `sendTipsy` sends no MIDI: it is not routed through
   `midiOut.selectPort()` and does not consume a message-handle slot.
   ```js
-  trig.enableIn(1);
-  trig.onTrigger = function(trigPort, channel) {
+   trig.enableIn(1);
+   trig.onTrigger = function(trigPort, channel) {
       trig.sendTipsy("Hello Tipsy!");                              // mime defaults to "text/plain"
       trig.sendTipsy('{"label":"My snapshot","value":42}', "application/json");
-  };
+   };
   ```
 - `trig.enableTipsyIn([enabled])` — decode an incoming Tipsy stream from
   trigger input 1, delivering each completed message to `trig.onTipsyMessage`.
@@ -1085,9 +1225,9 @@ is in [Tipsy protocol — send and receive over CV](#tipsy-protocol--send-and-re
   `trig.onTrigger` continuously as the encoded voltages cross the trigger
   threshold.
   ```js
-  rack.onLoad = function() {
+   rack.onLoad = function() {
       trig.enableTipsyIn();        // decode from the trigger input
-  };
+   };
   ```
 - `trig.onTipsyMessage(data, mimeType)` — the Tipsy input callback, assigned
   on the `trig` object (resolved once at load, like the `rack` hooks). Called

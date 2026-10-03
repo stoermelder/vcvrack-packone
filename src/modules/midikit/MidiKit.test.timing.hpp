@@ -598,9 +598,11 @@ struct FrameProbeEngine : MidiScriptEngine {
 		int64_t frame;
 	};
 	std::vector<Seen> seen;
+	std::shared_ptr<StoermelderPackOne::MidiScript::WorkerDomain> ownedDomain;
 
 	explicit FrameProbeEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1) {
-		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		ownedDomain = std::make_shared<StoermelderPackOne::MidiScript::WorkerDomain>(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		setDomain(ownedDomain.get());
 	}
 
 	void processInMessage(int midiPort, const QueuedMessage& msg) override {
@@ -614,6 +616,7 @@ struct FrameProbeEngine : MidiScriptEngine {
 	void dispatchCc14bit(int midiPort, const QueuedMessage& q) override { seen.push_back({"cc14", currentInFrame}); }
 	void dispatchTrigger(int trigPort, uint8_t channel) override { seen.push_back({"trigger", currentInFrame}); }
 	void dispatchTipsyMessage(const TipsyMessage& msg) override { seen.push_back({"tipsy", currentInFrame}); }
+	void dispatchBroadcast(const StoermelderPackOne::MidiScript::InboundBroadcast&) override { }
 
 	void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) override { }
 	bool testScript(const std::string& script) override { return false; }

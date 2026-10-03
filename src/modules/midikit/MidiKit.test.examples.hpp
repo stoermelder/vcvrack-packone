@@ -221,7 +221,9 @@ static const PresetInfo PRESETS[] = {
 	{"creative/", "Euclidean rhythm generator", true},
 	{"creative/", "Keyboard split", true},
 	{"creative/", "Bouncing ball delay", true},
-	{"creative/", "Gravity well", true}
+	{"creative/", "Gravity well", true},
+	{"", "Transport broadcaster", false},   // trigger-clocked; broadcasts instead of sending MIDI
+	{"", "Transport follower", false}      // driven by broadcasts, not MIDI
 };
 
 // The two engine variants every preset ships in. Behavioural tests iterate
@@ -4357,4 +4359,68 @@ TEST_CASE("Preset context-menu settings survive a save/reload round-trip", "[Mid
 	}
 
 	Test::destroyModule(m);
+}
+
+
+// Broadcaster and follower on two modules sharing a bus, in every engine pairing.
+// Output is realtime MIDI, whose status nibble is 0xf and whose channel field is
+// the low nibble of the status byte: F8 clock = 8, FA start = 10, FC stop = 12.
+TEST_CASE("'Transport broadcaster' and 'Transport follower' relay clock, start and stop", "[MidiKit][Broadcast][TransportRelay]") {
+	for (const char* broadcasterEngine : ENGINES) {
+		for (const char* followerEngine : ENGINES) {
+			CATCH_INFO("broadcaster " << broadcasterEngine << ", follower " << followerEngine);
+			auto bus = std::make_shared<StoermelderPackOne::MidiScript::BroadcastBus>();
+			auto worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>();
+			MidiKitModule* follower = createModule(worker, bus);
+			MidiKitModule* broadcaster = createModule(worker, bus);
+			follower->loadScript(readFile(repoRoot() + "/" + presetPath(requirePreset("Transport follower"), followerEngine)));
+			drainLog(follower);
+
+			broadcaster->loadScript(readFile(repoRoot() + "/" + presetPath(requirePreset("Transport broadcaster"), broadcasterEngine)));
+			REQUIRE(drainLog(broadcaster).find("rror") == std::string::npos);
+
+			auto pump = [&]() {
+				follower->host.getActiveEngine()->process();
+				return drainOut(follower);
+			};
+
+			// Nothing is sent until the "Running" menu item is switched on.
+			REQUIRE(pump().empty());
+			int runningCallback = -1;
+			broadcaster->host.getActiveEngine()->getContextMenus([&](const std::vector<ScriptMenuItem>& specs) {
+				for (const ScriptMenuItem& spec : specs) {
+					if (spec.label == "Running") runningCallback = spec.callbackId;
+				}
+			});
+			// The query waits in the low-priority lane until the engine's next pass.
+			broadcaster->host.getActiveEngine()->process();
+			REQUIRE(runningCallback >= 0);
+			broadcaster->host.getActiveEngine()->invokeContextMenuCallback(runningCallback, 1);
+			REQUIRE(drainLog(broadcaster).find("Transport start sent to 1 module(s)") != std::string::npos);
+			std::vector<OutEvent> out = pump();
+			REQUIRE(out.size() == 1);
+			REQUIRE(out[0].status == 0xf);
+			REQUIRE(out[0].channel == 10);
+			REQUIRE(drainLog(follower).find("Transport start") != std::string::npos);
+
+			// A trigger pulse is a clock.
+			broadcaster->host.getActiveEngine()->processInTick(0, 0);
+			broadcaster->host.getActiveEngine()->process();
+			out = pump();
+			REQUIRE(out.size() == 1);
+			REQUIRE(out[0].channel == 8);
+
+			// Clearing the script runs onUnload(), which stops a running transport.
+			broadcaster->loadScript("");
+			out = pump();
+			REQUIRE(out.size() == 1);
+			REQUIRE(out[0].channel == 12);
+			std::string log = drainLog(follower);
+			REQUIRE(log.find("Transport stop") != std::string::npos);
+			REQUIRE(log.find("rror") == std::string::npos);
+
+			Test::destroyModule(broadcaster);
+			Test::destroyModule(follower);
+		}
+	}
 }

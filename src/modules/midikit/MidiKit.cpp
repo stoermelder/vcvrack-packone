@@ -1,5 +1,6 @@
 #include "LogDispatcher.hpp"
 #include "MidiScriptEngine.hpp"
+#include "MidiScriptUi.hpp"
 #include "MidiScriptEngineLua.hpp"
 #include "MidiScriptEngineQuickJs.hpp"
 #include "../../components/Knobs.hpp"
@@ -1126,16 +1127,19 @@ struct MidiKitMicroConfig {
 };
 
 
-// The one async worker shared by all MidiKit modules; the weak_ptr lets it die
-// with the last module. Unguarded: modules are constructed on the UI thread only.
-static std::shared_ptr<ITaskWorker> defaultWorker() {
-	static std::weak_ptr<ITaskWorker> shared;
-	if (shared.expired()) {
-		auto worker = std::make_shared<MpmcTaskWorker>("MidiKit worker");
-		shared = worker;
-		return worker;
+using MidiScript::WorkerDomain;
+
+// The domain of all modules built without one. Unguarded: modules are
+// constructed on the UI thread only. The weak_ptr lets it die with the last
+// module.
+static std::shared_ptr<WorkerDomain> defaultDomain() {
+	static std::weak_ptr<WorkerDomain> shared;
+	std::shared_ptr<WorkerDomain> domain = shared.lock();
+	if (!domain) {
+		domain = std::make_shared<WorkerDomain>();
+		shared = domain;
 	}
-	return shared.lock();
+	return domain;
 }
 
 
@@ -1157,20 +1161,39 @@ struct ScriptHost {
 	MidiScript::Lua::MidiScriptEngineLua seLua;
 	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
 
-	// The worker that runs all script code, shared by the host and both engines:
-	// defaultWorker() unless one is injected (tests).
-	std::shared_ptr<ITaskWorker> worker;
+	// The worker that runs all script code and the broadcast bus, shared by the
+	// host and both engines: the default domain unless one is injected (tests).
+	std::shared_ptr<WorkerDomain> domain;
 
 	/** [Stored to JSON] */
 	std::string script = "";
 
-	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, const PortCounts& c, std::shared_ptr<ITaskWorker> worker = nullptr)
+	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, const PortCounts& c, std::shared_ptr<WorkerDomain> domain = nullptr)
 		: seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
 		  seQuickJs(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
-		  worker(worker ? std::move(worker) : defaultWorker()) {
+		  domain(domain ? std::move(domain) : defaultDomain()) {
 		// The member: the parameter is moved from.
-		seLua.setWorker(this->worker);
-		seQuickJs.setWorker(this->worker);
+		seLua.setDomain(this->domain.get());
+		seQuickJs.setDomain(this->domain.get());
+	}
+
+	// Removes both engines from the bus. Idempotent. Needed when an unload never
+	// ran (it can time out, and the module is then destroyed anyway), so that
+	// send() cannot reach a destroyed engine. The module calls it from its own
+	// destructor, while the handler is still intact: a send() that finds a full
+	// queue calls handler->writeLog().
+	void leaveBus() {
+		domain->bus->leave(&seLua);
+		domain->bus->leave(&seQuickJs);
+	}
+
+	// Replaces the domain of the host and both engines together (tests: a worker
+	// whose tasks the test runs by hand). Nothing may be queued on the old worker
+	// that still has to run.
+	void setDomain(std::shared_ptr<WorkerDomain> d) {
+		seLua.setDomain(d.get());
+		seQuickJs.setDomain(d.get());
+		domain = std::move(d);
 	}
 
 	MidiScript::MidiScriptEngine* getActiveEngine() const {
@@ -1190,7 +1213,7 @@ struct ScriptHost {
 
 	// Queues `task` on the worker; false if the queue was full.
 	bool runOnWorker(std::function<void()> task) {
-		return worker->work(std::move(task), APP);
+		return domain->worker->work(std::move(task), APP);
 	}
 
 	// Queues `task` and blocks until it has run. False if it never ran or did not
@@ -1608,10 +1631,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// onUnload() still reads them, endUnload() clears them.
 	void bindPortsAndParams(MidiScript::MidiScriptEngine* engine) {
 		for (int i = 0; i < CV_INPUTS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->se = engine;
+			reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->se = engine;
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->se = engine;
+			reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->se = engine;
 		}
 	}
 
@@ -1620,10 +1643,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// which still reads them (see endUnload()).
 	void disablePortsAndParams() {
 		for (int i = 0; i < CV_INPUTS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = false;
+			reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->enabled = false;
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = false;
+			reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->enabled = false;
 		}
 	}
 
@@ -1647,7 +1670,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void enableInput(int i) override {
 		if (i < 0 || i >= CV_INPUTS) return;
-		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = true;
+		reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler — midi.enablePorts() / midiOut.enablePorts()
@@ -1742,7 +1765,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	float getInputVoltage(int i, uint8_t ch) override {
 		if (i < 0 || i >= CV_INPUTS || ch >= PORT_MAX_CHANNELS) return 0.f;
-		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled)
+		if (reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->enabled)
 			return inputs[INPUT + i].getVoltage(ch);
 		return 0.f;
 	}
@@ -1785,13 +1808,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void enableParam(int i) override {
 		if (i < 0 || i >= PARAMS) return;
-		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = true;
+		reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler
 	float getParamValue(int i) override {
 		if (i < 0 || i >= PARAMS) return 0.f;
-		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled)
+		if (reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->enabled)
 			return params[PARAM + i].getValue();
 		return 0.f;
 	}
@@ -1946,10 +1969,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return PortCounts{ CONFIG::cvInputs, CONFIG::trigInputs, CONFIG::trigOutputs, CONFIG::params, CONFIG::midiInputs, CONFIG::midiOutputs };
 	}
 
-	// `worker`: injected by tests; null runs scripts on the shared default worker
+	// A domain around an injected worker with a private bus: what most tests need.
+	explicit MidiKitModuleBase(std::shared_ptr<ITaskWorker> worker)
+		: MidiKitModuleBase(std::make_shared<WorkerDomain>(std::move(worker))) {}
+
+	// `domain`: injected by tests; null runs scripts on the shared default domain
 	// (see ScriptHost).
-	explicit MidiKitModuleBase(std::shared_ptr<ITaskWorker> worker = nullptr)
-		: host(this, portCounts(), std::move(worker)) {
+	explicit MidiKitModuleBase(std::shared_ptr<WorkerDomain> domain = nullptr)
+		: host(this, portCounts(), std::move(domain)) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// Wire the trigger ports into TriggerInputs/TriggerOutputs so they can
@@ -1964,10 +1991,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			configOutput(OUTPUT_TRIG + i, TRIG_OUTPUTS > 1 ? string::f("Trigger %d", i + 1) : "Trigger");
 		}
 		for (int i = 0; i < CV_INPUTS; i++) {
-			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i);
+			configInput<MidiScript::ScriptPortInfo>(INPUT + i);
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f);
+			configParam<MidiScript::ScriptParamQuantity>(PARAM + i, 0.f, 1.f, 0.f);
 		}
 		// No engine is loaded yet — bind to null (clears the UI state); it is
 		// bound to the active engine by loadScript() once a script loads.
@@ -1998,6 +2025,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// — preserve that order, it is what makes the drain safe.
 	void onRemove(const RemoveEvent& e) override {
 		host.unload();        // closes + nulls the active engine (blocking)
+		host.leaveBus();
 		flushMidiOut();
 	}
 
@@ -2256,72 +2284,6 @@ struct LogDisplay : LedTextDisplay {
 	}
 };
 
-// Placeholder menu entry that builds the script-registered items
-// (rack.registerContextMenu) asynchronously. getContextMenus() evaluates each
-// item's onGetValue callback on the worker thread and then invokes its
-// callback with the evaluated specs.
-template <typename MODULE>
-struct ScriptContextMenuItems : ui::MenuEntry {
-	struct Context {
-		std::vector<MidiScript::ScriptMenuItem> specs;
-		std::atomic<bool> loaded{false};
-	};
-	MODULE* module;
-	std::shared_ptr<Context> ctx;
-	bool built = false;
-
-	ScriptContextMenuItems(MODULE* module) : module(module) {
-		box.size.y = 0.f;
-		ctx = std::make_shared<Context>();
-		// Capture a local copy: Apple's Clang rejects capturing the data
-		// member `ctx` by name in a capture list.
-		std::shared_ptr<Context> c = ctx;
-		module->host.getActiveEngine()->getContextMenus([c](const std::vector<MidiScript::ScriptMenuItem>& specs) {
-			// Runs on the worker thread once every onGetValue has been
-			// evaluated. Only publishes the specs; the menu widgets are
-			// constructed by step() on the UI thread.
-			c->specs = specs;
-			c->loaded.store(true, std::memory_order_release);
-		});
-	}
-
-	void step() override {
-		if (!built && ctx->loaded.load(std::memory_order_acquire)) {
-			built = true;
-			buildItems();
-			requestDelete();
-		}
-		ui::MenuEntry::step();
-	}
-
-	void buildItems() {
-		Menu* menu = dynamic_cast<Menu*>(parent);
-		if (!menu) return;
-		MODULE* m = module;
-		Widget* anchor = this;
-		for (const MidiScript::ScriptMenuItem& spec : ctx->specs) {
-			Widget* item;
-			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
-				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
-					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
-				});
-			}
-			else {
-				item = createSubmenuItem(spec.label, "", [m, spec](Menu* sub) {
-					for (size_t i = 0; i < spec.options.size(); i++) {
-						sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [m, spec, i]() {
-							m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
-						}));
-					}
-				});
-			}
-			menu->addChildAbove(item, anchor);
-			anchor = item;
-		}
-	}
-};
-
-
 // Widget base for all variants: log display, overlay, script menu and file
 // handling. Derived widgets add their controls after construction using the
 // add*() helpers below.
@@ -2329,7 +2291,7 @@ template <typename CONFIG>
 struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, OverlayMessageProvider {
 	using MODULE = MidiKitModuleBase<CONFIG>;
 	using BASE = ThemedModuleWidget<MODULE>;
-	using ScriptContextMenuItems = ScriptContextMenuItems<MODULE>;
+	using ScriptContextMenuItems = MidiScript::ScriptContextMenuItems<MODULE>;
 	// Members of the dependent base need an explicit qualifier.
 	using BASE::module;
 	using BASE::box;

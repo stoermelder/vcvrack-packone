@@ -470,7 +470,7 @@ TEST_CASE("MidiKit N-engine contention on one TaskWorker", "[perf]") {
 // message out); these measure the two paths that still run when idle:
 //   1. MidiKitModule::process() on the audio thread, every sample, whether or
 //      not any message/tick is pending.
-//   2. MidiScriptEnginePortInfo::getName() / MidiScriptEngineParamQuantity::
+//   2. ScriptPortInfo::getName() / ScriptParamQuantity::
 //      getDisplayValueString(), which the Rack UI polls every frame for any
 //      hovered port/param tooltip (see ParamTooltip::step()/PortTooltip::
 //      step() in Rack's app/ParamWidget.cpp / PortWidget.cpp) -- each poll
@@ -588,8 +588,8 @@ TEST_CASE("MidiKit idle UI polling cost: getDisplayValueString/getName with scri
 	m->enableParam(0);
 
 	const int N = 1000; // simulate 1000 UI frames (~16s at 60Hz)
-	auto* pi = reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[0]);
-	auto* pq = reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[0]);
+	auto* pi = reinterpret_cast<StoermelderPackOne::MidiScript::ScriptPortInfo*>(m->inputInfos[0]);
+	auto* pq = reinterpret_cast<StoermelderPackOne::MidiScript::ScriptParamQuantity*>(m->paramQuantities[0]);
 
 	auto start = Clock::now();
 	for (int i = 0; i < N; i++) {

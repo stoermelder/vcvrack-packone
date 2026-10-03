@@ -136,6 +136,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	int onCc14bitRef = LUA_NOREF;
 	int onTriggerRef = LUA_NOREF;
 	int onTipsyMessageRef = LUA_NOREF;
+	// rack.onBroadcast. Defined at load means the engine receives broadcasts.
+	int onBroadcastRef = LUA_NOREF;
 	int onLoadRef = LUA_NOREF;
 	int onUnloadRef = LUA_NOREF;
 
@@ -318,6 +320,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (lua_istable(L, -1)) {
 			onLoadRef = cacheHookRef("onLoad");
 			onUnloadRef = cacheHookRef("onUnload");
+			onBroadcastRef = cacheHookRef("onBroadcast");
 		}
 		lua_pop(L, 1); // pop rack table (or whatever "rack" turned out to be)
 
@@ -339,6 +342,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		if (onMessageRef == LUA_NOREF) {
 			handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+		}
+
+		// Before onLoad(), so broadcasts sent from other modules' onLoad() during the
+		// same patch load are not lost.
+		if (onBroadcastRef != LUA_NOREF && domain) {
+			domain->bus->join(this);
 		}
 
 		callOnLoad();
@@ -376,6 +385,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			onTipsyMessageRef = LUA_NOREF;
 			onLoadRef = LUA_NOREF;
 			onUnloadRef = LUA_NOREF;
+			onBroadcastRef = LUA_NOREF;
 			// Disarm the hook first: lua_close runs finalizers with no pcall
 			// boundary, where a hook luaL_error would longjmp nowhere.
 			hookArmed = false;
@@ -385,6 +395,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			// relying on every allocatedBytes reader to guard on L itself.
 			allocatedBytes.store(0, std::memory_order_relaxed);
 		}
+		if (domain) domain->bus->leave(this);
 		discardInQueues();
 		handler->endUnload();
 	}
@@ -886,6 +897,35 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Dispatches onTipsyMessage(data, mimeType) via the cached onTipsyMessageRef.
 	// No-op if never defined. `data` is pushed with an explicit length so NUL
 	// bytes survive — Lua strings are not NUL-terminated.
+	// Dispatches onBroadcast(value, topic) via the cached onBroadcastRef. The value
+	// is converted into a fresh Lua value, never shared with the sender. The topic
+	// is nil when the sender gave none.
+	void dispatchBroadcast(const MidiScript::InboundBroadcast& msg) override {
+		if (!L) return;
+		if (onBroadcastRef == LUA_NOREF) return;
+
+		lua_rawgeti(L, LUA_REGISTRYINDEX, onBroadcastRef);
+		if (!pushJsonAsLua(L, msg.value.get())) {
+			lua_pop(L, 1); // pop the function
+			handler->writeLog("onBroadcast: value could not be converted (ignored)");
+			return;
+		}
+		if (msg.hasTopic) lua_pushlstring(L, msg.topic.data(), msg.topic.size());
+		else lua_pushnil(L);
+		beginStore(0);
+		inCallback = true;
+		beginScriptExecution();
+		int status = lua_pcall(L, 2, 0, 0);
+		inCallback = false;
+		if (status != LUA_OK) {
+			const char* err = lua_tostring(L, -1);
+			handler->writeLog(string::f("onBroadcast error: %s", err ? err : "(unknown)"));
+			lua_pop(L, 1); // pop error message
+		}
+
+		checkMemoryLimit();
+	}
+
 	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
 		if (!L) return;
 		if (onTipsyMessageRef == LUA_NOREF) return;
@@ -987,6 +1027,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("unregisterContextMenu", lua_rack_unregisterContextMenu);
 		setTableFunc("getConfig", lua_rack_getConfig);
 		setTableFunc("setConfig", lua_rack_setConfig);
+		setTableFunc("sendBroadcast", lua_rack_sendBroadcast);
 		lua_setglobal(L, "rack");
 
 		// ── number table ─────────────────────────────────────────────────────
@@ -1375,6 +1416,39 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		e->setConfigValue(key, val); // takes ownership of val
 		return 0;
+	}
+
+	// rack.sendBroadcast(value [, topic]) — sends `value`, with an optional string
+	// topic, to every other module whose script defines rack.onBroadcast, and
+	// returns how many it reached. Same value rules as setConfig(); a value or
+	// topic that is rejected or too large is logged, returns 0 and the script
+	// keeps running. No argument is a script error.
+	static int lua_rack_sendBroadcast(lua_State* L) {
+		auto* e = getEngine(L);
+		assert(e->onWorkerThread());
+		// Before any C++ object exists: luaL_error longjmps past destructors.
+		if (lua_gettop(L) < 1) return luaL_error(L, "sendBroadcast: requires a value");
+		std::string topic;
+		bool hasTopic = false;
+		if (!lua_isnoneornil(L, 2)) {
+			if (lua_type(L, 2) != LUA_TSTRING) {
+				e->handler->writeLog("sendBroadcast: topic must be a string (ignored)");
+				lua_pushinteger(L, 0);
+				return 1;
+			}
+			size_t len = 0;
+			const char* t = lua_tolstring(L, 2, &len);
+			topic.assign(t, len);
+			hasTopic = true;
+		}
+		json_t* val = luaValueToJson(L, 1);
+		if (!val) {
+			e->handler->writeLog("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
+			lua_pushinteger(L, 0);
+			return 1;
+		}
+		lua_pushinteger(L, e->sendBroadcast(val, hasTopic ? &topic : nullptr)); // takes ownership of val
+		return 1;
 	}
 
 	// ── number.* ──────────────────────────────────────────────────────────────

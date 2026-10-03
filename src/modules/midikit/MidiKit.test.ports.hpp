@@ -294,7 +294,7 @@ end
 )";
 
 TEST_CASE("Variant: onUnload() still reads the params its script enabled", "[MidiKit][Variant]") {
-	using StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity;
+	using StoermelderPackOne::MidiScript::ScriptParamQuantity;
 	for (const char* script : {JS_UNLOAD_READS_PARAM, LUA_UNLOAD_READS_PARAM}) {
 		for (int viaReset = 0; viaReset < 2; viaReset++) {
 			CATCH_INFO(script);
@@ -304,7 +304,7 @@ TEST_CASE("Variant: onUnload() still reads the params its script enabled", "[Mid
 			MultiModule* m = mods.create();
 			m->loadScript(script);
 			probes(m);   // drop load-time entries
-			auto* pq = reinterpret_cast<MidiScriptEngineParamQuantity*>(m->paramQuantities[MultiModule::PARAM]);
+			auto* pq = reinterpret_cast<ScriptParamQuantity*>(m->paramQuantities[MultiModule::PARAM]);
 			REQUIRE(pq->enabled);
 			m->params[MultiModule::PARAM].setValue(0.5f);
 
@@ -588,7 +588,7 @@ TEST_CASE("Variant: UI queries are drained one per task and never flood the work
 	MultiModule* m = mods.create();
 	auto worker = std::make_shared<DeferredWorker>();
 	StoermelderPackOne::MidiScript::MidiScriptEngine& e = m->host.seQuickJs;
-	e.setWorker(worker);
+	m->host.setDomain(std::make_shared<StoermelderPackOne::MidiScript::WorkerDomain>(worker));
 
 	int ran = 0;
 	for (int i = 0; i < 3; i++) REQUIRE(e.runLowPriority([&]() { ran++; }));
@@ -609,6 +609,10 @@ TEST_CASE("Variant: UI queries are drained one per task and never flood the work
 	REQUIRE(ran == 3);
 	e.process();
 	REQUIRE(worker->tasks.size() == 3);   // lane empty: nothing more scheduled
+
+	// Back to a synchronous worker, so the teardown's unload runs inline instead
+	// of waiting out its timeout on a worker that never runs it.
+	m->host.setDomain(std::make_shared<StoermelderPackOne::MidiScript::WorkerDomain>(std::make_shared<StoermelderPackOne::SyncTaskWorker>()));
 }
 
 TEST_CASE("Variant: a full UI query lane drops instead of blocking", "[MidiKit][Variant][UiQuery]") {

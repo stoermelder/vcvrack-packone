@@ -417,8 +417,11 @@ struct RecordingEngine : MidiScriptEngine {
 	// is module-owned now, so a double would have to reimplement the thing
 	// under test. A worker is not optional: every engine needs one before any
 	// dispatch path (including host.unload() from onRemove()) can run.
+	std::shared_ptr<StoermelderPackOne::MidiScript::WorkerDomain> ownedDomain;
+
 	explicit RecordingEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1), module(module) {
-		setWorker(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		ownedDomain = std::make_shared<StoermelderPackOne::MidiScript::WorkerDomain>(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		setDomain(ownedDomain.get());
 	}
 
 	void process() override {
@@ -451,6 +454,7 @@ struct RecordingEngine : MidiScriptEngine {
 	void dispatchCc14bit(int midiPort, const StoermelderPackOne::MidiScript::QueuedMessage& q) override { }
 	void dispatchTrigger(int trigPort, uint8_t channel) override { }
 	void dispatchTipsyMessage(const StoermelderPackOne::MidiScript::TipsyMessage& msg) override { }
+	void dispatchBroadcast(const StoermelderPackOne::MidiScript::InboundBroadcast&) override { }
 	std::string getInputName(int i) override { return ""; }
 	std::string getParamName(int i) override { return ""; }
 	std::string getParamFormatValue(int i) override { return ""; }

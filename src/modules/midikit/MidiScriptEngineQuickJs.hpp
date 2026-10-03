@@ -103,6 +103,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSValue onCc14bitFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
 	JSValue onTipsyMessageFn = JS_UNDEFINED;
+	// rack.onBroadcast. Defined at load means the engine receives broadcasts.
+	JSValue onBroadcastFn = JS_UNDEFINED;
 	JSValue onLoadFn = JS_UNDEFINED;
 	JSValue onUnloadFn = JS_UNDEFINED;
 
@@ -259,6 +261,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsObject(rackObj)) {
 				onLoadFn = cacheCallableProp(rackObj, "onLoad");
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
+				onBroadcastFn = cacheCallableProp(rackObj, "onBroadcast");
 			}
 			else {
 				JS_FreeValue(ctx, rackObj);
@@ -290,6 +293,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsUndefined(onMessageFn)) {
 				handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
+
+			// Before onLoad(), so broadcasts sent from other modules' onLoad() during
+			// the same patch load are not lost.
+			if (!JS_IsUndefined(onBroadcastFn) && domain) {
+				domain->bus->join(this);
+			}
+
 			// No argument: config is restored via rack.getConfig() (installed
 			// into workingConfig before load, above), not passed as a hook
 			// parameter.
@@ -330,6 +340,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, onTipsyMessageFn);
 			JS_FreeValue(ctx, onLoadFn);
 			JS_FreeValue(ctx, onUnloadFn);
+			JS_FreeValue(ctx, onBroadcastFn);
 			rackObj = JS_UNDEFINED;
 			midiObj = JS_UNDEFINED;
 			trigObj = JS_UNDEFINED;
@@ -341,6 +352,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			onTipsyMessageFn = JS_UNDEFINED;
 			onLoadFn = JS_UNDEFINED;
 			onUnloadFn = JS_UNDEFINED;
+			onBroadcastFn = JS_UNDEFINED;
 			// publishedConfig/workingConfig are deliberately left untouched
 			// here: a save racing this teardown must still persist the last
 			// known config, not an empty one.
@@ -350,6 +362,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			rt = NULL;
 			heapBytes.store(0, std::memory_order_relaxed);
 		}
+		if (domain) domain->bus->leave(this);
 		discardInQueues();
 		handler->endUnload();
 	}
@@ -527,6 +540,34 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Dispatches onTipsyMessage(data, mimeType) when a Tipsy message finishes
 	// decoding. No-op if never defined. `data` is a string; binary payloads
 	// survive intact (JS strings hold arbitrary 16-bit code units).
+	// Dispatches onBroadcast(value, topic) via the cached onBroadcastFn, with
+	// rackObj as thisVal. The value is converted into a fresh JS value, never
+	// shared with the sender. The topic is undefined when the sender gave none.
+	void dispatchBroadcast(const MidiScript::InboundBroadcast& msg) override {
+		if (!ctx || JS_IsUndefined(onBroadcastFn)) return;
+		beginStore(0);
+		inCallback = true;
+		beginScriptExecution();
+		JSValue args[2] = {
+			jsonToJsValue(ctx, msg.value.get()),
+			msg.hasTopic ? JS_NewStringLen(ctx, msg.topic.data(), msg.topic.size()) : JS_UNDEFINED
+		};
+		JSValue r = JS_Call(ctx, onBroadcastFn, rackObj, 2, args);
+		JS_FreeValue(ctx, args[0]);
+		JS_FreeValue(ctx, args[1]);
+		inCallback = false;
+		if (JS_IsException(r)) {
+			JS_FreeValue(ctx, r);
+			JSValue exc = JS_GetException(ctx);
+			handler->writeLog(string::f("onBroadcast error: %s", jsToStdString(exc).c_str()));
+			JS_FreeValue(ctx, exc);
+		}
+		else {
+			JS_FreeValue(ctx, r);
+		}
+		publishMemoryUsage();
+	}
+
 	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
 		if (ctx) {
 			beginStore(0);
@@ -759,6 +800,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "getConfig", JS_NewCFunction(ctx, js_rack_getConfig, "getConfig", 2));
 		JS_SetPropertyStr(ctx, _rack, "setConfig", JS_NewCFunction(ctx, js_rack_setConfig, "setConfig", 2));
+		JS_SetPropertyStr(ctx, _rack, "sendBroadcast", JS_NewCFunction(ctx, js_rack_sendBroadcast, "sendBroadcast", 2));
 
 		// number
 		JSValue _number = JS_NewObject(ctx);
@@ -1292,6 +1334,33 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		e->setConfigValue(key, val); // takes ownership of val
 		return JS_UNDEFINED;
+	}
+
+	// rack.sendBroadcast(value [, topic]) — sends `value`, with an optional string
+	// topic, to every other module whose script defines rack.onBroadcast, and
+	// returns how many it reached. Same value rules as setConfig(); a value or
+	// topic that is rejected or too large is logged, returns 0 and the script
+	// keeps running. No argument (or undefined) is a script error.
+	static JSValue js_rack_sendBroadcast(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		assert(e->onWorkerThread());
+		if (argc < 1 || JS_IsUndefined(argv[0])) return JS_ThrowTypeError(ctx, "sendBroadcast: requires a value");
+		std::string topic;
+		bool hasTopic = false;
+		if (argc >= 2 && !JS_IsUndefined(argv[1])) {
+			if (!JS_IsString(argv[1])) {
+				e->handler->writeLog("sendBroadcast: topic must be a string (ignored)");
+				return JS_NewInt32(ctx, 0);
+			}
+			topic = e->jsToStdString(argv[1]);
+			hasTopic = true;
+		}
+		json_t* val = jsValueToJson(ctx, argv[0]);
+		if (!val) {
+			e->handler->writeLog("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
+			return JS_NewInt32(ctx, 0);
+		}
+		return JS_NewInt32(ctx, e->sendBroadcast(val, hasTopic ? &topic : nullptr)); // takes ownership of val
 	}
 
 	static JSValue js_number_rescale(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
