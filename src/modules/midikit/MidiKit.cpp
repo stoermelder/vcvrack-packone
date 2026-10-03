@@ -2133,7 +2133,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 	// The open script editor, if any. Weak: the overlay lives on APP->scene and
 	// can go away on its own (it closes itself).
-	WeakPtr<editor::ScriptEditorOverlay> editorOverlay;
+	WeakPtr<ui::editor::ScriptEditorOverlay> editorOverlay;
 
 	MidiKitWidgetBase(MODULE* module, const std::string& slug)
 		: BASE(module, slug) {
@@ -2433,7 +2433,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	// The script editor's view of this module: Apply loads the buffer like "Paste from
 	// clipboard" does, and the editor never touches `filename`. Owned by the editor
 	// dialog, which ~MidiKitWidgetBase() dismisses before the module can go away.
-	struct EditorHost : editor::ScriptEditorHost {
+	struct EditorHost : ui::editor::ScriptEditorHost {
 		MODULE* m;
 		// Weak: the editor can outlive the widget by the one frame its deletion takes.
 		WeakPtr<MidiKitWidgetBase> widget;
@@ -2477,8 +2477,8 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	// Opens the script editor on the applied script.
 	void openEditor() {
 		if (!module || editorOverlay) return;
-		editorOverlay = editor::openScriptEditor(
-			module->host.script, std::unique_ptr<editor::ScriptEditorHost>(new EditorHost(this)));
+		editorOverlay = ui::editor::openScriptEditor(
+			module->host.script, std::unique_ptr<ui::editor::ScriptEditorHost>(new EditorHost(this)));
 	}
 
 	void pasteJsClipboard() {
@@ -2540,7 +2540,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 		// Menu entry with word-wrapped text at a fixed width; its height follows the
 		// wrapped text. ui::MenuLabel is always one line as wide as its text, which is
 		// unusable for long log lines.
-		struct MenuMultilineLabel : ui::MenuEntry {
+		struct MenuMultilineLabel : rack::ui::MenuEntry {
 			float WIDTH = 320.f;
 			float FONT_SIZE = 12.f;
 			float PADDING_X = 10.f;
@@ -2562,7 +2562,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 					measuredText = text;
 					measured = true;
 				}
-				ui::MenuEntry::step();
+				rack::ui::MenuEntry::step();
 			}
 
 			void draw(const DrawArgs& args) override {

@@ -14,7 +14,7 @@
 // directly before it belongs to the line break, not to the line.
 
 namespace StoermelderPackOne {
-namespace MidiKit {
+namespace ui {
 namespace editor {
 namespace scripttext {
 
@@ -562,5 +562,5 @@ inline Range lineRangeAt(const std::string& text, int offset) {
 
 } // namespace scripttext
 } // namespace editor
-} // namespace MidiKit
+} // namespace ui
 } // namespace StoermelderPackOne

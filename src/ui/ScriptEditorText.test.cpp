@@ -7,7 +7,7 @@ void testPluginInit(rack::Plugin* p) {
 	(void)p;
 }
 
-using namespace StoermelderPackOne::MidiKit::editor::scripttext;
+using namespace StoermelderPackOne::ui::editor::scripttext;
 
 TEST_CASE("ScriptEditorText lineStarts and lineCount", "[ScriptEditor]") {
 	SECTION("empty buffer is one empty line") {

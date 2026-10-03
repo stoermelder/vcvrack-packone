@@ -7,9 +7,7 @@
 
 namespace {
 
-using editor::ScriptEditorDialog;
-using editor::ScriptEditorOverlay;
-using editor::ScriptEditField;
+using namespace StoermelderPackOne::ui::editor;
 
 struct EditorUiMock : StoermelderPackOne::vcv::UiAccess {
 	std::vector<std::string> messages;
@@ -695,7 +693,7 @@ TEST_CASE("Editor: the log area's context menu copies and clears", "[MidiKit][Ed
 	h.uiFrame();
 	OpenEditor e = openEditorOn(h, mw);
 	e.overlay->step();
-	editor::ScriptLogView* view = e.dialog->logPanel->view;
+	ScriptLogView* view = e.dialog->logPanel->view;
 	REQUIRE(view->lines.size() == 4);   // "No script" + one + two + three
 
 	// A right-click on the area opens a menu and leaves the editor open.
@@ -725,7 +723,7 @@ TEST_CASE("Editor: dragging the handle trades space between code and log, the di
 	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
 	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
 	OpenEditor e = openEditorOn(h, mw);
-	auto* handle = h.events().find<editor::SplitHandle>(e.dialog);
+	auto* handle = h.events().find<SplitHandle>(e.dialog);
 
 	const rack::math::Vec size = e.dialog->box.size;
 	const float logBefore = e.dialog->logHeight;
@@ -736,7 +734,7 @@ TEST_CASE("Editor: dragging the handle trades space between code and log, the di
 	e.overlay->step();
 	REQUIRE(e.dialog->logHeight == Catch::Approx(logBefore + 40.f));
 	REQUIRE(e.dialog->scroll->box.size.y == Catch::Approx(codeBefore - 40.f));
-	REQUIRE(e.dialog->logPanel->scroll->box.size.y == Catch::Approx(e.dialog->logHeight - editor::ScriptLogPanel::kFilterBarHeight - 10.f));
+	REQUIRE(e.dialog->logPanel->scroll->box.size.y == Catch::Approx(e.dialog->logHeight - ScriptLogPanel::kFilterBarHeight - 10.f));
 	REQUIRE(e.dialog->box.size.x == Catch::Approx(size.x));
 	REQUIRE(e.dialog->box.size.y == Catch::Approx(size.y));
 
@@ -747,9 +745,9 @@ TEST_CASE("Editor: dragging the handle trades space between code and log, the di
 	// Both areas stay usable at the extremes.
 	h.events().dragBy(handle, rack::math::Vec(0.f, -5000.f), 2);
 	e.overlay->step();
-	REQUIRE(e.dialog->scroll->box.size.y >= editor::ScriptEditorDialog::kMinCodeHeight - 1.f);
+	REQUIRE(e.dialog->scroll->box.size.y >= ScriptEditorDialog::kMinCodeHeight - 1.f);
 	h.events().dragBy(handle, rack::math::Vec(0.f, 5000.f), 2);
-	REQUIRE(e.dialog->logHeight >= editor::ScriptEditorDialog::kMinLogHeight - 0.5f);
+	REQUIRE(e.dialog->logHeight >= ScriptEditorDialog::kMinLogHeight - 0.5f);
 
 	// Dragging never closed or dirtied the editor.
 	REQUIRE_FALSE(e.overlay->requestedDelete);
@@ -789,7 +787,7 @@ TEST_CASE("Editor find: Ctrl+F opens the bar with focus in it, the dialog keeps 
 	REQUIRE(e.dialog->findBar->isOpen);
 	REQUIRE(e.dialog->findBar->visible);
 	REQUIRE(APP->event->selectedWidget == e.dialog->findBar->input);
-	REQUIRE(e.dialog->scroll->box.size.y == Catch::Approx(codeBefore - editor::ScriptFindBar::kHeight));
+	REQUIRE(e.dialog->scroll->box.size.y == Catch::Approx(codeBefore - ScriptFindBar::kHeight));
 	REQUIRE(e.dialog->box.size.x == Catch::Approx(size.x));
 	REQUIRE(e.dialog->box.size.y == Catch::Approx(size.y));
 	// Searching does not touch the buffer.
@@ -969,7 +967,7 @@ TEST_CASE("Editor find: a match far down is scrolled into view; editing updates 
 namespace {
 
 // The lines the log view currently shows, in order.
-static std::vector<std::string> shownLines(editor::ScriptLogView* v) {
+static std::vector<std::string> shownLines(ScriptLogView* v) {
 	std::vector<std::string> r;
 	for (int i : v->getShown()) r.push_back(v->lines[i]);
 	return r;
@@ -1087,7 +1085,7 @@ TEST_CASE("Editor log panel: the filter row sits below the log, both inside one 
 	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
 	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
 	OpenEditor e = openEditorOn(h, mw);
-	editor::ScriptLogPanel* panel = e.dialog->logPanel;
+	ScriptLogPanel* panel = e.dialog->logPanel;
 
 	REQUIRE(panel->scroll->parent == panel);
 	REQUIRE(panel->filterBar->parent == panel);
@@ -1105,7 +1103,7 @@ TEST_CASE("Editor log panel: the scrollbar is shown even when everything fits", 
 	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
 	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
 	OpenEditor e = openEditorOn(h, mw);
-	editor::ScriptLogPanel* panel = e.dialog->logPanel;
+	ScriptLogPanel* panel = e.dialog->logPanel;
 	e.overlay->step();
 
 	// A line or two: nothing to scroll, the bar is there all the same.
@@ -1145,7 +1143,7 @@ TEST_CASE("Editor: the code area's scrollbar is shown even for a short script", 
 	REQUIRE(e.dialog->scroll->verticalScrollbar->isVisible());
 
 	// Clicking a line still places the caret: the bar does not cover the text.
-	rack::math::Vec local(e.field->colToX(2), editor::ScriptEditField::kPadY + 0.5f * editor::ScriptEditField::kLineHeight);
+	rack::math::Vec local(e.field->colToX(2), ScriptEditField::kPadY + 0.5f * ScriptEditField::kLineHeight);
 	h.events().click(Test::EventDriver::pointIn(e.field, local));
 	REQUIRE(e.field->cursor == 2);
 
@@ -1266,7 +1264,7 @@ TEST_CASE("Editor field: double-click selects a word, triple-click the line, a f
 	e.field->clearHistory();
 
 	// Between "s" and "e" of "second", the field's own cell geometry.
-	rack::math::Vec at = Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(2), editor::ScriptEditField::kPadY + 1.5f * editor::ScriptEditField::kLineHeight));
+	rack::math::Vec at = Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(2), ScriptEditField::kPadY + 1.5f * ScriptEditField::kLineHeight));
 	auto selected = [&]() { return e.field->getSelectedText(); };
 
 	h.events().click(at);
@@ -1299,7 +1297,7 @@ TEST_CASE("Editor field: clicks far apart do not count as a double-click", "[Mid
 	e.field->setText("alpha beta gamma");
 	e.field->cursor = e.field->selection = 0;
 
-	auto at = [&](int col) { return Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(col), editor::ScriptEditField::kPadY + 0.5f * editor::ScriptEditField::kLineHeight)); };
+	auto at = [&](int col) { return Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(col), ScriptEditField::kPadY + 0.5f * ScriptEditField::kLineHeight)); };
 	h.events().click(at(2));
 	h.events().click(at(12));                  // another word, many pixels away
 	REQUIRE(e.field->getSelectedText() == "");
@@ -1315,7 +1313,7 @@ TEST_CASE("Editor field: double-click then typing replaces the word", "[MidiKit]
 	e.field->setText("alpha beta gamma");
 	e.field->cursor = e.field->selection = 0;
 
-	rack::math::Vec on = Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(8), editor::ScriptEditField::kPadY + 0.5f * editor::ScriptEditField::kLineHeight));
+	rack::math::Vec on = Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(8), ScriptEditField::kPadY + 0.5f * ScriptEditField::kLineHeight));
 	h.events().doubleClick(on);
 	REQUIRE(e.field->getSelectedText() == "beta");
 	h.events().type("X");
@@ -1330,7 +1328,7 @@ TEST_CASE("Editor field: the mouse moving while a double / triple click is held 
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first line\nsecond word here\nthird");
 	e.field->cursor = e.field->selection = 0;
-	auto pos = [&](int col, int line) { return Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(col) + 1.f, editor::ScriptEditField::kPadY + (line + 0.5f) * editor::ScriptEditField::kLineHeight)); };
+	auto pos = [&](int col, int line) { return Test::EventDriver::pointIn(e.field, rack::math::Vec(e.field->colToX(col) + 1.f, ScriptEditField::kPadY + (line + 0.5f) * ScriptEditField::kLineHeight)); };
 
 	// What Rack does after the press: hover events while the button is down. The second
 	// click lands in the middle of "second", so the pointer is not at the word's end.

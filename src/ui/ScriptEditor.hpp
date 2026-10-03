@@ -20,7 +20,7 @@
 // widget here brings its own multi-line drawing, hit testing and caret movement.
 
 namespace StoermelderPackOne {
-namespace MidiKit {
+namespace ui {
 namespace editor {
 
 using namespace rack;
@@ -599,7 +599,7 @@ struct LineNumberGutter : widget::TransparentWidget {
 // Rack's Scrollbar draws and handles clicks by dividing by the scrollable range, which
 // is zero when everything fits, so it is hidden then. This one copes with an empty range
 // (a full-height handle that does nothing), so the scroll widget below can keep it shown.
-struct AlwaysVisibleScrollbar : ui::Scrollbar {
+struct AlwaysVisibleScrollbar : rack::ui::Scrollbar {
 	bool canScroll() {
 		ScrollWidget* sw = dynamic_cast<ScrollWidget*>(parent);
 		return sw && sw->getContainerOffsetBound().size[vertical] > 0.f;
@@ -629,7 +629,7 @@ struct AlwaysVisibleScrollbar : ui::Scrollbar {
 
 // A ScrollWidget whose vertical scrollbar is always shown, to mark the area as scrollable
 // and to keep the layout from jumping when the content outgrows the viewport.
-struct AlwaysScrollbarScrollWidget : ui::ScrollWidget {
+struct AlwaysScrollbarScrollWidget : rack::ui::ScrollWidget {
 	AlwaysScrollbarScrollWidget() {
 		removeChild(verticalScrollbar);
 		delete verticalScrollbar;
@@ -701,7 +701,7 @@ struct ScriptLogView : widget::OpaqueWidget {
 	void onButton(const ButtonEvent& e) override {
 		OpaqueWidget::onButton(e);
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			ui::Menu* menu = createMenu();
+			rack::ui::Menu* menu = createMenu();
 			bool empty = getShown().empty();
 			menu->addChild(createMenuItem("Copy to clipboard", "", [this]() { copyToClipboard(); }, empty));
 			menu->addChild(createMenuItem("Clear", "", [this]() { if (clearAction) clearAction(); }, empty));
@@ -817,7 +817,7 @@ struct ScriptEditorHost {
 
 // Buttons
 
-struct ActionButton : ui::Button {
+struct ActionButton : rack::ui::Button {
 	std::function<void()> action;
 	void onAction(const ActionEvent& e) override {
 		if (action) action();
@@ -892,11 +892,11 @@ struct ScriptLogPanel : widget::Widget {
 	static constexpr float kFilterBarHeight = 28.f;
 	static constexpr float kScrollbarWidth = 20.f;
 
-	ui::ScrollWidget* scroll;
+	rack::ui::ScrollWidget* scroll;
 	ScriptLogView* view;
 	widget::Widget* filterBar;
 	FindField* filterInput;
-	ui::Label* filterCount;
+	rack::ui::Label* filterCount;
 	ToggleButton* filterCaseButton;
 	ToggleButton* filterRegexButton;
 	// Enter and Esc in the filter input give the keyboard back to the editor.
@@ -920,9 +920,9 @@ struct ScriptLogPanel : widget::Widget {
 		filterInput->changeAction = [this]() { filterChanged(); };
 		filterBar->addChild(filterInput);
 
-		filterCount = new ui::Label;
+		filterCount = new rack::ui::Label;
 		filterCount->box.size = Vec(120.f, 20.f);
-		filterCount->alignment = ui::Label::RIGHT_ALIGNMENT;
+		filterCount->alignment = rack::ui::Label::RIGHT_ALIGNMENT;
 		filterBar->addChild(filterCount);
 
 		filterCaseButton = new ToggleButton;
@@ -1012,7 +1012,7 @@ struct ScriptFindBar : widget::Widget {
 
 	ScriptEditField* field;
 	FindField* input;
-	ui::Label* count;
+	rack::ui::Label* count;
 	ToggleButton* caseButton;
 	ActionButton* prevButton;
 	ActionButton* nextButton;
@@ -1033,9 +1033,9 @@ struct ScriptFindBar : widget::Widget {
 		input->changeAction = [this]() { changed(); };
 		addChild(input);
 
-		count = new ui::Label;
+		count = new rack::ui::Label;
 		count->box.size = Vec(110.f, 20.f);
-		count->alignment = ui::Label::RIGHT_ALIGNMENT;
+		count->alignment = rack::ui::Label::RIGHT_ALIGNMENT;
 		addChild(count);
 
 		caseButton = new ToggleButton;
@@ -1198,10 +1198,10 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 
 	ScriptEditField* field;
 	LineNumberGutter* gutter;
-	ui::ScrollWidget* scroll;
-	ui::Label* headerLabel;
-	ui::Label* modifiedLabel;
-	ui::Label* statusLabel;
+	rack::ui::ScrollWidget* scroll;
+	rack::ui::Label* headerLabel;
+	rack::ui::Label* modifiedLabel;
+	rack::ui::Label* statusLabel;
 	ScriptLogPanel* logPanel;
 	SplitHandle* splitHandle;
 	ScriptFindBar* findBar;
@@ -1220,16 +1220,16 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		host = std::move(hostIn);
 		baseline = text;
 
-		headerLabel = new ui::Label;
+		headerLabel = new rack::ui::Label;
 		headerLabel->box.pos = Vec(kMargin, 6.f);
 		headerLabel->box.size = Vec(300.f, 20.f);
 		headerLabel->text = "Script";
 		addChild(headerLabel);
 
-		modifiedLabel = new ui::Label;
+		modifiedLabel = new rack::ui::Label;
 		modifiedLabel->box.size = Vec(120.f, 20.f);
 		modifiedLabel->box.pos = Vec(box.size.x - kMargin - modifiedLabel->box.size.x, 6.f);
-		modifiedLabel->alignment = ui::Label::RIGHT_ALIGNMENT;
+		modifiedLabel->alignment = rack::ui::Label::RIGHT_ALIGNMENT;
 		addChild(modifiedLabel);
 
 		scroll = new AlwaysScrollbarScrollWidget;
@@ -1271,7 +1271,7 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		addButton("Apply", 80.f, [this]() { apply(); });
 		addButton("Revert", 80.f, [this]() { revert(); });
 
-		statusLabel = new ui::Label;
+		statusLabel = new rack::ui::Label;
 		statusLabel->box.size.y = 20.f;
 		statusLabel->text = "";
 		addChild(statusLabel);
@@ -1442,7 +1442,7 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 // dialog) and on Esc. For an editor holding unapplied text that must go
 // through the dialog's close guard instead.
 
-struct ScriptEditorOverlay : ui::MenuOverlay {
+struct ScriptEditorOverlay : rack::ui::MenuOverlay {
 	ScriptEditorDialog* dialog = nullptr;
 
 	void onAction(const ActionEvent& e) override {
@@ -1496,5 +1496,5 @@ inline ScriptEditorOverlay* openScriptEditor(const std::string& text, std::uniqu
 }
 
 } // namespace editor
-} // namespace MidiKit
+} // namespace ui
 } // namespace StoermelderPackOne
