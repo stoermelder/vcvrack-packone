@@ -101,7 +101,11 @@ struct MidiInRingBuffer : SlotRingBuffer<MidiInMessage, 128> {
 // the callbacks stay in the engine under callbackId, so a copy is safe on the
 // UI thread.
 struct ScriptMenuItem {
-	enum class Type { Boolean, Options } type = Type::Boolean;
+	// Action: a plain entry, onChange() on every click. File: opens a file dialog and
+	// calls onChange(content, fileName) with the file's text; the file is at most
+	// fileMaxBytes long.
+	enum class Type { Boolean, Options, Action, File } type = Type::Boolean;
+	static const size_t fileMaxBytes = 2048;
 	std::string label;
 	// Options variant: selectable labels and the current selection index.
 	std::vector<std::string> options;
@@ -115,6 +119,66 @@ struct ScriptMenuItem {
 
 	ScriptMenuItem() : selected(0) {}
 };
+
+// What one click on a menu item brings along, for the engine to turn into onChange's
+// arguments. An int converts implicitly: it is the new state of a boolean (0/1) or the
+// selected index of an options item, so those call sites just pass the number. A file
+// item's click carries the file instead.
+struct ScriptMenuClick {
+	int value = 0;
+	bool hasFile = false;
+	std::string content, fileName;
+
+	ScriptMenuClick(int value = 0) : value(value) {}
+
+	static ScriptMenuClick file(const std::string& content, const std::string& fileName) {
+		ScriptMenuClick c;
+		c.hasFile = true;
+		c.content = content;
+		c.fileName = fileName;
+		return c;
+	}
+};
+
+// One argument of onChange, in a form both engines push onto their own stack.
+struct ScriptMenuArg {
+	enum class Kind { Bool, Int, String } kind;
+	bool b = false;
+	int i = 0;
+	std::string s;
+
+	static ScriptMenuArg ofBool(bool v) { ScriptMenuArg a; a.kind = Kind::Bool; a.b = v; return a; }
+	static ScriptMenuArg ofInt(int v) { ScriptMenuArg a; a.kind = Kind::Int; a.i = v; return a; }
+	static ScriptMenuArg ofString(const std::string& v) { ScriptMenuArg a; a.kind = Kind::String; a.s = v; return a; }
+};
+
+// The arguments of onChange for a click on `item`:
+//   boolean  (checked)             options  (selectedIndex, selectedLabel)
+//   action   ()                    file     (content, fileName)
+// False if the click does not fit the item, which is then not called: a file click on
+// a non-file item (a reload may have put another item at that id while the dialog was
+// open), a click without a file on a file item, or an options index out of range.
+inline bool menuCallArgs(const ScriptMenuItem& item, const ScriptMenuClick& click, std::vector<ScriptMenuArg>& args) {
+	args.clear();
+	if (click.hasFile != (item.type == ScriptMenuItem::Type::File)) return false;
+	switch (item.type) {
+		case ScriptMenuItem::Type::Action:
+			return true;
+		case ScriptMenuItem::Type::Boolean:
+			args.push_back(ScriptMenuArg::ofBool(click.value != 0));
+			return true;
+		case ScriptMenuItem::Type::Options:
+			if (click.value < 0 || click.value >= static_cast<int>(item.options.size())) return false;
+			args.push_back(ScriptMenuArg::ofInt(click.value));
+			args.push_back(ScriptMenuArg::ofString(item.options[click.value]));
+			return true;
+		case ScriptMenuItem::Type::File:
+			args.push_back(ScriptMenuArg::ofString(click.content));
+			args.push_back(ScriptMenuArg::ofString(click.fileName));
+			return true;
+	}
+	return false;
+}
 
 } // namespace MidiScript
 } // namespace StoermelderPackOne

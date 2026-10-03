@@ -608,9 +608,9 @@ struct MidiScriptEngine {
 	// on the WORKER thread, then calls `callback`, which must not construct
 	// widgets: it only publishes specs for the menu to poll from step().
 	virtual void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) = 0;
-	// UI thread, on a menu click. value is 0/1 for Boolean, the selected index for
-	// Options. Runs the callback on the worker thread.
-	virtual void invokeContextMenuCallback(int callbackId, int value) = 0;
+	// UI thread, on a menu click. Runs the callback on the worker thread; the click's
+	// content is described at menuCallArgs(). A click that does not fit the item is ignored.
+	virtual void invokeContextMenuCallback(int callbackId, const ScriptMenuClick& click) = 0;
 };
 
 } // namespace MidiScript

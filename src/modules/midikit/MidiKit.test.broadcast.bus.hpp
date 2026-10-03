@@ -48,7 +48,7 @@ struct BusEngine : MidiScriptEngine {
 	std::string getParamName(int) override { return ""; }
 	std::string getParamFormatValue(int) override { return ""; }
 	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>&)>&) override {}
-	void invokeContextMenuCallback(int, int) override {}
+	void invokeContextMenuCallback(int, const StoermelderPackOne::MidiScript::ScriptMenuClick&) override {}
 };
 
 static std::shared_ptr<json_t> makeValue(int n) {

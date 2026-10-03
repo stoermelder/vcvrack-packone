@@ -722,45 +722,37 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// state isn't stored on the spec — the next menu build re-evaluates it from
 	// onGetValue, so onChange's config changes are picked up automatically. The
 	// call is deferred to runAsync() with all other JS work.
-	void invokeContextMenuCallback(int callbackId, int value) override {
+	void invokeContextMenuCallback(int callbackId, const ScriptMenuClick& click) override {
 		// The whole body runs on the worker thread, incl. the spec lookup:
 		// contextMenus is worker-owned, so no lock. The caller ignores timing,
 		// so the read needn't be synchronous on the UI thread.
-		runAsync([this, callbackId, value]() {
+		runAsync([this, callbackId, click]() {
 			assert(onWorkerThread());
 			if (!ctx) return;
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
-			const ContextMenuEntry& entry = it->second;
-			ScriptMenuItem::Type type = entry.spec.type;
-			std::string label;
-			if (type != ScriptMenuItem::Type::Boolean) {
-				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
-				label = entry.spec.options[value];
-			}
+			std::vector<ScriptMenuArg> args;
+			if (!menuCallArgs(it->second.spec, click, args)) return;
 			// Dup so the call below owns a reference even if the script's
 			// onChange re-registers menus and rewrites the map.
-			JSValue fn = JS_DupValue(ctx, entry.callbackFn);
+			JSValue fn = JS_DupValue(ctx, it->second.callbackFn);
 
 			// Uses the cached rackObj — see getContextMenus() above.
-			JSValue args[2];
-			int argc;
-			if (type == ScriptMenuItem::Type::Boolean) {
-				args[0] = JS_NewBool(ctx, value != 0);
-				argc = 1;
-			}
-			else {
-				args[0] = JS_NewInt32(ctx, value);
-				args[1] = JS_NewString(ctx, label.c_str());
-				argc = 2;
+			std::vector<JSValue> jsArgs;
+			for (const ScriptMenuArg& a : args) {
+				switch (a.kind) {
+					case ScriptMenuArg::Kind::Bool: jsArgs.push_back(JS_NewBool(ctx, a.b)); break;
+					case ScriptMenuArg::Kind::Int: jsArgs.push_back(JS_NewInt32(ctx, a.i)); break;
+					case ScriptMenuArg::Kind::String: jsArgs.push_back(JS_NewStringLen(ctx, a.s.data(), a.s.size())); break;
+				}
 			}
 			// A callback like onLoad: MIDI it sends goes out as it calls midiOut.*.
 			beginStore(0);
 			inCallback = true;
 			beginScriptExecution();
-			JSValue r = JS_Call(ctx, fn, rackObj, argc, args);
+			JSValue r = JS_Call(ctx, fn, rackObj, static_cast<int>(jsArgs.size()), jsArgs.data());
 			inCallback = false;
-			for (int i = 0; i < argc; i++) JS_FreeValue(ctx, args[i]);
+			for (JSValue v : jsArgs) JS_FreeValue(ctx, v);
 			JS_FreeValue(ctx, fn);
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
@@ -1036,7 +1028,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_FreeValue(ctx, typeV);
 		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
 		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
-		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\" or \"options\"");
+		else if (type == "action") spec.type = ScriptMenuItem::Type::Action;
+		else if (type == "file") spec.type = ScriptMenuItem::Type::File;
+		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"file\"");
 
 		JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
 		std::string label = JS_IsString(labelV) ? e->jsToStdString(labelV) : "";
@@ -1085,7 +1079,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// from onGetValue when the menu is built, so it always reflects the
 		// live config. onGetValue is optional and defaults to 0.
 		JSValue onGetValueV = JS_GetPropertyStr(ctx, argv[0], "onGetValue");
-		if (!JS_IsFunction(ctx, onGetValueV)) {
+		// Only boolean and options items have a value to show.
+		bool hasValue = spec.type == ScriptMenuItem::Type::Boolean || spec.type == ScriptMenuItem::Type::Options;
+		if (!hasValue || !JS_IsFunction(ctx, onGetValueV)) {
 			// Not a function — ignore and default to value 0.
 			JS_FreeValue(ctx, onGetValueV);
 			onGetValueV = JS_UNDEFINED;

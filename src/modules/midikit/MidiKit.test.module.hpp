@@ -462,7 +462,7 @@ struct RecordingEngine : MidiScriptEngine {
 		std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> empty;
 		callback(empty);
 	}
-	void invokeContextMenuCallback(int callbackId, int value) override { }
+	void invokeContextMenuCallback(int, const StoermelderPackOne::MidiScript::ScriptMenuClick&) override {}
 	bool getMemoryUsage(size_t& used, size_t& total) override { return false; } 
 };
 
@@ -1507,4 +1507,174 @@ TEST_CASE("Raised log notices become one line each when the log is drained", "[M
 	log.raise(ScriptLog::SCHEDULE_QUEUE_FULL);
 	REQUIRE(log.tryPop(t));
 	REQUIRE(std::get<2>(t) == "MIDI schedule queue full, message(s) sent at once");
+}
+
+
+// "action" and "file" items through the real menu
+
+static const char* QJS_ACTION_FILE = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({ type: "action", label: "Do it", onChange: function() { rack.log("did it"); } });
+rack.registerContextMenu({ type: "file", label: "Pick file", onChange: function(content, name) { rack.log("got [" + content + "] from " + name); } });
+)";
+
+static const char* LUA_ACTION_FILE = R"(--[[
+@engine minilua@v1
+--]]
+rack.registerContextMenu({ type = "action", label = "Do it", onChange = function() rack.log("did it") end })
+rack.registerContextMenu({ type = "file", label = "Pick file", onChange = function(content, name) rack.log("got [" .. content .. "] from " .. name) end })
+)";
+
+namespace {
+
+struct ScriptFileUiMock : StoermelderPackOne::vcv::UiAccess {
+	std::string chosen;                 // what the dialog answers; empty = cancelled
+	int dialogs = 0;
+	std::vector<std::string> messages;
+	std::string openDialog(const std::string&, const std::string&) override {
+		dialogs++;
+		return chosen;
+	}
+	bool message(StoermelderPackOne::vcv::MessageType, StoermelderPackOne::vcv::MessageButtons, const std::string& msg) override {
+		messages.push_back(msg);
+		return false;
+	}
+};
+
+// One fake file; a path of an unreadable file is "bad.txt".
+struct ScriptFileFsMock : Test::mock::MockFileAccess {
+	std::string content;
+	uint64_t reportedSize = 0;
+	bool readable = true;
+	bool read(const std::string&, std::string& data) const override {
+		if (!readable) return false;
+		data = content;
+		return true;
+	}
+	uint64_t getFileSize(const std::string&) override { return reportedSize; }
+	std::string getFilename(const std::string& path) override {
+		size_t at = path.find_last_of('/');
+		return at == std::string::npos ? path : path.substr(at + 1);
+	}
+};
+
+} // namespace
+
+TEST_CASE("Context menu: an action item calls onChange on every click", "[MidiKit][ContextMenu]") {
+	ModuleScaffold mods;
+	for (const char* script : { QJS_ACTION_FILE, LUA_ACTION_FILE }) {
+		MidiKitModule* m = mods.create();
+		m->model = modelMidiKit;
+		m->loadScript(script);
+		MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->appendContextMenu(menu);
+		m->host.getActiveEngine()->process();
+		buildScriptMenuItems(menu);
+
+		rack::ui::MenuItem* item = nullptr;
+		for (rack::Widget* child : menu->children) {
+			if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+				if (mi->text == "Do it") item = mi;
+			}
+		}
+		REQUIRE(item != nullptr);
+		REQUIRE(item->rightText == "");     // no checkmark, no submenu arrow
+
+		drainLog(m);
+		item->doAction(true);
+		item->doAction(true);
+		std::string log = drainLog(m);
+		size_t n = 0;
+		for (size_t at = log.find("did it"); at != std::string::npos; at = log.find("did it", at + 1)) n++;
+		REQUIRE(n == 2);
+
+		delete menu;
+		Test::destroyWidget(mw);
+	}
+}
+
+TEST_CASE("Context menu: a file item reads the chosen file and passes it to onChange", "[MidiKit][ContextMenu]") {
+	ModuleScaffold mods;
+	ScriptFileUiMock ui;
+	ScriptFileFsMock fs;
+	Test::mock::Guard<StoermelderPackOne::vcv::UiAccess> uiGuard{StoermelderPackOne::vcv::uiAccess, &ui};
+	Test::mock::Guard<StoermelderPackOne::vcv::FileAccess> fsGuard{StoermelderPackOne::vcv::fileAccess, &fs};
+
+	for (const char* script : { QJS_ACTION_FILE, LUA_ACTION_FILE }) {
+		MidiKitModule* m = mods.create();
+		m->model = modelMidiKit;
+		m->loadScript(script);
+		MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+
+		rack::ui::Menu* menu = new rack::ui::Menu;
+		mw->appendContextMenu(menu);
+		m->host.getActiveEngine()->process();
+		buildScriptMenuItems(menu);
+
+		rack::ui::MenuItem* item = nullptr;
+		for (rack::Widget* child : menu->children) {
+			if (auto* mi = dynamic_cast<rack::ui::MenuItem*>(child)) {
+				if (mi->text == "Pick file") item = mi;
+			}
+		}
+		REQUIRE(item != nullptr);
+		REQUIRE(item->rightText == "");
+		drainLog(m);
+		ui.dialogs = 0;
+		ui.messages.clear();
+
+		// Cancelled dialog: nothing happens.
+		ui.chosen = "";
+		item->doAction(true);
+		REQUIRE(ui.dialogs == 1);
+		REQUIRE(drainLog(m).empty());
+		REQUIRE(ui.messages.empty());
+
+		// A chosen file: its text and its name arrive.
+		ui.chosen = "/some/dir/scale.scl";
+		fs.content = "hello\nworld";
+		fs.reportedSize = fs.content.size();
+		item->doAction(true);
+		m->host.getActiveEngine()->process();
+		std::string log = drainLog(m);
+		CATCH_INFO(log);
+		REQUIRE(log.find("got [hello\nworld] from scale.scl") != std::string::npos);
+
+		// Exactly the limit is accepted, one byte more is refused before reading.
+		fs.content = std::string(StoermelderPackOne::MidiScript::ScriptMenuItem::fileMaxBytes, 'a');
+		fs.reportedSize = fs.content.size();
+		item->doAction(true);
+		REQUIRE(drainLog(m).find("got [") != std::string::npos);
+		REQUIRE(ui.messages.empty());
+
+		fs.content = std::string(StoermelderPackOne::MidiScript::ScriptMenuItem::fileMaxBytes + 1, 'a');
+		fs.reportedSize = fs.content.size();
+		item->doAction(true);
+		REQUIRE(drainLog(m).empty());
+		REQUIRE(ui.messages.size() == 1);
+		REQUIRE(ui.messages[0].find("scale.scl") != std::string::npos);
+		REQUIRE(ui.messages[0].find("2048") != std::string::npos);
+
+		// A file that grew between the size check and the read is refused too.
+		ui.messages.clear();
+		fs.reportedSize = 10;
+		item->doAction(true);
+		REQUIRE(drainLog(m).empty());
+
+		// Unreadable file: a message, no call.
+		fs.readable = false;
+		fs.content = "x";
+		fs.reportedSize = 1;
+		item->doAction(true);
+		REQUIRE(drainLog(m).empty());
+		REQUIRE(ui.messages.size() == 1);
+		REQUIRE(ui.messages[0].find("Could not read") != std::string::npos);
+		fs.readable = true;
+
+		delete menu;
+		Test::destroyWidget(mw);
+	}
 }

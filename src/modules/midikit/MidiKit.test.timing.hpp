@@ -628,7 +628,7 @@ struct FrameProbeEngine : MidiScriptEngine {
 		std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> empty;
 		callback(empty);
 	}
-	void invokeContextMenuCallback(int callbackId, int value) override { }
+	void invokeContextMenuCallback(int, const StoermelderPackOne::MidiScript::ScriptMenuClick&) override {}
 	bool getMemoryUsage(size_t& used, size_t& total) override { return false; } 
 };
 

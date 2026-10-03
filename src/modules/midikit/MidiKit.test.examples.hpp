@@ -1940,9 +1940,11 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 	std::vector<ScriptMenuItem> specs;
 	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
 	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
-	REQUIRE(specs.size() == 2);
+	REQUIRE(specs.size() == 4);
 	REQUIRE(specs[0].label == "Input channel");
 	REQUIRE(specs[1].label == "Always send pitch bend");
+	REQUIRE(specs[2].label == "Load scale (.scl)...");
+	REQUIRE(specs[3].label == "Default scale");
 
 	// Switch the option on; the next tonic Note-On must be preceded by the
 	// centre bend 8192 (LSB 0, MSB 64) even though it is unchanged.
@@ -4331,8 +4333,14 @@ TEST_CASE("Preset context-menu settings survive a save/reload round-trip", "[Mid
 
 	// Move every item to a different value than the one it loaded with.
 	std::vector<int> expected;
+	// Actions and file items have no state to keep (the Micro scale file is covered
+	// by its own test).
+	auto hasValue = [](const ScriptMenuItem& item) {
+		return item.type == ScriptMenuItem::Type::Boolean || item.type == ScriptMenuItem::Type::Options;
+	};
 	for (const ScriptMenuItem& item : specs) {
-		int next;
+		int next = -1;
+		if (!hasValue(item)) { expected.push_back(next); continue; }
 		if (item.type == ScriptMenuItem::Type::Boolean) next = item.checked ? 0 : 1;
 		else next = (item.selected + 1) % (int)item.options.size();
 		expected.push_back(next);
@@ -4354,6 +4362,7 @@ TEST_CASE("Preset context-menu settings survive a save/reload round-trip", "[Mid
 	REQUIRE(restored.size() == specs.size());
 	for (size_t i = 0; i < specs.size(); i++) {
 		CATCH_INFO("menu item: " << specs[i].label);
+		if (!hasValue(specs[i])) continue;
 		int got = specs[i].type == ScriptMenuItem::Type::Boolean ? (restored[i].checked ? 1 : 0) : restored[i].selected;
 		REQUIRE(got == expected[i]);
 	}
@@ -4423,4 +4432,101 @@ TEST_CASE("'Transport broadcaster' and 'Transport follower' relay clock, start a
 			Test::destroyModule(follower);
 		}
 	}
+}
+
+
+// "Load scale" / "Default scale" menu items of the Micro scale preset
+
+// The notes go round-robin over the output channels, so compare without the channel.
+static std::vector<OutEvent> onChannel0(std::vector<OutEvent> events) {
+	for (OutEvent& e : events) e.channel = 0;
+	return events;
+}
+
+// The callback id of the menu item called `label`.
+static int microScaleMenuId(MidiKitModule* m, const std::string& label) {
+	std::vector<ScriptMenuItem> specs;
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
+	for (const ScriptMenuItem& s : specs) {
+		if (s.label == label) return s.callbackId;
+	}
+	FAIL("no menu item " << label);
+	return -1;
+}
+
+// 12-EDO as a file saved on Windows. In it no note needs a bend, unlike the
+// embedded just-intonation default, where D4 sounds as 64 with a bend.
+static const char* MICRO_SCALE_12EDO_FILE =
+	"! 12edo.scl\r\n!\r\n12-tone equal temperament\r\n 12\r\n!\r\n"
+	" 100.0\r\n 200.0\r\n 300.0\r\n 400.0\r\n 500.0\r\n 600.0\r\n 700.0\r\n 800.0\r\n 900.0\r\n 1000.0\r\n 1100.0\r\n 2/1\r\n";
+
+TEST_CASE("'Micro scale.js/.lua' loads a scale file from the context menu and can return to the default", "[MidiKit][MicroScale][ContextMenu]") {
+	std::string path = GENERATE(presetPaths("Micro scale"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	std::vector<OutEvent> justD4 = {{0xe, 0, 79, 59, 0}, {0x9, 0, 64, 100, 0}};
+	std::vector<OutEvent> edoD4 = {{0x9, 0, 62, 100, 0}};
+
+	// The embedded scale is the default.
+	REQUIRE(onChannel0(feedCollect(m, noteOn(1, 62, 100))) == justD4);
+	feedCollect(m, noteOff(1, 62));
+
+	auto* e = m->host.getActiveEngine();
+	e->invokeContextMenuCallback(microScaleMenuId(m, "Load scale (.scl)..."),
+		ScriptMenuClick::file(MICRO_SCALE_12EDO_FILE, "12edo.scl"));
+	std::string log = drainLog(m);
+	CATCH_INFO(log);
+	REQUIRE(log.find("Scale loaded from 12edo.scl: 12 degrees per octave") != std::string::npos);
+	REQUIRE(onChannel0(feedCollect(m, noteOn(1, 62, 100))) == edoD4);
+	feedCollect(m, noteOff(1, 62));
+
+	// A file without scale notes changes nothing.
+	e->invokeContextMenuCallback(microScaleMenuId(m, "Load scale (.scl)..."), ScriptMenuClick::file("just some text\n", "notes.txt"));
+	REQUIRE(drainLog(m).find("No scale notes found in notes.txt") != std::string::npos);
+	REQUIRE(onChannel0(feedCollect(m, noteOn(1, 62, 100))) == edoD4);
+	feedCollect(m, noteOff(1, 62));
+
+	// Back to the embedded scale.
+	e->invokeContextMenuCallback(microScaleMenuId(m, "Default scale"), ScriptMenuClick());
+	REQUIRE(drainLog(m).find("Default scale: 7 degrees per octave") != std::string::npos);
+	REQUIRE(onChannel0(feedCollect(m, noteOn(1, 62, 100))) == justD4);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'Micro scale.js/.lua' keeps a loaded scale in the patch until the default is chosen again", "[MidiKit][MicroScale][JSON]") {
+	std::string path = GENERATE(presetPaths("Micro scale"));
+	CATCH_INFO("preset: " << path);
+
+	std::vector<OutEvent> justD4 = {{0xe, 0, 79, 59, 0}, {0x9, 0, 64, 100, 0}};
+	std::vector<OutEvent> edoD4 = {{0x9, 0, 62, 100, 0}};
+
+	MidiKitModule* m = loadPreset(path);
+	m->host.getActiveEngine()->invokeContextMenuCallback(microScaleMenuId(m, "Load scale (.scl)..."),
+		ScriptMenuClick::file(MICRO_SCALE_12EDO_FILE, "12edo.scl"));
+	drainLog(m);
+
+	// Saved and restored into a new module: the file's scale, not the embedded one.
+	json_t* rootJ = m->dataToJson();
+	MidiKitModule* m2 = createModule();
+	m2->dataFromJson(rootJ);
+	drainLog(m2);
+	REQUIRE(onChannel0(feedCollect(m2, noteOn(1, 62, 100))) == edoD4);
+
+	// After "Default scale" nothing of the file is stored any more.
+	m2->host.getActiveEngine()->invokeContextMenuCallback(microScaleMenuId(m2, "Default scale"), ScriptMenuClick());
+	drainLog(m2);
+	json_decref(rootJ);
+	rootJ = m2->dataToJson();
+	MidiKitModule* m3 = createModule();
+	m3->dataFromJson(rootJ);
+	json_decref(rootJ);
+	drainLog(m3);
+	REQUIRE(onChannel0(feedCollect(m3, noteOn(1, 62, 100))) == justD4);
+
+	Test::destroyModule(m);
+	Test::destroyModule(m2);
+	Test::destroyModule(m3);
 }

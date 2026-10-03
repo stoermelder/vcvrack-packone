@@ -20,9 +20,10 @@
 -- "Use Ch" switches. Enable one channel per simultaneous voice your synth
 -- has, or use fewer and accept note stealing.
 --
--- The tuning is defined by a Scala .scl file pasted into config.scl below -
--- the same text you would load with "LOAD filename.scl" in the Scala
--- program. onLoad parses it into a list of cents offsets per octave degree
+-- The tuning is defined by a Scala .scl file - the same text you would load
+-- with "LOAD filename.scl" in the Scala program. The scale pasted into
+-- config.scl below is the default; the module's context menu can load an .scl
+-- file instead (at most 2 KB), which is then saved in the patch. onLoad parses it into a list of cents offsets per octave degree
 -- (first entry always 0 = the tonic at baseNote); ratios like "5/4" are
 -- converted with ratioToCents(numer, denom) = 1200 * log2(numer / denom).
 -- See https://www.huygens-fokker.org/scala/ for the format.
@@ -92,6 +93,12 @@ local config = {
     -- Only process this input channel; 0 = every channel
     channel = rack.getConfig("channel", 0)
 }
+
+-- The scale above is the default. One loaded from a file (context menu) is saved
+-- in the patch with rack.setConfig and replaces it after a reload.
+local DEFAULT_SCL = config.scl
+config.scl = rack.getConfig("scl", DEFAULT_SCL)
+if type(config.scl) ~= "string" then config.scl = DEFAULT_SCL end
 
 -- Context menu choices
 local CHANNEL_LABELS = { "All" }
@@ -242,6 +249,16 @@ local function removeFromQueue(note, ch)
     end
 end
 
+-- Makes `content` (the text of an .scl file) the scale. False, and nothing
+-- changed, when it holds no scale notes.
+local function applyScl(content)
+    local parsed = parseScl(content)
+    if #parsed < 2 then return false end
+    config.scl = content
+    scale = parsed
+    return true
+end
+
 -- Setup
 rack.onLoad = function()
     scale = parseScl(config.scl)
@@ -283,9 +300,33 @@ rack.onLoad = function()
         end
     })
 
+    -- The scale: a file from disk, or back to the one embedded in this script.
+    rack.registerContextMenu({
+        type = "file",
+        label = "Load scale (.scl)...",
+        onChange = function(content, fileName)
+            if applyScl(content) then
+                rack.setConfig("scl", content)
+                rack.log("Scale loaded from ", fileName, ": ", #scale, " degrees per octave")
+            else
+                rack.log("No scale notes found in ", fileName, ", keeping the current scale")
+            end
+        end
+    })
+
+    rack.registerContextMenu({
+        type = "action",
+        label = "Default scale",
+        onChange = function()
+            applyScl(DEFAULT_SCL)
+            rack.setConfig("scl", nil)
+            rack.log("Default scale: ", #scale, " degrees per octave")
+        end
+    })
+
     rack.log("Micro scale initialized")
-    rack.log("Scale degrees: ", #scale - 1, " per octave (parsed from config.scl)")
-    if #scale < 2 then rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl") end
+    rack.log("Scale degrees: ", #scale - 1, " per octave (parsed from the saved or the embedded .scl)")
+    if #scale < 2 then rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl or the loaded file") end
     rack.log("Base: ", config.baseNote, " @ ", number.toString(config.baseFreq), " Hz")
     rack.log("Bend depth: ", number.toString(config.bendDepth), " st")
 end

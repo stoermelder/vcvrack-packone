@@ -583,7 +583,7 @@ end
 
 ### Add items to the module's context menu
 
-`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark) or an options submenu (one entry per option, checkmark on the current selection). Items appear in registration order and can be used to change `config` values live instead of editing the script. To persist a change (so it survives a patch save/reload), call `rack.setConfig()` in the item's `onChange` — see [Persistence](#persistence).
+`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark), an options submenu (one entry per option, checkmark on the current selection), an action (a plain entry that calls your function) or a file entry (opens a file dialog and hands the file's text to your function). Items appear in registration order and can be used to change `config` values live instead of editing the script. To persist a change (so it survives a patch save/reload), call `rack.setConfig()` in the item's `onChange` — see [Persistence](#persistence).
 
 The checkmark/selection state is read **lazily** — each time the menu is opened, the engine calls the item's `onGetValue` callback (if provided) to determine the current value. This means the menu always reflects the live state of the script, even if it was changed programmatically. If `onGetValue` is omitted, the item defaults to `false` (boolean) or `0` (options, i.e. the first option).
 
@@ -915,7 +915,7 @@ Use it with `midiOut.sendAtFrame()`, see [Enabling sample-accurate timing](#enab
 
 #### Context menu — `rack.registerContextMenu`
 
-`rack.registerContextMenu(options)` adds one item to the module's right-click context menu. Items appear in registration order, and any number is allowed. It returns `true`, or throws (the load fails) if `options` is malformed. There are two variants.
+`rack.registerContextMenu(options)` adds one item to the module's right-click context menu. Items appear in registration order, and any number is allowed. It returns `true`, or throws (the load fails) if `options` is malformed. There are four variants.
 
 *Boolean toggle*, a single menu line with a checkmark:
 ```js
@@ -949,17 +949,45 @@ rack.registerContextMenu({
    }
 });
 ```
-Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`.
+*Action*, a plain menu line that calls `onChange` on every click, without arguments:
+```js
+rack.registerContextMenu({
+   type: "action",
+   label: "Send all notes off",
+   onChange: function() {
+      // no arguments
+   }
+});
+```
+*File*, a menu line that opens the file dialog. If a file is chosen, `onChange` is called with its content as a string and its name (without the folder). Cancelling the dialog calls nothing:
+```js
+rack.registerContextMenu({
+   type: "file",
+   label: "Import scale…",
+   onChange: function(content, fileName) {
+      // content: string, at most 2048 bytes; fileName: e.g. "just.scl"
+      rack.log("read " + content.length + " bytes from " + fileName);
+   }
+});
+```
+Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`, and likewise `type = "action"` and `type = "file"`.
 
 **Fields**
 
 | Field | Required | Rule |
 | --- | --- | --- |
-| `type` | yes | `"boolean"` or `"options"` |
+| `type` | yes | `"boolean"`, `"options"`, `"action"` or `"file"` |
 | `label` | yes | non-empty string |
 | `options` | for `"options"` | non-empty array of strings |
 | `onChange` | yes | function |
-| `onGetValue` | no | function returning the current value: a boolean, or an index for `"options"`. Defaults to `false` / `0` when absent |
+| `onGetValue` | no | function returning the current value: a boolean, or an index for `"options"`. Defaults to `false` / `0` when absent. Ignored for `"action"` and `"file"`, which have no value |
+
+**Files** (`"file"` items)
+
+- The file is read as it is, so `content` holds the raw bytes, including line breaks as stored (`\r\n` for a file saved on Windows). Binary data is passed on unchanged in Lua; in JavaScript the string is decoded as UTF-8.
+- A file larger than **2048 bytes** is refused: the user gets a message, and `onChange` is not called. The same applies to a file that cannot be read.
+- The dialog has no file type filter, and no starting folder is chosen.
+- If the script is replaced while the dialog is open, the chosen file is dropped.
 
 **`onGetValue`** is evaluated on the worker thread every time the menu is opened, so the checkmark always reflects the script's live state, including config restored by `onLoad()` on a patch reload. It runs while the menu is built and must not send anything.
 
@@ -968,6 +996,7 @@ Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = f
 - Runs on the worker thread, when the item is clicked, and may call any other `rack.*` function. An exception inside it is logged as `Context menu callback error: ...` and does not crash anything.
 - It can send. Like `rack.onLoad` it is a callback without an event: MIDI built with `midi.create()` and sent with `midiOut.send()` (or any other `midiOut.*` sender) goes out when `onChange` returns, and trigger, voltage and Tipsy outputs work as usual. Timing is "as soon as possible", and `rack.getEventFrame()` is `-1`.
 - The checkmark or selection is updated as soon as the item is clicked, before the callback has run, so the menu reflects the change immediately.
+- Arguments by type: `"boolean"` gets `(checked)`, `"options"` gets `(selectedIndex, selectedLabel)`, `"action"` gets none and `"file"` gets `(content, fileName)`.
 
 **Changing items at runtime**
 

@@ -20,9 +20,10 @@
 // "Use Ch" switches. Enable one channel per simultaneous voice your synth
 // has, or use fewer and accept note stealing.
 //
-// The tuning is defined by a Scala .scl file pasted into config.scl below -
-// the same text you would load with "LOAD filename.scl" in the Scala
-// program. onLoad parses it into a list of cents offsets per octave degree
+// The tuning is defined by a Scala .scl file - the same text you would load
+// with "LOAD filename.scl" in the Scala program. The scale pasted into
+// config.scl below is the default; the module's context menu can load an .scl
+// file instead (at most 2 KB), which is then saved in the patch. onLoad parses it into a list of cents offsets per octave degree
 // (first entry always 0 = the tonic at baseNote); ratios like "5/4" are
 // converted with ratioToCents(numer, denom) = 1200 * log2(numer / denom).
 // See https://www.huygens-fokker.org/scala/ for the format.
@@ -90,6 +91,12 @@ let config = {
     // Only process this input channel; 0 = every channel
     channel: rack.getConfig("channel", 0)
 };
+
+// The scale above is the default. One loaded from a file (context menu) is saved
+// in the patch with rack.setConfig and replaces it after a reload.
+const DEFAULT_SCL = config.scl;
+config.scl = rack.getConfig("scl", DEFAULT_SCL);
+if (typeof config.scl !== "string") config.scl = DEFAULT_SCL;
 
 // Context menu choices
 let CHANNEL_LABELS = ["All"];
@@ -228,6 +235,16 @@ function removeFromQueue(note, ch) {
     }
 };
 
+// Makes `content` (the text of an .scl file) the scale. False, and nothing
+// changed, when it holds no scale notes.
+function applyScl(content) {
+    let parsed = parseScl(content);
+    if (parsed.length < 2) return false;
+    config.scl = content;
+    scale = parsed;
+    return true;
+}
+
 // Setup
 rack.onLoad = function() {
     scale = parseScl(config.scl);
@@ -269,9 +286,34 @@ rack.onLoad = function() {
         }
     });
 
+    // The scale: a file from disk, or back to the one embedded in this script.
+    rack.registerContextMenu({
+        type: "file",
+        label: "Load scale (.scl)...",
+        onChange: function(content, fileName) {
+            if (applyScl(content)) {
+                rack.setConfig("scl", content);
+                rack.log("Scale loaded from ", fileName, ": ", scale.length, " degrees per octave");
+            }
+            else {
+                rack.log("No scale notes found in ", fileName, ", keeping the current scale");
+            }
+        }
+    });
+
+    rack.registerContextMenu({
+        type: "action",
+        label: "Default scale",
+        onChange: function() {
+            applyScl(DEFAULT_SCL);
+            rack.setConfig("scl", undefined);
+            rack.log("Default scale: ", scale.length, " degrees per octave");
+        }
+    });
+
     rack.log("Micro scale initialized");
-    rack.log("Scale degrees: ", scale.length - 1, " per octave (parsed from config.scl)");
-    if (scale.length < 2) rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl");
+    rack.log("Scale degrees: ", scale.length - 1, " per octave (parsed from the saved or the embedded .scl)");
+    if (scale.length < 2) rack.log("WARNING: no scale notes parsed - check the pasted .scl in config.scl or the loaded file");
     rack.log("Base: ", config.baseNote, " @ ", number.toString(config.baseFreq), " Hz");
     rack.log("Bend depth: ", number.toString(config.bendDepth), " st");
 };

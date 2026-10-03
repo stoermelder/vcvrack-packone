@@ -1,5 +1,7 @@
 #pragma once
 #include "MidiScriptEngine.hpp"
+#include "../../vcv/ui.hpp"
+#include "../../vcv/fs.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -100,6 +102,30 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 		ui::MenuEntry::step();
 	}
 
+	// A "file" item's click: the file dialog, then the file's text to the script. The
+	// dialog blocks, so the engine is looked up again afterwards: the script may have
+	// been replaced meanwhile, and a stale id is ignored by the engine.
+	static void chooseAndSendFile(MODULE* m, const MidiScript::ScriptMenuItem& spec) {
+		std::string path = vcv::ui::openDialog("", "");
+		if (path.empty()) return;
+		// Too big is refused before reading, so a huge file is never loaded.
+		if (vcv::fs::getFileSize(path) > MidiScript::ScriptMenuItem::fileMaxBytes) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK,
+				string::f("The file %s is larger than %d bytes", vcv::fs::getFilename(path).c_str(), (int)MidiScript::ScriptMenuItem::fileMaxBytes));
+			return;
+		}
+		std::string content;
+		if (!vcv::fs::read(path, content)) {
+			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK,
+				string::f("Could not read the file %s", path.c_str()));
+			return;
+		}
+		// The size can change between the check and the read.
+		if (content.size() > MidiScript::ScriptMenuItem::fileMaxBytes) return;
+		MidiScript::MidiScriptEngine* engine = m->host.getActiveEngine();
+		if (engine) engine->invokeContextMenuCallback(spec.callbackId, MidiScript::ScriptMenuClick::file(content, vcv::fs::getFilename(path)));
+	}
+
 	void buildItems() {
 		Menu* menu = dynamic_cast<Menu*>(parent);
 		if (!menu) return;
@@ -110,6 +136,16 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
 				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
 					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
+				});
+			}
+			else if (spec.type == MidiScript::ScriptMenuItem::Type::Action) {
+				item = createMenuItem(spec.label, "", [m, spec]() {
+					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, MidiScript::ScriptMenuClick());
+				});
+			}
+			else if (spec.type == MidiScript::ScriptMenuItem::Type::File) {
+				item = createMenuItem(spec.label, "", [m, spec]() {
+					chooseAndSendFile(m, spec);
 				});
 			}
 			else {

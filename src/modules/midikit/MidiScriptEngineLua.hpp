@@ -736,39 +736,30 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// state isn't stored on the spec — the next menu build re-evaluates it from
 	// onGetValue, so onChange's config changes are picked up automatically. The
 	// call is deferred to runAsync() with all other Lua work.
-	void invokeContextMenuCallback(int callbackId, int value) override {
+	void invokeContextMenuCallback(int callbackId, const ScriptMenuClick& click) override {
 		// The whole body runs on the worker thread, incl. the spec lookup:
 		// contextMenus is worker-owned, so no lock. The caller ignores timing,
 		// so the read needn't be synchronous on the UI thread.
-		runAsync([this, callbackId, value]() {
+		runAsync([this, callbackId, click]() {
 			assert(onWorkerThread());
 			if (!L) return;
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
-			const ContextMenuEntry& entry = it->second;
-			ScriptMenuItem::Type type = entry.spec.type;
-			std::string label;
-			if (type != ScriptMenuItem::Type::Boolean) {
-				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
-				label = entry.spec.options[value];
-			}
-			int ref = entry.callbackRef;
-			lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-			int nargs;
-			if (type == ScriptMenuItem::Type::Boolean) {
-				lua_pushboolean(L, value != 0);
-				nargs = 1;
-			}
-			else {
-				lua_pushinteger(L, value);
-				lua_pushlstring(L, label.c_str(), label.size());
-				nargs = 2;
+			std::vector<ScriptMenuArg> args;
+			if (!menuCallArgs(it->second.spec, click, args)) return;
+			lua_rawgeti(L, LUA_REGISTRYINDEX, it->second.callbackRef);
+			for (const ScriptMenuArg& a : args) {
+				switch (a.kind) {
+					case ScriptMenuArg::Kind::Bool: lua_pushboolean(L, a.b); break;
+					case ScriptMenuArg::Kind::Int: lua_pushinteger(L, a.i); break;
+					case ScriptMenuArg::Kind::String: lua_pushlstring(L, a.s.data(), a.s.size()); break;
+				}
 			}
 			// A callback like onLoad: MIDI it sends goes out as it calls midiOut.*.
 			beginStore(0);
 			inCallback = true;
 			beginScriptExecution();
-			int status = lua_pcall(L, nargs, 0, 0);
+			int status = lua_pcall(L, static_cast<int>(args.size()), 0, 0);
 			inCallback = false;
 			if (status != LUA_OK) {
 				const char* err = lua_tostring(L, -1);
@@ -1260,7 +1251,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pop(L, 1);
 		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
 		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
-		else return luaL_error(L, "registerContextMenu: type must be \"boolean\" or \"options\"");
+		else if (type == "action") spec.type = ScriptMenuItem::Type::Action;
+		else if (type == "file") spec.type = ScriptMenuItem::Type::File;
+		else return luaL_error(L, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"file\"");
 
 		lua_getfield(L, 1, "label");
 		if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");
@@ -1298,7 +1291,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// leak it.
 		lua_getfield(L, 1, "onGetValue");
 		int onGetValueRef = LUA_NOREF;
-		if (lua_isfunction(L, -1)) {
+		// Only boolean and options items have a value to show.
+		bool hasValue = spec.type == ScriptMenuItem::Type::Boolean || spec.type == ScriptMenuItem::Type::Options;
+		if (hasValue && lua_isfunction(L, -1)) {
 			onGetValueRef = luaL_ref(L, LUA_REGISTRYINDEX); // pops onGetValue
 		}
 		else {
