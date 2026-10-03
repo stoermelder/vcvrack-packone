@@ -98,6 +98,29 @@ struct MidiScriptEngine {
 		return slot < int64_t(msgCount) ? long(slot) : -1;
 	}
 
+	// Messages a handle sends as one group: 4 for an NRPN/RPN, 2 for a 14-bit CC
+	// pair, 1 for anything else. Only meaningful on the lead slot.
+	static size_t groupSize(const ScriptMessage& s) {
+		return s.isNrpn ? 4 : s.isCc14bit ? 2 : 1;
+	}
+
+	// The error tail for a single-message setter called on a group handle, or
+	// nullptr for a plain handle. Such a setter would write only the lead slot
+	// and leave a broken group, so the bindings raise this instead, before any
+	// write (the Lua ones longjmp, see sendEntry()).
+	static const char* groupSetterError(const ScriptMessage& s) {
+		if (s.isNrpn) return s.isRpn ? "message is an RPN; use midi.setRPN()" : "message is an NRPN; use midi.setNRPN()";
+		if (s.isCc14bit) return "message is a 14-bit CC; use midi.setCc14bit()";
+		return nullptr;
+	}
+
+	// midi.setChannel() on a handle: every message of its group, so the group
+	// stays on one channel. `slot` from handleToSlot().
+	void setGroupChannel(size_t slot, uint8_t channel) {
+		size_t n = groupSize(msgStore[slot]);
+		for (size_t k = 0; k < n; k++) msgStore[slot + k].in.msg.setChannel(channel);
+	}
+
 	// Worker, from a midiOut.send*() binding: sends `first` to `port` on `frame`,
 	// with the 3 entries after it for an NRPN/RPN chain or the 1 after it for a
 	// 14-bit CC pair, as one group. Works on copies, so the handle can be changed
@@ -109,7 +132,7 @@ struct MidiScriptEngine {
 	// `scheduled`: sent by sendAfterMs/sendAtFrame/sendAfterTrigger, so
 	// midiOut.cancel() may drop it. A plain send() never is.
 	void sendEntry(const ScriptMessage& first, int port, int64_t frame, uint8_t channel = 0, uint64_t tick = 0, int trigPort = 0, bool scheduled = false) {
-		size_t n = first.isNrpn ? 4 : first.isCc14bit ? 2 : 1;
+		size_t n = groupSize(first);
 		Message group[4];
 		for (size_t k = 0; k < n; k++) {
 			group[k] = (&first)[k].in.msg;

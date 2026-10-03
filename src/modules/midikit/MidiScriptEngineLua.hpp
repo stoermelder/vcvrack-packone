@@ -2017,6 +2017,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setCc(lua_State* L) {
 		// midi.setCc(msg, channel, cc, value)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setCc: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
@@ -2057,6 +2058,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// handles, sent as separate messages (no atomicity).
 		ScriptMessage* m1 = getMsg(L, 1);
 		ScriptMessage* m2 = &e->msgStore[checkHandle(L, 2, "invalid msg2 index")];
+		if (const char* groupErr = groupSetterError(*m1)) luaL_error(L, "midi.setCc14bit: %s", groupErr);
+		if (const char* groupErr = groupSetterError(*m2)) luaL_error(L, "midi.setCc14bit: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 3), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
 		double value = clampCc14bitValue(luaL_checknumber(L, 5));
@@ -2073,15 +2076,16 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	static int lua_midi_setChannel(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
+		size_t idx = checkHandle(L, 1);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
-		m->in.msg.setChannel(ch - 1);
+		getEngine(L)->setGroupChannel(idx, ch - 1);
 		return 0;
 	}
 
 	static int lua_midi_setChanPressure(lua_State* L) {
 		// midi.setChanPressure(msg, channel, value)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setChanPressure: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t val = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		// Channel pressure is a 2-byte message (status + pressure), not 3 —
@@ -2096,6 +2100,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setKeyPressure(lua_State* L) {
 		// midi.setKeyPressure(msg, channel, note, velocity)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setKeyPressure: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
@@ -2109,6 +2114,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setNote(lua_State* L) {
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setNote: %s", groupErr);
 		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 2), 0, 127);
 		m->in.msg.setNote(value);
 		return 0;
@@ -2117,6 +2123,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setNoteOff(lua_State* L) {
 		// midi.setNoteOff(msg, channel, note [, velocity])
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setNoteOff: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(luaL_optnumber(L, 4, 0), 0, 127);
@@ -2131,6 +2138,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setNoteOn(lua_State* L) {
 		// midi.setNoteOn(msg, channel, note, velocity)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setNoteOn: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t note = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
@@ -2189,6 +2197,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setPitchWheel(lua_State* L) {
 		// midi.setPitchWheel(msg, channel, value)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setPitchWheel: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint16_t value = clampInt<uint16_t>(luaL_checknumber(L, 3), 0, 16383);
 		if (m->in.msg.getSize() != 3) m->in.msg.setSize(3);
@@ -2202,6 +2211,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setProgramChange(lua_State* L) {
 		// midi.setProgramChange(msg, channel, program)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setProgramChange: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
 		uint8_t prg = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
 		// Program Change is a 2-byte message (status + program), not 3: a stray
@@ -2216,6 +2226,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setRaw(lua_State* L) {
 		// midi.setRaw(msg, hexstring)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setRaw: %s", groupErr);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
 		std::string data(raw, len);
@@ -2239,6 +2250,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_setSysEx(lua_State* L) {
 		// midi.setSysEx(msg, hexstring)
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setSysEx: %s", groupErr);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
 		std::string data(raw, len);
@@ -2269,6 +2281,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	static int lua_midi_setValue(lua_State* L) {
 		ScriptMessage* m = getMsg(L, 1);
+		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setValue: %s", groupErr);
 		uint8_t value = clampInt<uint8_t>(luaL_checknumber(L, 2), 0, 127);
 		m->in.msg.setValue(value);
 		return 0;

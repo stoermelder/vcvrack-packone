@@ -1984,6 +1984,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setCc: bad args");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setCc: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
@@ -2034,6 +2035,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		ScriptMessage& s1 = e->msgStore[idx1];
 		ScriptMessage& s2 = e->msgStore[idx2];
+		if (const char* groupErr = groupSetterError(s1)) return jsThrow(ctx, string::f("midi.setCc14bit: %s", groupErr).c_str());
+		if (const char* groupErr = groupSetterError(s2)) return jsThrow(ctx, string::f("midi.setCc14bit: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[2]), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
 		double value = clampCc14bitValue(argNum(ctx, argv[4]));
@@ -2053,9 +2056,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_midi_setChannel(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setChannel: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
-		s.in.msg.setChannel(ch - 1);
+		getEngine(ctx)->setGroupChannel(idx, ch - 1);
 		return JS_UNDEFINED;
 	}
 
@@ -2065,6 +2067,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setChanPressure: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setChanPressure: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		// Channel pressure is a 2-byte message (status + pressure), not 3 —
@@ -2082,6 +2085,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setKeyPressure: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setKeyPressure: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t note = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
@@ -2097,6 +2101,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setNote: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setNote: %s", groupErr).c_str());
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[1]), 0, 127);
 		s.in.msg.setNote(value);
 		return JS_UNDEFINED;
@@ -2110,6 +2115,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setNoteOff: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setNoteOff: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t note = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t vel = argc >= 4 ? clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127) : 0;
@@ -2127,6 +2133,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setNoteOn: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setNoteOn: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t note = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
@@ -2190,6 +2197,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setPitchWheel: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setPitchWheel: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[2]), 0, 16383);
 		if (s.in.msg.getSize() != 3) s.in.msg.setSize(3);
@@ -2206,6 +2214,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setProgramChange: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setProgramChange: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t prg = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		// Program Change is a 2-byte message (status + program), not 3: a stray
@@ -2221,6 +2230,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !JS_IsString(argv[1])) return jsThrow(ctx, "midi.setRaw: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setRaw: %s", groupErr).c_str());
 		std::string data = getEngine(ctx)->jsToStdString(argv[1]);
 		if (data.length() % 2 != 0) {
 			return jsThrow(ctx, "midi.setRaw: invalid string length");
@@ -2246,6 +2256,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !JS_IsString(argv[1])) return jsThrow(ctx, "midi.setSysEx: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setSysEx: %s", groupErr).c_str());
 		std::string data = getEngine(ctx)->jsToStdString(argv[1]);
 		if (data.length() % 2 != 0) {
 			return jsThrow(ctx, "midi.setSysEx: invalid string length");
@@ -2277,6 +2288,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setValue: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setValue: %s", groupErr).c_str());
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[1]), 0, 127);
 		s.in.msg.setValue(value);
 		return JS_UNDEFINED;

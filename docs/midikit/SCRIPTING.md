@@ -1272,13 +1272,14 @@ Messages are opaque **handles** into an internal message store. Create one with 
   Note: NRPN/14-bit-CC chain state is not copied — a clone of an NRPN or
   `createCc14bit()` handle is a single plain message, not a chained group.
 - `midi.createNRPN()` → 4 chained handles (param LSB/MSB + value LSB/MSB),
-  used only with `midi.setNRPN`.
+  set with `midi.setNRPN` (and `midi.setChannel`); other setters raise an error.
 - `midi.createRPN()` → the same 4-handle chain for a *registered* parameter
-  (CC 101/100 select it), used only with `midi.setRPN`. Sending RPN 0 sets a
-  synth's pitch-bend range.
+  (CC 101/100 select it), set with `midi.setRPN` (and `midi.setChannel`); other
+  setters raise an error. Sending RPN 0 sets a synth's pitch-bend range.
 - `midi.createCc14bit()` → 2 chained handles (value MSB at CC `cc`, value LSB
-  at CC `cc + 32`), used only with `midi.setCc14bit`; the pair is sent
-  atomically — a receiver never sees the MSB without its LSB.
+  at CC `cc + 32`), set with `midi.setCc14bit` (and `midi.setChannel`); other
+  setters raise an error. The pair is sent atomically — a receiver never sees
+  the MSB without its LSB.
 
 #### Getters
 
@@ -1318,7 +1319,7 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setCc(msg, ch, cc, value)` | |
 | `setCc14bit(msgMsb, msgLsb, ch, cc, value)` | fills two independent handles, sent as two separate messages with no atomicity |
 | `setCc14bit(cc14, ch, cc, value)` | `cc14` is the first handle of a `midi.createCc14bit()` pair; both CCs sent atomically as a unit |
-| `setChannel(msg, ch)` | |
+| `setChannel(msg, ch)` | on an NRPN, RPN or 14-bit CC handle: every message of the group |
 | `setChanPressure(msg, ch, value)` | 2-byte message; read back with `getChanPressure`, not `getValue` |
 | `setKeyPressure(msg, ch, note, vel)` | |
 | `setNote(msg, note)` | |
@@ -1331,6 +1332,8 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setSysEx(msg, hexString)` | payload only — `f0`/`f7` framing added automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`; capped at 256 bytes, every byte must be 7-bit (`00`-`7f`) |
 | `setRaw(msg, hexString)` | writes the exact bytes with no framing added, e.g. `"f11a"` for an MTC quarter-frame — use for message types with no dedicated setter |
 | `setValue(msg, value)` | |
+
+**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()` stands for a whole group of messages. Besides its own setter (`setNRPN`, `setRPN`, `setCc14bit`), only `setChannel` accepts it, and it sets the channel of every message in the group. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
 
 Both `setCc14bit` forms take `value` as a float (MSB = integer part,
 LSB = fractional part × 128), clamped to 0-127.99 and not rounded — see the `NRPN to CC` preset

@@ -838,3 +838,153 @@ end
 TEST_CASE("setNoteOff velocity round-trips via getValue and clamps", "[MidiKit][CrossEngine]") {
 	requireLoggedValues(JS_NOTE_OFF_VEL_PROBE, LUA_NOTE_OFF_VEL_PROBE, {"100", "0", "127", "0"});
 }
+
+
+// Group handles (createNRPN / createRPN / createCc14bit) and the single-message
+// setters: a setter that writes only the lead slot would leave a broken group,
+// so setChannel() rechannels the whole group and the others raise an error.
+
+namespace {
+
+struct GroupKind {
+	const char* name;
+	const char* js;        // creates and sets the group handle `g`
+	const char* lua;
+	size_t size;           // messages the group sends
+	const char* error;     // the tail of the error a single-message setter raises
+};
+
+const GroupKind GROUP_KINDS[] = {
+	{ "NRPN", "let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000);",
+	          "local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000)",
+	  4, "message is an NRPN; use midi.setNRPN()" },
+	{ "RPN", "let g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000);",
+	         "local g = midi.createRPN(); midi.setRPN(g, 1, 300, 1000)",
+	  4, "message is an RPN; use midi.setRPN()" },
+	{ "14-bit CC", "let g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5);",
+	               "local g = midi.createCc14bit(); midi.setCc14bit(g, 1, 5, 100.5)",
+	  2, "message is a 14-bit CC; use midi.setCc14bit()" },
+};
+
+// `call` inside a try/catch (pcall) that logs "ERR <message>".
+std::string jsGuarded(const std::string& call) {
+	return "try { " + call + " } catch (e) { rack.log('ERR ' + e.message); }";
+}
+std::string luaGuarded(const std::string& call) {
+	return "local ok, err = pcall(function() " + call + " end); if not ok then rack.log('ERR ' .. err) end";
+}
+
+}
+
+TEST_CASE("setChannel on a group handle rechannels every message of the group", "[MidiKit][CrossEngine]") {
+	for (const GroupKind& k : GROUP_KINDS) {
+		CATCH_INFO(k.name);
+		EngineResult base = run(jsOnMessage(std::string(k.js) + " midiOut.send(g);"));
+		EngineResult js = run(jsOnMessage(std::string(k.js) + " midi.setChannel(g, 5); midiOut.send(g);"));
+		EngineResult lua = run(luaOnMessage(std::string(k.lua) + "; midi.setChannel(g, 5); midiOut.send(g)"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+
+		REQUIRE(base.sent.size() == k.size);
+		REQUIRE(js.sent.size() == k.size);
+		REQUIRE(lua.sent.size() == k.size);
+		for (size_t i = 0; i < k.size; i++) {
+			// Only the channel nibble differs from the group set on channel 1.
+			REQUIRE(js.sent[i].bytes[0] == 0xb4);
+			REQUIRE(js.sent[i].bytes[1] == base.sent[i].bytes[1]);
+			REQUIRE(js.sent[i].bytes[2] == base.sent[i].bytes[2]);
+			REQUIRE(js.sent[i].bytes == lua.sent[i].bytes);
+		}
+	}
+}
+
+TEST_CASE("The group setter overrides an earlier setChannel, and setChannel on an unset group is harmless", "[MidiKit][CrossEngine]") {
+	for (const GroupKind& k : GROUP_KINDS) {
+		CATCH_INFO(k.name);
+		// setChannel first, then the group setter: its channel wins on every member.
+		std::string create = std::string(k.js);
+		std::string head = create.substr(0, create.find(" midi.set"));
+		std::string setter = create.substr(create.find(" midi.set"));
+		std::string luaCreate = k.lua;
+		std::string luaHead = luaCreate.substr(0, luaCreate.find("; midi.set"));
+		std::string luaSetter = luaCreate.substr(luaCreate.find("; midi.set"));
+
+		EngineResult js = run(jsOnMessage(head + " midi.setChannel(g, 5);" + setter + " midiOut.send(g);"));
+		EngineResult lua = run(luaOnMessage(luaHead + "; midi.setChannel(g, 5)" + luaSetter + "; midiOut.send(g)"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.log.empty());
+		REQUIRE(lua.log.empty());
+		REQUIRE(js.sent.size() == k.size);
+		REQUIRE(js.sent == lua.sent);
+		for (const auto& m : js.sent) REQUIRE(m.bytes[0] == 0xb0);
+
+		// On a group that was never set, it raises nothing.
+		EngineResult unsetJs = run(jsOnMessage(head + " midi.setChannel(g, 5);"));
+		EngineResult unsetLua = run(luaOnMessage(luaHead + "; midi.setChannel(g, 5)"));
+		REQUIRE(unsetJs.log.empty());
+		REQUIRE(unsetLua.log.empty());
+	}
+}
+
+TEST_CASE("Single-message setters raise an error on a group handle and leave it unchanged", "[MidiKit][CrossEngine]") {
+	// Each call is valid on a plain handle. `p` is a plain handle.
+	struct Setter { const char* fn; const char* args; };
+	const Setter setters[] = {
+		{ "setValue", "g, 1" },
+		{ "setNote", "g, 1" },
+		{ "setCc", "g, 1, 7, 1" },
+		{ "setNoteOn", "g, 1, 60, 100" },
+		{ "setNoteOff", "g, 1, 60" },
+		{ "setKeyPressure", "g, 1, 60, 1" },
+		{ "setChanPressure", "g, 1, 1" },
+		{ "setPitchWheel", "g, 1, 100" },
+		{ "setProgramChange", "g, 1, 1" },
+		{ "setSysEx", "g, \"01\"" },
+		{ "setRaw", "g, \"b00101\"" },
+		// Five-argument setCc14bit: the group handle as either message.
+		{ "setCc14bit", "g, p, 1, 5, 1" },
+		{ "setCc14bit", "p, g, 1, 5, 1" },
+	};
+	for (const GroupKind& k : GROUP_KINDS) {
+		EngineResult base = run(jsOnMessage(std::string(k.js) + " midiOut.send(g);"));
+		REQUIRE(base.sent.size() == k.size);
+		for (const Setter& s : setters) {
+			CATCH_INFO(std::string(k.name) + " " + s.fn + "(" + s.args + ")");
+			std::string call = std::string("midi.") + s.fn + "(" + s.args + ");";
+			std::string expected = std::string("midi.") + s.fn + ": " + k.error;
+
+			EngineResult js = run(jsOnMessage(std::string(k.js) + " let p = midi.create(); " + jsGuarded(call) + " midiOut.send(g);"));
+			EngineResult lua = run(luaOnMessage(std::string(k.lua) + "; local p = midi.create(); " + luaGuarded(call) + "; midiOut.send(g)"));
+			CATCH_INFO(js.log);
+			CATCH_INFO(lua.log);
+
+			REQUIRE(js.log.find(expected) != std::string::npos);
+			REQUIRE(lua.log.find(expected) != std::string::npos);
+			// The group still goes out exactly as it was set.
+			REQUIRE(js.sent == base.sent);
+			REQUIRE(lua.sent == base.sent);
+		}
+	}
+}
+
+TEST_CASE("Single-message setters on plain handles and on the incoming message are unaffected", "[MidiKit][CrossEngine]") {
+	EngineResult js = run(jsOnMessage("midi.setChannel(msg, 3); midi.setValue(msg, 9); midi.setNote(msg, 61); midiOut.send(msg);"));
+	EngineResult lua = run(luaOnMessage("midi.setChannel(msg, 3); midi.setValue(msg, 9); midi.setNote(msg, 61); midiOut.send(msg)"));
+	CATCH_INFO(js.log);
+	CATCH_INFO(lua.log);
+	REQUIRE(js.log.empty());
+	REQUIRE(lua.log.empty());
+	REQUIRE(js.sent.size() == 1);
+	REQUIRE(js.sent == lua.sent);
+	REQUIRE((js.sent[0].bytes[0] & 0x0f) == 2);
+	REQUIRE(js.sent[0].bytes[1] == 61);
+	REQUIRE(js.sent[0].bytes[2] == 9);
+
+	EngineResult plainJs = run(jsOnMessage("let m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midi.setChannel(m, 4); midi.setNote(m, 62); midi.setValue(m, 7); midiOut.send(m);"));
+	EngineResult plainLua = run(luaOnMessage("local m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midi.setChannel(m, 4); midi.setNote(m, 62); midi.setValue(m, 7); midiOut.send(m)"));
+	REQUIRE(plainJs.log.empty());
+	REQUIRE(plainJs.sent == plainLua.sent);
+	REQUIRE(plainJs.sent.size() == 1);
+	REQUIRE(plainJs.sent[0].bytes == std::vector<uint8_t>({0x93, 62, 7}));
+}
