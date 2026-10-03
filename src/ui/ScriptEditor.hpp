@@ -256,6 +256,20 @@ struct ScriptEditField : TextField {
 	scripttext::Range multiClickAnchor;
 
 	void onButton(const ButtonEvent& e) override {
+		// Rack's base class would open its own context menu on a right click.
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			OpaqueWidget::onButton(e);
+			// The caret goes where the menu was opened, so an inserted snippet lands there.
+			// A click inside the selection keeps it, for Cut / Copy and to replace it.
+			int pos = getTextPosition(e.pos);
+			if (pos < std::min(cursor, selection) || pos > std::max(cursor, selection)) {
+				cursor = selection = pos;
+				preferredCol = -1;
+			}
+			openContextMenu();
+			e.consume(this);
+			return;
+		}
 		TextField::onButton(e);
 		preferredCol = -1;
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -295,6 +309,92 @@ struct ScriptEditField : TextField {
 			selection = multiClickAnchor.begin;
 			cursor = std::max(r.end, multiClickAnchor.end);
 		}
+	}
+
+	// ── Context menu ──
+	// The owner's API reference (see ScriptEditorHost::apiReference); each group is a
+	// submenu of the context menu whose items insert a call to the function.
+	std::vector<scripttext::ApiGroup> api;
+	// The script language, from the owner (ScriptEditorHost::syntax()).
+	std::function<scripttext::ScriptSyntax()> syntaxProvider;
+
+	scripttext::ScriptSyntax syntax() const {
+		return syntaxProvider ? syntaxProvider() : scripttext::ScriptSyntax();
+	}
+	// Turns an API function into the text to insert (ScriptEditorHost::expandApiFunction()).
+	std::function<std::string(const scripttext::ApiGroup&, const scripttext::ApiFunction&, const std::string& indent)> snippetProvider;
+
+	// Rack's TextField::createContextMenu() is not virtual, so the standard items are
+	// rebuilt here (see onButton()).
+	void insertApiSnippet(const scripttext::ApiGroup& group, const scripttext::ApiFunction& f) {
+		int at = std::min(cursor, selection);
+		if (!snippetProvider) return;
+		std::string snippet = snippetProvider(group, f, scripttext::leadingWhitespace(text, at));
+		insertText(snippet);
+		// insertText() leaves the caret behind the snippet; select the snippet instead.
+		selection = at;
+		cursor = at + (int)snippet.size();
+		APP->event->setSelectedWidget(this);
+	}
+
+	void openContextMenu() {
+		rack::ui::Menu* menu = createMenu();
+		bool hasSelection = cursor != selection;
+		menu->addChild(createMenuItem("Cut", widget::getKeyCommandName(GLFW_KEY_X, RACK_MOD_CTRL), [this]() {
+			vcv::ui::setClipboard(getSelectedText());
+			insertText("");
+			APP->event->setSelectedWidget(this);
+		}, !hasSelection));
+		menu->addChild(createMenuItem("Copy", widget::getKeyCommandName(GLFW_KEY_C, RACK_MOD_CTRL), [this]() {
+			vcv::ui::setClipboard(getSelectedText());
+			APP->event->setSelectedWidget(this);
+		}, !hasSelection));
+		menu->addChild(createMenuItem("Paste", widget::getKeyCommandName(GLFW_KEY_V, RACK_MOD_CTRL), [this]() {
+			insertText(vcv::ui::getClipboard());
+			APP->event->setSelectedWidget(this);
+		}));
+		menu->addChild(createMenuItem("Select all", widget::getKeyCommandName(GLFW_KEY_A, RACK_MOD_CTRL), [this]() {
+			selectAll();
+			APP->event->setSelectedWidget(this);
+		}));
+		if (api.empty()) return;
+
+		menu->addChild(new rack::ui::MenuSeparator);
+		for (size_t g = 0; g < api.size(); g++) {
+			menu->addChild(createSubmenuItem(api[g].name + ".*", "", [this, g](rack::ui::Menu* menu) {
+				const scripttext::ApiGroup& group = api[g];
+				// Functions without a category come first, then one submenu per category in
+				// order of first appearance.
+				std::vector<std::string> categories;
+				for (const scripttext::ApiFunction& f : group.functions) {
+					if (f.category.empty()) {
+						menu->addChild(createApiItem(group, f));
+					}
+					else if (std::find(categories.begin(), categories.end(), f.category) == categories.end()) {
+						categories.push_back(f.category);
+					}
+				}
+				for (const std::string& category : categories) {
+					menu->addChild(createSubmenuItem(category, "", [this, g, category](rack::ui::Menu* menu) {
+						const scripttext::ApiGroup& group = api[g];
+						for (const scripttext::ApiFunction& f : group.functions) {
+							if (f.category == category) menu->addChild(createApiItem(group, f));
+						}
+					}));
+				}
+			}));
+		}
+	}
+
+	// The right text shows the parameters, so the menu doubles as a quick reference.
+	rack::ui::MenuItem* createApiItem(const scripttext::ApiGroup& group, const scripttext::ApiFunction& f) {
+		std::string params;
+		for (const scripttext::ApiParam& p : f.params) {
+			if (!params.empty()) params += ", ";
+			params += p.optional ? "[" + p.name + "]" : p.name;
+		}
+		// Copies, so the item stays valid however long the menu is open.
+		return createMenuItem(f.name, "(" + params + ")", [this, group, f]() { insertApiSnippet(group, f); });
 	}
 
 	void step() override {
@@ -420,7 +520,7 @@ struct ScriptEditField : TextField {
 			}
 			// Toggle comment: Ctrl+/, and Ctrl+Shift+7 for layouts that type "/" with Shift+7.
 			if (e.isKeyCommand(GLFW_KEY_SLASH, RACK_MOD_CTRL) || e.isKeyCommand(GLFW_KEY_7, RACK_MOD_CTRL | GLFW_MOD_SHIFT)) {
-				applyEdit(scripttext::toggleComment(text, cursor, selection, scripttext::commentPrefix(text)));
+				applyEdit(scripttext::toggleComment(text, cursor, selection, syntax().lineComment));
 				e.consume(this);
 				return;
 			}
@@ -809,6 +909,26 @@ struct ScriptEditorHost {
 	// once, when the editor opens; the owner replays what it already has. The callbacks
 	// are valid for as long as the host lives, which is as long as the dialog does.
 	virtual void attachLog(std::function<void(const std::string&)> append, std::function<void()> clear) {}
+
+	// The functions a script can call, offered in the editor's context menu: one submenu per
+	// group, and choosing a function inserts a call to it, with a comment line above describing its
+	// parameters. Called once, when the editor opens. Empty (the default) leaves the
+	// menu with the standard text items only.
+	virtual std::vector<scripttext::ApiGroup> apiReference() { return {}; }
+
+	// The script's language: its line comment (for Ctrl+/ and for the comment in an
+	// inserted API call) and statement terminator. Asked on each use, so it follows the
+	// owner's current state, e.g. an apply that switches the engine. The default is a
+	// language with `--` comments and no terminator.
+	virtual scripttext::ScriptSyntax syntax() { return scripttext::ScriptSyntax(); }
+
+	// What choosing `f` from the API menu inserts. `indent` is the leading whitespace of
+	// the line it lands on, for any line the snippet adds. The default is a comment line
+	// describing the parameters above the call, in the language syntax() reports;
+	// override it to lay a call out differently. The editor selects the inserted text.
+	virtual std::string expandApiFunction(const scripttext::ApiGroup& group, const scripttext::ApiFunction& f, const std::string& indent) {
+		return scripttext::apiSnippet(group.name, f, syntax(), indent);
+	}
 
 	// The editor closed itself (Close, Apply & Close, Esc). Not called when the owner
 	// dismisses it.
@@ -1242,6 +1362,14 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		field->setText(text);
 		field->cursor = field->selection = 0;
 		field->clearHistory();
+		if (host) {
+			field->api = host->apiReference();
+			ScriptEditorHost* h = host.get();
+			field->syntaxProvider = [h]() { return h->syntax(); };
+			field->snippetProvider = [h](const scripttext::ApiGroup& g, const scripttext::ApiFunction& f, const std::string& indent) {
+				return h->expandApiFunction(g, f, indent);
+			};
+		}
 		field->applyAction = [this](bool closeAfter) { closeAfter ? applyAndClose() : apply(); };
 		field->closeAction = [this]() { requestClose(); };
 		field->changeAction = [this]() { updateDirty(); };

@@ -682,6 +682,190 @@ TEST_CASE("Editor: right and middle clicks do not close it", "[MidiKit][Editor]"
 	REQUIRE(e.field->text == "unapplied");
 }
 
+static rack::ui::Menu* newestMenu() {
+	rack::ui::Menu* menu = nullptr;
+	for (rack::widget::Widget* c : APP->scene->children) {
+		if (auto* o = dynamic_cast<rack::ui::MenuOverlay*>(c)) {
+			for (rack::widget::Widget* w : o->children) {
+				if (auto* mm = dynamic_cast<rack::ui::Menu*>(w)) menu = mm;
+			}
+		}
+	}
+	return menu;
+}
+
+static rack::ui::MenuItem* menuItemNamed(rack::ui::Menu* menu, const std::string& text) {
+	REQUIRE(menu != nullptr);
+	for (rack::widget::Widget* w : menu->children) {
+		if (auto* item = dynamic_cast<rack::ui::MenuItem*>(w)) {
+			if (item->text == text) return item;
+		}
+	}
+	FAIL("no menu item \"" << text << "\"");
+	return nullptr;
+}
+
+static rack::ui::Menu* openSubmenu(rack::ui::Menu* menu, const std::string& text) {
+	rack::ui::MenuItem* item = menuItemNamed(menu, text);
+	rack::ui::Menu* child = item->createChildMenu();
+	REQUIRE(child != nullptr);
+	return child;
+}
+
+static void clickMenuItem(rack::ui::MenuItem* item) {
+	rack::widget::Widget::ActionEvent a;
+	rack::widget::EventContext c;
+	a.context = &c;
+	item->onAction(a);
+}
+
+TEST_CASE("Editor: the context menu lists the script API and a click inserts a snippet", "[MidiKit][Editor][Api]") {
+	Test::Harness h;
+	EditorCleanup cleanup;
+	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
+	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	m->loadScript("// @engine QuickJs@v1\n");
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->cursor = e.field->selection = (int)e.field->text.size();
+
+	size_t menus = menuOverlayCount();
+	h.events().rightClick(e.field);
+	REQUIRE(menuOverlayCount() == menus + 1);
+	rack::ui::Menu* menu = newestMenu();
+
+	// Standard items, then one entry per API object.
+	for (const char* name : {"Cut", "Copy", "Paste", "Select all", "rack.*", "number.*", "input.*", "trig.*", "param.*", "midi.*", "midiOut.*"}) {
+		menuItemNamed(menu, name);
+	}
+
+	// A flat group: the function and its parameters are shown, a click inserts it.
+	rack::ui::Menu* rackMenu = openSubmenu(menu, "rack.*");
+	rack::ui::MenuItem* log = menuItemNamed(rackMenu, "log");
+	REQUIRE(log->rightText == "(value)");
+	clickMenuItem(log);
+	REQUIRE(e.field->text == "// @engine QuickJs@v1\n// value: any value, further arguments are appended without separator\nrack.log(value);");
+	// The inserted text is selected.
+	REQUIRE(e.field->getSelectedText() == "// value: any value, further arguments are appended without separator\nrack.log(value);");
+	REQUIRE(APP->event->selectedWidget == e.field);
+
+	// A categorized group is one level deeper; Lua gets its own comment style and no semicolon.
+	m->loadScript("--[[\n@engine minilua@v1\n--]]\n");
+	e.field->setText("-- @engine minilua@v1\n");
+	e.field->cursor = e.field->selection = (int)e.field->text.size();
+	h.events().rightClick(e.field);
+	rack::ui::Menu* midiMenu = openSubmenu(newestMenu(), "midi.*");
+	rack::ui::Menu* setters = openSubmenu(midiMenu, "Setters");
+	rack::ui::MenuItem* noteOn = menuItemNamed(setters, "setNoteOn");
+	REQUIRE(noteOn->rightText == "(msg, ch, note, vel)");
+	clickMenuItem(noteOn);
+	REQUIRE(e.field->text.find("\n-- msg: message handle; ch: channel 1-16; note: note number 0-127; vel: velocity 0-127\nmidi.setNoteOn(msg, ch, note, vel)") != std::string::npos);
+
+	// One undo step takes the insertion back.
+	e.field->undo();
+	REQUIRE(e.field->text == "-- @engine minilua@v1\n");
+}
+
+TEST_CASE("Editor: the script language is that of the running engine", "[MidiKit][Editor][Api]") {
+	Test::Harness h;
+	EditorCleanup cleanup;
+	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
+	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	OpenEditor e = openEditorOn(h, mw);
+
+	m->loadScript("/**\n * @engine QuickJs@v1\n */\n");
+	REQUIRE(e.field->syntax().lineComment == "//");
+	REQUIRE(e.field->syntax().statementEnd == ";");
+
+	// An apply that switches the engine is picked up without reopening the editor.
+	m->loadScript("--[[\n@engine minilua@v1\n--]]\n");
+	REQUIRE(e.field->syntax().lineComment == "--");
+	REQUIRE(e.field->syntax().statementEnd == "");
+}
+
+// Right-clicks, then removes the menu that opened, which would otherwise cover the next click.
+static void rightClickClosingMenu(Test::Harness& h, rack::math::Vec pos) {
+	size_t before = menuOverlayCount();
+	REQUIRE(h.events().rightClick(pos));
+	REQUIRE(menuOverlayCount() == before + 1);
+	rack::widget::Widget* menu = nullptr;
+	for (rack::widget::Widget* c : APP->scene->children) {
+		if (dynamic_cast<rack::ui::MenuOverlay*>(c)) menu = c;
+	}
+	APP->event->finalizeWidget(menu);
+	APP->scene->removeChild(menu);
+	delete menu;
+}
+
+TEST_CASE("Editor: a right click moves the caret there, unless it hits the selection", "[MidiKit][Editor][Api]") {
+	Test::Harness h;
+	EditorCleanup cleanup;
+	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
+	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->setText("first\nsecond\nthird");
+	e.field->cursor = e.field->selection = 0;
+
+	// On the start of "second": the click point is computed from the field's own hit test.
+	rack::math::Vec second = Test::EventDriver::pointIn(e.field, rack::math::Vec(
+		ScriptEditField::kPadX + 2 * ScriptEditField::charWidth(),
+		ScriptEditField::kPadY + 1.5f * ScriptEditField::kLineHeight));
+	rightClickClosingMenu(h, second);
+	REQUIRE(e.field->cursor == e.field->selection);
+	REQUIRE(e.field->cursor == 6 + 2);
+
+	// Inside a selection the selection survives.
+	e.field->selection = 6;
+	e.field->cursor = 12;
+	rightClickClosingMenu(h, second);
+	REQUIRE(e.field->selection == 6);
+	REQUIRE(e.field->cursor == 12);
+
+	// Outside it, the selection collapses to the click.
+	e.field->selection = 0;
+	e.field->cursor = 3;
+	rightClickClosingMenu(h, second);
+	REQUIRE(e.field->cursor == e.field->selection);
+	REQUIRE(e.field->cursor == 8);
+}
+
+TEST_CASE("Editor: the API table is complete and matches what both engines expose", "[MidiKit][Editor][Api]") {
+	std::vector<StoermelderPackOne::ui::editor::scripttext::ApiGroup> api = StoermelderPackOne::MidiScript::apiReference();
+	REQUIRE_FALSE(api.empty());
+
+	std::string js = "/**\n * @engine QuickJs@v1\n */\n";
+	std::string lua = "--[[\n@engine minilua@v1\n--]]\n";
+	for (const auto& g : api) {
+		for (const auto& f : g.functions) {
+			std::string path = g.name + "." + f.name;
+			js += "if (typeof " + path + " !== 'function') throw new Error('missing " + path + "');\n";
+			lua += "if type(" + path + ") ~= 'function' then error('missing " + path + "') end\n";
+			// A ';' in a description would split the one-line comment in the wrong place.
+			for (const auto& p : f.params) {
+				REQUIRE(p.description.find(';') == std::string::npos);
+				REQUIRE_FALSE(p.description.empty());
+			}
+		}
+	}
+	SECTION("QuickJs") {
+		ModuleScaffold mods;
+		MidiKitModule* m = mods.create();
+		m->loadScript(js);
+		std::string log = drainLog(m);
+		CATCH_INFO(log);
+		REQUIRE(m->host.seQuickJs.ctx != nullptr);
+		REQUIRE(log.find("missing") == std::string::npos);
+	}
+	SECTION("Lua") {
+		ModuleScaffold mods;
+		MidiKitModule* m = mods.create();
+		m->loadScript(lua);
+		std::string log = drainLog(m);
+		CATCH_INFO(log);
+		REQUIRE(m->host.seLua.L != nullptr);
+		REQUIRE(log.find("missing") == std::string::npos);
+	}
+}
+
 TEST_CASE("Editor: the log area's context menu copies and clears", "[MidiKit][Editor][Log]") {
 	Test::Harness h;
 	EditorCleanup cleanup;
@@ -1213,7 +1397,7 @@ TEST_CASE("Editor field: line operations by key, each one undoable", "[MidiKit][
 	REQUIRE(APP->event->selectedWidget == e.field);
 }
 
-TEST_CASE("Editor field: Ctrl+/ toggles comments in the buffer's own language", "[MidiKit][Editor][Lines]") {
+TEST_CASE("Editor field: Ctrl+/ toggles comments in the running script's language", "[MidiKit][Editor][Lines]") {
 	Test::Harness h;
 	EditorCleanup cleanup;
 	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
@@ -1222,6 +1406,7 @@ TEST_CASE("Editor field: Ctrl+/ toggles comments in the buffer's own language", 
 	const int CTRL = RACK_MOD_CTRL;
 
 	SECTION("JavaScript: //") {
+		m->loadScript("/**\n * @engine QuickJs@v1\n */\n");
 		e.field->setText("/**\n * @engine QuickJs@v1\n */\nlog(1);\n");
 		e.field->clearHistory();
 		e.field->cursor = e.field->selection = 31;           // in "log(1);"
@@ -1231,6 +1416,7 @@ TEST_CASE("Editor field: Ctrl+/ toggles comments in the buffer's own language", 
 		REQUIRE(e.field->text == "/**\n * @engine QuickJs@v1\n */\nlog(1);\n");
 	}
 	SECTION("Lua: --, and the same on a layout where / is Shift+7") {
+		m->loadScript("--[[\n@engine minilua@v1\n--]]\n");
 		e.field->setText("--[[\n@engine minilua@v1\n--]]\nlog(1)\n");
 		e.field->clearHistory();
 		e.field->cursor = e.field->selection = 30;           // in "log(1)"
@@ -1239,15 +1425,17 @@ TEST_CASE("Editor field: Ctrl+/ toggles comments in the buffer's own language", 
 		h.events().keyPress(GLFW_KEY_Z, CTRL);
 		REQUIRE(e.field->text == "--[[\n@engine minilua@v1\n--]]\nlog(1)\n");
 	}
-	SECTION("the language follows the header while it is being edited") {
-		e.field->setText("--[[\n@engine minilua@v1\n--]]\nx\n");
-		e.field->cursor = e.field->selection = 30;
+	SECTION("the language follows the engine after an apply") {
+		m->loadScript("--[[\n@engine minilua@v1\n--]]\n");
+		e.field->setText("x\n");
+		e.field->cursor = e.field->selection = 0;
 		h.events().keyPress(GLFW_KEY_SLASH, CTRL);
-		REQUIRE(e.field->text.find("-- x") != std::string::npos);
-		e.field->setText("/**\n * @engine QuickJs@v1\n */\nx\n");
-		e.field->cursor = e.field->selection = 31;
+		REQUIRE(e.field->text == "-- x\n");
+		m->loadScript("/**\n * @engine QuickJs@v1\n */\n");
+		e.field->setText("x\n");
+		e.field->cursor = e.field->selection = 0;
 		h.events().keyPress(GLFW_KEY_SLASH, CTRL);
-		REQUIRE(e.field->text.find("// x") != std::string::npos);
+		REQUIRE(e.field->text == "// x\n");
 	}
 }
 

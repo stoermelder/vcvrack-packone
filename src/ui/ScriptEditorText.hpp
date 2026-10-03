@@ -408,19 +408,6 @@ inline Edit deleteLines(const std::string& text, int cursor, int selection) {
 
 // ── Comments ──
 
-// The line comment of the script's language, from its own header: "@engine QuickJs..."
-// is JavaScript (`//`), anything else Lua (`--`). Reads the buffer, not the running
-// engine, so it stays right while the header is being edited.
-inline std::string commentPrefix(const std::string& text) {
-	size_t at = text.find("@engine");
-	if (at != std::string::npos) {
-		size_t i = at + 7;
-		while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) i++;
-		if (text.compare(i, 7, "QuickJs") == 0) return "//";
-	}
-	return "--";
-}
-
 struct TextEdit {
 	int pos;
 	int removeLen;
@@ -558,6 +545,80 @@ inline Range lineRangeAt(const std::string& text, int offset) {
 	r.begin = starts[line];
 	r.end = line + 1 < (int)starts.size() ? starts[line + 1] : (int)text.size();
 	return r;
+}
+
+// ── Script language ──
+// What the editor needs to know about the language it edits, which only the owner
+// knows. Plain data, see ScriptEditorHost::syntax().
+struct ScriptSyntax {
+	std::string lineComment;
+	// Appended to a generated statement, e.g. ";" (empty if the language has none).
+	std::string statementEnd;
+	ScriptSyntax(const std::string& lineComment = "--", const std::string& statementEnd = "")
+		: lineComment(lineComment), statementEnd(statementEnd) {}
+};
+
+// ── Script API reference ──
+// What the owner tells the editor about the functions a script can call, so the editor
+// can offer them as snippets. Plain data: the editor knows no engine or module.
+
+struct ApiParam {
+	std::string name;
+	// One short phrase. It ends up in a one-line comment where ';' separates parameters,
+	// so it must not contain one.
+	std::string description;
+	// An optional parameter is described in the comment but not put into the call.
+	bool optional;
+	ApiParam(const std::string& name, const std::string& description, bool optional = false)
+		: name(name), description(description), optional(optional) {}
+};
+
+struct ApiFunction {
+	std::string name;
+	// Functions of one group may be filed in submenus; empty means directly in the group's menu.
+	std::string category;
+	std::vector<ApiParam> params;
+	ApiFunction(const std::string& name, const std::string& category, const std::vector<ApiParam>& params)
+		: name(name), category(category), params(params) {}
+};
+
+// The functions of one global object, e.g. "rack" for rack.log().
+struct ApiGroup {
+	std::string name;
+	std::vector<ApiFunction> functions;
+	ApiGroup(const std::string& name, const std::vector<ApiFunction>& functions)
+		: name(name), functions(functions) {}
+};
+
+// A comment line describing all parameters (when there are any), then
+// "group.function(required, params)" on the line below. `syntax` is the script
+// language's line comment, and the call ends with its statement terminator.
+// `indent` is put in front of the call line, so it lines up with the line the comment
+// starts on.
+inline std::string apiSnippet(const std::string& group, const ApiFunction& f, const ScriptSyntax& syntax, const std::string& indent = "") {
+	std::string s;
+	if (!f.params.empty()) {
+		s = syntax.lineComment + " ";
+		for (size_t i = 0; i < f.params.size(); i++) {
+			const ApiParam& p = f.params[i];
+			if (i > 0) s += "; ";
+			s += p.optional ? "[" + p.name + "]" : p.name;
+			s += ": " + p.description;
+			if (p.optional) s += " (optional)";
+		}
+		s += "\n" + indent;
+	}
+	s += group + "." + f.name + "(";
+	bool first = true;
+	for (const ApiParam& p : f.params) {
+		if (p.optional) continue;
+		if (!first) s += ", ";
+		s += p.name;
+		first = false;
+	}
+	s += ")";
+	s += syntax.statementEnd;
+	return s;
 }
 
 } // namespace scripttext

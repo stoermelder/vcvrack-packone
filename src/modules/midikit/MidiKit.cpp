@@ -9,6 +9,7 @@
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "../../ui/ScriptEditor.hpp"
+#include "MidiScriptApiDoc.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../vcv/fs.hpp"
 #include "../../vcv/engine.hpp"
@@ -2471,6 +2472,14 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			if (m->host.isQuickJsEngine()) return "QuickJs";
 			if (m->host.isLuaEngine()) return "Lua";
 			return "";
+		}
+		std::vector<ui::editor::scripttext::ApiGroup> apiReference() override {
+			return MidiScript::apiReference();
+		}
+		// JavaScript for QuickJs, Lua otherwise.
+		ui::editor::scripttext::ScriptSyntax syntax() override {
+			if (m->host.isQuickJsEngine()) return ui::editor::scripttext::ScriptSyntax("//", ";");
+			return ui::editor::scripttext::ScriptSyntax("--", "");
 		}
 	};
 

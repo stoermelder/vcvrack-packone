@@ -395,14 +395,6 @@ TEST_CASE("ScriptEditorText deleteLines", "[ScriptEditor]") {
 	}
 }
 
-TEST_CASE("ScriptEditorText commentPrefix", "[ScriptEditor]") {
-	REQUIRE(commentPrefix("/**\n * @engine QuickJs@v1\n */\nx") == "//");
-	REQUIRE(commentPrefix("--[[\n@engine minilua@v1\n--]]\nx") == "--");
-	REQUIRE(commentPrefix("no header at all") == "--");
-	REQUIRE(commentPrefix("") == "--");
-	REQUIRE(commentPrefix("@engine   QuickJs") == "//");
-}
-
 TEST_CASE("ScriptEditorText toggleComment", "[ScriptEditor]") {
 	SECTION("comment, then uncomment, restores the text") {
 		Edit on = toggleComment("x\ny", 0, 3, "--");
@@ -502,4 +494,36 @@ TEST_CASE("ScriptEditorText lineRangeAt", "[ScriptEditor]") {
 	Range d = lineRangeAt("a\n", 2);      // the empty last line
 	REQUIRE(d.begin == 2);
 	REQUIRE(d.end == 2);
+}
+
+TEST_CASE("ScriptEditorText apiSnippet", "[ScriptEditor]") {
+	ApiFunction noteOn("setNoteOn", "Setters", {{"msg", "message handle"}, {"ch", "channel 1-16"}});
+	ApiFunction noteOff("setNoteOff", "Setters", {{"msg", "message handle"}, {"vel", "release velocity", true}});
+	ApiFunction none("random", "", {});
+	ApiFunction onlyOptional("enableTipsyIn", "", {{"enabled", "false releases", true}});
+
+	SECTION("comment line above the call, describing every parameter") {
+		std::string s = apiSnippet("midi", noteOn, ScriptSyntax("--", ""));
+		REQUIRE(s == "-- msg: message handle; ch: channel 1-16\nmidi.setNoteOn(msg, ch)");
+	}
+	SECTION("a // language also gets the semicolon") {
+		std::string s = apiSnippet("midi", noteOn, ScriptSyntax("//", ";"));
+		REQUIRE(s == "// msg: message handle; ch: channel 1-16\nmidi.setNoteOn(msg, ch);");
+	}
+	SECTION("the call line takes the indentation") {
+		std::string s = apiSnippet("midi", noteOn, ScriptSyntax("--", ""), "    ");
+		REQUIRE(s == "-- msg: message handle; ch: channel 1-16\n    midi.setNoteOn(msg, ch)");
+	}
+	SECTION("optional parameters are described but not in the call") {
+		std::string s = apiSnippet("midi", noteOff, ScriptSyntax("--", ""));
+		REQUIRE(s == "-- msg: message handle; [vel]: release velocity (optional)\nmidi.setNoteOff(msg)");
+	}
+	SECTION("no parameters: no comment") {
+		std::string s = apiSnippet("rack", none, ScriptSyntax("//", ";"));
+		REQUIRE(s == "rack.random();");
+	}
+	SECTION("only optional parameters: empty call") {
+		std::string s = apiSnippet("trig", onlyOptional, ScriptSyntax("--", ""));
+		REQUIRE(s == "-- [enabled]: false releases (optional)\ntrig.enableTipsyIn()");
+	}
 }
