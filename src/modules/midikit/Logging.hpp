@@ -157,7 +157,8 @@ struct LogDisplay : LedTextDisplay {
 		return logTime ? *logTime : LOG_TIME::TIMESTAMP;
 	}
 	// Set by the widget: adds the running script's section (engine, RAM usage,
-	// rack.registerContextMenu items, ...) to the top of this menu and returns
+	// rack.registerContextMenu items, ...) and the "Script" section (edit, load,
+	// save, ...) to the top of this menu and returns
 	// whether it added anything. Kept as a hook because that needs the module,
 	// which the display knows nothing about.
 	std::function<bool(Menu*)> appendScriptItems;

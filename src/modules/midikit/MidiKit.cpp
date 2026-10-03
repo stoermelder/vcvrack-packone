@@ -2178,7 +2178,10 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 6.f));
 		logDisplay->fontSize = 7.2f;
 		logDisplay->appendScriptItems = [this](Menu* menu) {
-			return appendRunningScriptItems(menu);
+			if (!module) return false;
+			if (appendRunningScriptItems(menu)) menu->addChild(new MenuSeparator());
+			appendScriptItems(menu);
+			return true;
 		};
 		textDisplay->addChild(logDisplay);
 	}
@@ -2245,6 +2248,12 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/Lua"), ".lua");
 		}));
 		menu->addChild(new MenuSeparator());
+		appendScriptItems(menu);
+	}
+
+	// The "Script" section: edit, clear, clipboard, load, reload, save. Shared by
+	// the module's menu and the log display's.
+	void appendScriptItems(Menu* menu) {
 		menu->addChild(createMenuLabel("Script"));
 		menu->addChild(createMenuItem("Edit…", RACK_MOD_ALT_NAME "+E", [=]() { openEditor(); }));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));

@@ -1662,12 +1662,35 @@ struct ClipboardSpy : StoermelderPackOne::vcv::UiAccess {
 	void setClipboard(const std::string& t) override { text = t; sets++; }
 };
 
+// The last entry called `text`: the log display's own "Log" section comes after
+// the "Script" section, which has entries of the same names.
 static rack::ui::MenuItem* findMenuItem(rack::ui::Menu* menu, const std::string& text) {
+	rack::ui::MenuItem* found = nullptr;
 	for (rack::Widget* child : menu->children) {
 		auto* mi = dynamic_cast<rack::ui::MenuItem*>(child);
-		if (mi && mi->text == text) return mi;
+		if (mi && mi->text == text) found = mi;
 	}
-	return nullptr;
+	return found;
+}
+
+TEST_CASE("Log display context menu offers the Script section", "[MidiKit][LogMenu]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = mods.create();
+	m->model = modelMidiKit;
+	MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+	REQUIRE(mw->logDisplay != nullptr);
+
+	rack::ui::Menu* menu = new rack::ui::Menu;
+	mw->logDisplay->appendContextMenu(menu);
+	REQUIRE(countMenuEntries(menu, "Script") == 1);
+	for (const char* name : { "Edit…", "Paste from clipboard", "Load", "Reload", "Save as" }) {
+		REQUIRE(countMenuEntries(menu, name) == 1);
+	}
+	// "Clear" and "Copy to clipboard" exist in both the Script and the Log section.
+	REQUIRE(countMenuEntries(menu, "Clear") == 2);
+	REQUIRE(countMenuEntries(menu, "Copy to clipboard") == 2);
+	delete menu;
+	Test::destroyWidget(mw);
 }
 
 TEST_CASE("Log display context menu copies the whole log to the clipboard and clears it", "[MidiKit][LogMenu]") {
