@@ -587,6 +587,42 @@ TEST_CASE("setters clamp and round out-of-range arguments identically", "[MidiKi
 	}
 }
 
+TEST_CASE("setCc14bit clamps its MSB controller to 0-31, so the LSB is always cc + 32", "[MidiKit][CrossEngine]") {
+	// Only controllers 0-31 have an LSB partner at cc + 32. Above that the LSB
+	// would wrap onto an MSB controller (100 -> 4) or leave the 14-bit range.
+	struct Case { const char* cc; uint8_t msb; };
+	const Case cases[] = { {"100", 31}, {"127", 31}, {"32", 31}, {"31", 31}, {"5", 5}, {"0", 0}, {"-1", 0} };
+	for (const Case& c : cases) {
+		CATCH_INFO("cc " << c.cc);
+		const std::vector<uint8_t> msbBytes = {0xb0, c.msb, 64};
+		const std::vector<uint8_t> lsbBytes = {0xb0, uint8_t(c.msb + 32), 64};
+
+		// Pair handle: sent as one group.
+		EngineResult js = run(jsOnMessage(std::string("let m = midi.createCc14bit(); midi.setCc14bit(m, 1, ") + c.cc + ", 64.5); midiOut.send(m);"));
+		EngineResult lua = run(luaOnMessage(std::string("local m = midi.createCc14bit(); midi.setCc14bit(m, 1, ") + c.cc + ", 64.5); midiOut.send(m)"));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.sent.size() == 2);
+		REQUIRE(lua.sent.size() == 2);
+		for (EngineResult* r : {&js, &lua}) {
+			REQUIRE(r->sent[0].bytes == msbBytes);
+			REQUIRE(r->sent[1].bytes == lsbBytes);
+		}
+
+		// Two independent handles.
+		EngineResult js2 = run(jsOnMessage(std::string("let a = midi.create(); let b = midi.create(); midi.setCc14bit(a, b, 1, ") + c.cc + ", 64.5); midiOut.send(a); midiOut.send(b);"));
+		EngineResult lua2 = run(luaOnMessage(std::string("local a = midi.create(); local b = midi.create(); midi.setCc14bit(a, b, 1, ") + c.cc + ", 64.5); midiOut.send(a); midiOut.send(b)"));
+		CATCH_INFO(js2.log);
+		CATCH_INFO(lua2.log);
+		REQUIRE(js2.sent.size() == 2);
+		REQUIRE(lua2.sent.size() == 2);
+		for (EngineResult* r : {&js2, &lua2}) {
+			REQUIRE(r->sent[0].bytes == msbBytes);
+			REQUIRE(r->sent[1].bytes == lsbBytes);
+		}
+	}
+}
+
 TEST_CASE("setCc14bit clamps its value to 7-bit data bytes", "[MidiKit][CrossEngine]") {
 	for (const char* v : {"1000", "-5"}) {
 		std::string args = std::string("midi.setCc14bit(m, 1, 1, ") + v + ");";

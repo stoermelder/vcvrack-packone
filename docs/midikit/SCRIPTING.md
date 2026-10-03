@@ -1309,7 +1309,7 @@ true only for assembled extended messages (see
 
 Setter arguments are never wrapped. A number is rounded to the nearest integer
 and clamped to the field's range: channels to 1-16, 7-bit fields (`cc`, `note`,
-`value`, `vel`, `program`, pressure) to 0-127, and 14-bit fields (`setNRPN`
+`value`, `vel`, `program`, pressure) to 0-127, the `cc` of `setCc14bit` to 0-31 (its LSB is `cc + 32`), and 14-bit fields (`setNRPN`
 number/value, `setPitchWheel` value) to 0-16383. So `setNote(msg, 132)` gives
 note 127, not note 4, and `setNote(msg, 60.5)` gives note 61 in both Lua and
 JavaScript. `NaN` clamps to the lower bound.

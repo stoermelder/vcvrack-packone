@@ -2040,7 +2040,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			if (!m1->isCc14bit) luaL_argerror(L, 1, "message is not a 14-bit CC pair");
 			ScriptMessage* m2 = &e->msgStore[static_cast<size_t>(m1 - e->msgStore.data()) + 1];
 			uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 2), 1, 16);
-			uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 127);
+			uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 3), 0, 31);
 			double value = clampCc14bitValue(luaL_checknumber(L, 4));
 			if (m1->in.msg.getSize() != 3) m1->in.msg.setSize(3);
 			if (m2->in.msg.getSize() != 3) m2->in.msg.setSize(3);
@@ -2061,7 +2061,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (const char* groupErr = groupSetterError(*m1)) luaL_error(L, "midi.setCc14bit: %s", groupErr);
 		if (const char* groupErr = groupSetterError(*m2)) luaL_error(L, "midi.setCc14bit: %s", groupErr);
 		uint8_t ch = clampInt<uint8_t>(luaL_checknumber(L, 3), 1, 16);
-		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 127);
+		uint8_t cc = clampInt<uint8_t>(luaL_checknumber(L, 4), 0, 31);
 		double value = clampCc14bitValue(luaL_checknumber(L, 5));
 		if (m1->in.msg.getSize() != 3) m1->in.msg.setSize(3);
 		if (m2->in.msg.getSize() != 3) m2->in.msg.setSize(3);
