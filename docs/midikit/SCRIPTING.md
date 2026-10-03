@@ -876,7 +876,8 @@ Write every hook once, at the top level, during the initial load. Every shipped 
 | `rack.getEventFrame()` | the engine frame (sample counter) of the event being handled, `-1` outside an event. See [Event frames](#event-frames) |
 | `rack.msToFrames(ms)` | frames in `ms` milliseconds at the current sample rate, rounded to a whole frame (`rack.msToFrames(10)` is 441 at 44.1 kHz). Use it to place messages relative to `rack.getEventFrame()` |
 | `rack.framesToMs(frames)` | the inverse: milliseconds in `frames` frames, not rounded. A measured clock period in frames becomes a time, and a BPM |
-| `rack.random()` | a random number in [0, 1) from Rack's own RNG (`rack::random::uniform()`), so it shares the patch's seed |
+| `rack.random()` | a random number in [0, 1) from a generator of the module itself. Its seed is stored in the patch, and every script load (also a reload or a patch load) restarts the sequence from it, so the same script produces the same values each time. Another MIDI-KIT module has a different seed |
+| `rack.setRandomSeed(seed)` | restarts the `rack.random()` sequence from `seed` at once. Any finite number is accepted (truncated, wrapped into 32 bits); NaN and infinity raise an error. It changes only the running script's generator, not the seed stored in the patch: the next script load starts from the stored seed again, so call it in `rack.onLoad` for a fixed sequence of your own |
 | `rack.getConfig(key [, default])` | read a persisted value, or `default` (`undefined`/`nil` if omitted) when `key` is unset. See [Persistence](#persistence) |
 | `rack.setConfig(key, value)` | persist `value` under `key`, or remove the key if `value` is `undefined`/`nil`. See [Persistence](#persistence) |
 | `rack.sendBroadcast(value [, topic])` | send `value` to the other MIDI-KIT modules, returns how many received it. See [Messages between modules](#messages-between-modules) |

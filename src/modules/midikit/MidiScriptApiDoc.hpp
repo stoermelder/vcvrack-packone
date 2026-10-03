@@ -54,6 +54,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("msToFrames", "", {{"ms", "milliseconds"}}),
 		ApiFunction("framesToMs", "", {{"frames", "number of frames"}}),
 		ApiFunction("random", "", {}),
+		ApiFunction("setRandomSeed", "", {{"seed", "any finite number, truncated to 32 bits"}}),
 		ApiFunction("registerContextMenu", "", {{"options", "{type: \"boolean\" or \"options\", label, options, onGetValue, onChange}"}}),
 		ApiFunction("unregisterContextMenu", "", {{"label", "label of the item to remove"}}),
 		ApiFunction("getConfig", "", {{"key", "name of the persisted value"}, {"default", "returned if key is unset", true}}),

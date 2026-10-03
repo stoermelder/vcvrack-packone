@@ -796,6 +796,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "msToFrames", JS_NewCFunction(ctx, js_rack_msToFrames, "msToFrames", 1));
 		JS_SetPropertyStr(ctx, _rack, "framesToMs", JS_NewCFunction(ctx, js_rack_framesToMs, "framesToMs", 1));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
+		JS_SetPropertyStr(ctx, _rack, "setRandomSeed", JS_NewCFunction(ctx, js_rack_setRandomSeed, "setRandomSeed", 1));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "getConfig", JS_NewCFunction(ctx, js_rack_getConfig, "getConfig", 2));
@@ -1002,9 +1003,17 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewFloat64(ctx, rack::crossfade(a, b, p));
 	}
 
+	static JSValue js_rack_setRandomSeed(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "rack.setRandomSeed: bad args");
+		if (!getEngine(ctx)->setRandomSeedFromNumber(argNum(ctx, argv[0]))) {
+			return jsThrow(ctx, "rack.setRandomSeed: seed must be a finite number");
+		}
+		return JS_UNDEFINED;
+	}
+
 	static JSValue js_rack_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc != 0) return jsThrow(ctx, "rack.random: bad args");
-		return JS_NewFloat64(ctx, rack::random::uniform());
+		return JS_NewFloat64(ctx, getEngine(ctx)->nextRandom());
 	}
 
 	// rack.registerContextMenu(options) — registers one item in the module's

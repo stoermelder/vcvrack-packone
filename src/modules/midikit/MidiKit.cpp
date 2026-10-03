@@ -1067,6 +1067,10 @@ struct ScriptHost {
 	/** [Stored to JSON] */
 	std::string script = "";
 
+	/** [Stored to JSON] Seed of rack.random(); every load of a script restarts its
+	sequence from it. A new module gets a random one, so two modules differ. */
+	uint32_t randomSeed = rack::random::u32();
+
 	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, const PortCounts& c, std::shared_ptr<WorkerDomain> domain = nullptr)
 		: seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
 		  seQuickJs(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
@@ -1165,9 +1169,13 @@ struct ScriptHost {
 		if (seQuickJs.testScript(src)) next = &seQuickJs;
 
 		MidiScript::MidiScriptEngine* outgoing = engineToUnload(prev);
-		runOnWorker([outgoing, next, src, configJson]() {
+		uint32_t seed = randomSeed;
+		runOnWorker([outgoing, next, src, configJson, seed]() {
 			outgoing->unloadScriptOnWorker();
-			if (next) next->loadScriptOnWorker(src.c_str(), configJson);
+			if (next) {
+				next->seedRandom(seed);
+				next->loadScriptOnWorker(src.c_str(), configJson);
+			}
 		});
 		activeEngine = next;
 		return next;
@@ -2005,6 +2013,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "logTime", json_integer((int)logTime));
+		json_object_set_new(rootJ, "randomSeed", json_integer(host.randomSeed));
 
 		// Only the ports the script uses are written. The others keep their
 		// driver/device/channel in memory (a script reload never touches them),
@@ -2043,6 +2052,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			int v = json_integer_value(logTimeJ);
 			logTime = v >= 0 && v <= (int)LOG_TIME::OFF ? (LOG_TIME)v : LOG_TIME::TIMESTAMP;
 		}
+
+		// Before loadScript() below: the seed is read when the script loads.
+		json_t* randomSeedJ = json_object_get(rootJ, "randomSeed");
+		if (randomSeedJ && json_is_integer(randomSeedJ)) host.randomSeed = static_cast<uint32_t>(json_integer_value(randomSeedJ));
 
 		for (int i = 0; i < MIDI_INPUTS; i++) {
 			json_t* midiInputJ = json_object_get(rootJ, midiInputKey(i).c_str());

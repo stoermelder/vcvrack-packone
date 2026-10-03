@@ -119,6 +119,37 @@ struct MidiScriptEngine {
 	// The module this engine runs in, injected at construction.
 	MidiScriptEngineHandler* handler;
 
+	// rack.random(): a generator of the engine's own, not Rack's global one, so a
+	// module's sequence depends only on its stored seed and the script. The host
+	// reseeds it at every load (worker thread), which makes a reload replay the
+	// same values.
+	void seedRandom(uint32_t seed) {
+		// A fixed second word: with (seed, 0) a seed of 0 would leave the all-zero state.
+		rng.seed(seed, 0x9E3779B97F4A7C15ull);
+		// Low-entropy seeds (small integers) need a few shifts to spread.
+		for (int i = 0; i < 4; i++) rng();
+	}
+
+	// rack.setRandomSeed(n): the script's own seed, taking effect at once. Any finite
+	// number is accepted: truncated, then wrapped into 32 bits (negative too), so a
+	// script can feed it a clock or a counter. False for NaN/infinity. Only the
+	// running generator changes, not the seed stored in the patch, which the next
+	// load restores: a script that wants its own seed calls this in onLoad.
+	bool setRandomSeedFromNumber(double n) {
+		if (!std::isfinite(n)) return false;
+		double wrapped = std::fmod(std::trunc(n), 4294967296.0);
+		if (wrapped < 0) wrapped += 4294967296.0;
+		seedRandom(static_cast<uint32_t>(wrapped));
+		return true;
+	}
+
+	// Uniform in [0, 1). Built from the raw 53 top bits instead of a std
+	// distribution, whose output differs between standard libraries: a patch
+	// must get the same values on every platform.
+	double nextRandom() {
+		return static_cast<double>(rng() >> 11) * (1.0 / 9007199254740992.0);
+	}
+
 	// rack.setConfig()/getConfig() limits, shared so the engines can't drift.
 	// Depth 1 is the value itself; the cap also ends cyclic tables/objects, as the
 	// converters track no visited nodes.
@@ -198,8 +229,11 @@ struct MidiScriptEngine {
 	int midiInputCount;
 	int midiOutputCount;
 
+	rack::random::Xoroshiro128Plus rng;
+
 	MidiScriptEngine(MidiScriptEngineHandler* handler, int inputCount, int inputTrigCount, int outputTrigCount, int paramCount, int midiInputCount, int midiOutputCount)
 		: handler(handler), inputCount(inputCount), inputTrigCount(inputTrigCount), outputTrigCount(outputTrigCount), paramCount(paramCount), midiInputCount(midiInputCount), midiOutputCount(midiOutputCount) {
+		seedRandom(1);   // engines driven without a host (tests) still get a defined sequence
 	}
 
 	// Not owned: the host owns the domain and outlives its engines' use of it,

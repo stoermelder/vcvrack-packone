@@ -1024,6 +1024,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("msToFrames",    lua_rack_msToFrames);
 		setTableFunc("framesToMs",    lua_rack_framesToMs);
 		setTableFunc("random",   lua_rack_random);
+		setTableFunc("setRandomSeed", lua_rack_setRandomSeed);
 		setTableFunc("registerContextMenu", lua_rack_registerContextMenu);
 		setTableFunc("unregisterContextMenu", lua_rack_unregisterContextMenu);
 		setTableFunc("getConfig", lua_rack_getConfig);
@@ -1473,8 +1474,15 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
+	static int lua_rack_setRandomSeed(lua_State* L) {
+		if (!getEngine(L)->setRandomSeedFromNumber(luaL_checknumber(L, 1))) {
+			return luaL_error(L, "rack.setRandomSeed: seed must be a finite number");
+		}
+		return 0;
+	}
+
 	static int lua_rack_random(lua_State* L) {
-		lua_pushnumber(L, rack::random::uniform());
+		lua_pushnumber(L, getEngine(L)->nextRandom());
 		return 1;
 	}
 

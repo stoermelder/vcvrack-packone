@@ -809,3 +809,194 @@ end
 	check(JS_ON_UNLOAD_SETS_CONFIG);
 	check(LUA_ON_UNLOAD_SETS_CONFIG);
 }
+
+
+// rack.random(): per-module, seeded from the stored randomSeed, restarted by every load
+
+static const char* JS_RANDOM_ON_LOAD = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onLoad = function() {
+	rack.log("r=" + Math.floor(rack.random() * 1e9) + "," + Math.floor(rack.random() * 1e9));
+};
+)";
+
+static const char* LUA_RANDOM_ON_LOAD = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+	rack.log("r=" .. math.floor(rack.random() * 1e9) .. "," .. math.floor(rack.random() * 1e9))
+end
+)";
+
+// The "r=a,b" values the script logged on its latest load.
+static std::string randomValues(MidiKitModule* m) {
+	std::string log = drainLog(m);
+	size_t at = log.rfind("r=");
+	REQUIRE(at != std::string::npos);
+	return log.substr(at, log.find('\n', at) - at);
+}
+
+TEST_CASE("rack.random() replays the same values on every script reload, in both engines", "[MidiKit][CrossEngine][Random]") {
+	ModuleScaffold mods;
+	for (const char* script : { JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD }) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		std::string first = randomValues(m);
+		REQUIRE(first.size() > 4);
+
+		m->loadScript(script);
+		REQUIRE(randomValues(m) == first);
+		m->clearScript();
+		m->loadScript(script);
+		REQUIRE(randomValues(m) == first);
+	}
+}
+
+TEST_CASE("rack.random() follows the seed: another seed gives other values, the same seed the same", "[MidiKit][CrossEngine][Random]") {
+	ModuleScaffold mods;
+	for (const char* script : { JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD }) {
+		MidiKitModule* m = createModule();
+		m->host.randomSeed = 1234;
+		m->loadScript(script);
+		std::string a = randomValues(m);
+
+		m->host.randomSeed = 1235;
+		m->loadScript(script);
+		REQUIRE(randomValues(m) != a);
+
+		m->host.randomSeed = 1234;
+		m->loadScript(script);
+		REQUIRE(randomValues(m) == a);
+
+		// Seed 0 must not degenerate to a constant sequence.
+		m->host.randomSeed = 0;
+		m->loadScript(script);
+		std::string z = randomValues(m);
+		REQUIRE(z != "r=0,0");
+	}
+}
+
+TEST_CASE("The rack.random() seed is stored in the patch and restored, so a new module repeats the values", "[MidiKit][CrossEngine][Random][JSON]") {
+	ModuleScaffold mods;
+	for (const char* script : { JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD }) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		std::string expected = randomValues(m);
+
+		json_t* rootJ = m->dataToJson();
+		json_t* seedJ = json_object_get(rootJ, "randomSeed");
+		REQUIRE(seedJ != NULL);
+		REQUIRE(json_integer_value(seedJ) == (json_int_t)m->host.randomSeed);
+
+		MidiKitModule* m2 = createModule();
+		m2->dataFromJson(rootJ);
+		json_decref(rootJ);
+		REQUIRE(m2->host.randomSeed == m->host.randomSeed);
+		REQUIRE(randomValues(m2) == expected);
+	}
+}
+
+TEST_CASE("A patch without a stored seed keeps the module's own seed", "[MidiKit][Random][JSON]") {
+	ModuleScaffold mods;
+	MidiKitModule* m = createModule();
+	uint32_t seed = m->host.randomSeed;
+	json_t* rootJ = json_object();
+	json_object_set_new(rootJ, "script", json_string(LUA_RANDOM_ON_LOAD));
+	m->dataFromJson(rootJ);
+	json_decref(rootJ);
+	REQUIRE(m->host.randomSeed == seed);
+}
+
+static const char* JS_SET_SEED = R"(/**
+ * @engine QuickJs@v1
+ */
+function two() { return Math.floor(rack.random() * 1e9) + "," + Math.floor(rack.random() * 1e9); }
+rack.onLoad = function() {
+	rack.setRandomSeed(42);
+	let a = two();
+	rack.setRandomSeed(42.9);     // truncated: the same seed
+	let b = two();
+	rack.setRandomSeed(42 + 4294967296);   // wraps: the same seed
+	let c = two();
+	rack.setRandomSeed(43);
+	let d = two();
+	rack.setRandomSeed(-1);
+	let e = two();
+	rack.setRandomSeed(4294967295);
+	let f = two();
+	rack.log("same=" + (a == b && b == c) + " other=" + (a != d) + " neg=" + (e == f));
+	let threw = 0;
+	try { rack.setRandomSeed(NaN); } catch (x) { threw++; }
+	try { rack.setRandomSeed(Infinity); } catch (x) { threw++; }
+	try { rack.setRandomSeed("1"); } catch (x) { threw++; }
+	rack.log("threw=" + threw);
+	rack.setRandomSeed(7);
+	rack.log("r=" + two());
+};
+)";
+
+static const char* LUA_SET_SEED = R"(--[[
+@engine minilua@v1
+--]]
+local function two() return math.floor(rack.random() * 1e9) .. "," .. math.floor(rack.random() * 1e9) end
+rack.onLoad = function()
+	rack.setRandomSeed(42)
+	local a = two()
+	rack.setRandomSeed(42.9)
+	local b = two()
+	rack.setRandomSeed(42 + 4294967296)
+	local c = two()
+	rack.setRandomSeed(43)
+	local d = two()
+	rack.setRandomSeed(-1)
+	local e = two()
+	rack.setRandomSeed(4294967295)
+	local f = two()
+	rack.log("same=" .. tostring(a == b and b == c) .. " other=" .. tostring(a ~= d) .. " neg=" .. tostring(e == f))
+	local threw = 0
+	if not pcall(rack.setRandomSeed, 0 / 0) then threw = threw + 1 end
+	if not pcall(rack.setRandomSeed, math.huge) then threw = threw + 1 end
+	if not pcall(rack.setRandomSeed, {}) then threw = threw + 1 end
+	rack.log("threw=" .. threw)
+	rack.setRandomSeed(7)
+	rack.log("r=" .. two())
+end
+)";
+
+TEST_CASE("rack.setRandomSeed restarts the sequence, wraps to 32 bits and rejects non-finite input, in both engines", "[MidiKit][CrossEngine][Random]") {
+	ModuleScaffold mods;
+	std::string results[2];
+	int n = 0;
+	for (const char* script : { JS_SET_SEED, LUA_SET_SEED }) {
+		MidiKitModule* m = createModule();
+		m->loadScript(script);
+		std::string log = drainLog(m);
+		REQUIRE(log.find("same=true other=true neg=true") != std::string::npos);
+		REQUIRE(log.find("threw=3") != std::string::npos);
+		size_t at = log.rfind("r=");
+		REQUIRE(at != std::string::npos);
+		results[n++] = log.substr(at, log.find('\n', at) - at);
+	}
+	// Seed 7 yields the same values in both engines, so a script ports as it is.
+	REQUIRE(results[0] == results[1]);
+}
+
+TEST_CASE("rack.setRandomSeed does not change the stored seed; a reload starts from it again", "[MidiKit][CrossEngine][Random]") {
+	ModuleScaffold mods;
+	for (const char* script : { JS_SET_SEED, LUA_SET_SEED }) {
+		MidiKitModule* m = createModule();
+		m->host.randomSeed = 99;
+		m->loadScript(script);
+		drainLog(m);
+		REQUIRE(m->host.randomSeed == 99);
+	}
+	// A script without the call after one with it: back on the stored sequence.
+	MidiKitModule* m = createModule();
+	m->loadScript(LUA_RANDOM_ON_LOAD);
+	std::string expected = randomValues(m);
+	m->loadScript(LUA_SET_SEED);
+	drainLog(m);
+	m->loadScript(LUA_RANDOM_ON_LOAD);
+	REQUIRE(randomValues(m) == expected);
+}
