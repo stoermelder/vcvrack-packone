@@ -226,7 +226,7 @@ TEST_CASE("Editor: a buffer edited back to the applied text is clean again", "[M
 	REQUIRE_FALSE(e.dialog->dirty);
 }
 
-TEST_CASE("Editor: Ctrl+Z and redo are consumed and change nothing", "[MidiKit][Editor]") {
+TEST_CASE("Editor: Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y are consumed, and undo followed by redo leaves the text as typed", "[MidiKit][Editor]") {
 	Test::Harness h;
 	EditorCleanup cleanup;
 	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");

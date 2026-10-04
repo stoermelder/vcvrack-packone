@@ -26,7 +26,7 @@ end
 )";
 
 TEST_CASE("setNoteOn produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_NOTE_ON, LUA_NOTE_ON);
+	requireBytes(runBoth(Pair{JS_NOTE_ON, LUA_NOTE_ON}), {{0x90, 60, 100}});
 }
 
 
@@ -68,7 +68,7 @@ TEST_CASE("CC reroute script produces identical output in both engines", "[MidiK
 	cc.setNote(10);      // CC number 10
 	cc.setValue(64);     // CC value
 
-	requireEquivalent(JS_CC_REROUTE, LUA_CC_REROUTE, cc);
+	requireBytes(runBoth(Pair{JS_CC_REROUTE, LUA_CC_REROUTE}, cc), {{0xb0, 11, 64}});
 }
 
 
@@ -95,35 +95,9 @@ end
 )";
 
 TEST_CASE("setCc produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_CC, LUA_CC);
+	requireBytes(runBoth(Pair{JS_CC, LUA_CC}), {{0xb1, 74, 127}});
 }
 
-
-// setCc clamping (documented: value clamped to 0-127)
-
-static const char* JS_CC_CLAMP = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let out = midi.create();
-    midi.setCc(out, 1, 10, 500);
-    midiOut.send(out);
-};
-)";
-
-static const char* LUA_CC_CLAMP = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local out = midi.create()
-    midi.setCc(out, 1, 10, 500)
-    midiOut.send(out)
-end
-)";
-
-TEST_CASE("setCc clamps out-of-range value identically", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_CC_CLAMP, LUA_CC_CLAMP);
-}
 
 
 // The scripts call the API from midi.onMessage: run() rejects load-time errors.
@@ -184,7 +158,7 @@ end
 )";
 
 TEST_CASE("setSysEx frames the payload identically", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SYSEX, LUA_SYSEX);
+	requireBytes(runBoth(Pair{JS_SYSEX, LUA_SYSEX}), {{0xf0, 0x43, 0x10, 0x4c, 0x00, 0x00, 0xf7}});
 }
 
 
@@ -259,37 +233,12 @@ end
 )";
 
 TEST_CASE("sendAfterTrigger 2-arg form is identical", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SEND_AFTER_TRIGGER, LUA_SEND_AFTER_TRIGGER);
+	Both b = runBoth(Pair{JS_SEND_AFTER_TRIGGER, LUA_SEND_AFTER_TRIGGER});
+	requireBytes(b, {{0x90, 60, 100}});
+	// The delay is the argument #7 swapped: ticks, not the port.
+	requireTicks(b, {10});
 }
 
-
-// header-tag-only script
-// A script whose header carries only @engine and nothing else must load in
-// both engines — #13 was QuickJs-only failing on this exact shape.
-
-static const char* JS_HEADER_ONLY = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let out = midi.create();
-    midi.setNoteOn(out, 1, 60, 100);
-    midiOut.send(out);
-};
-)";
-
-static const char* LUA_HEADER_ONLY = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local out = midi.create()
-    midi.setNoteOn(out, 1, 60, 100)
-    midiOut.send(out)
-end
-)";
-
-TEST_CASE("@engine-only header loads identically in both engines", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_HEADER_ONLY, LUA_HEADER_ONLY);
-}
 
 
 // getRaw / setRaw round trip
@@ -315,7 +264,7 @@ end
 )";
 
 TEST_CASE("setRaw writes identical bytes with no framing", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_RAW, LUA_RAW);
+	requireBytes(runBoth(Pair{JS_RAW, LUA_RAW}), {{0xf1, 0x1a}});
 }
 
 
@@ -342,7 +291,7 @@ end
 )";
 
 TEST_CASE("setPitchWheel produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_PITCH_WHEEL, LUA_PITCH_WHEEL);
+	requireBytes(runBoth(Pair{JS_PITCH_WHEEL, LUA_PITCH_WHEEL}), {{0xe1, 12345 & 0x7f, 12345 >> 7}});
 }
 
 
@@ -369,7 +318,7 @@ end
 )";
 
 TEST_CASE("setProgramChange produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_PROGRAM_CHANGE, LUA_PROGRAM_CHANGE);
+	requireBytes(runBoth(Pair{JS_PROGRAM_CHANGE, LUA_PROGRAM_CHANGE}), {{0xc3, 10}});
 
 	// Literal bytes too: equivalence alone passes with both engines wrong.
 	for (const char* script : {JS_PROGRAM_CHANGE, LUA_PROGRAM_CHANGE}) {
@@ -439,7 +388,7 @@ end
 )";
 
 TEST_CASE("setChanPressure produces identical 2-byte wire message", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_CHAN_PRESSURE, LUA_CHAN_PRESSURE);
+	requireBytes(runBoth(Pair{JS_CHAN_PRESSURE, LUA_CHAN_PRESSURE}), {{0xd4, 80}});
 
 	for (const char* script : {JS_CHAN_PRESSURE, LUA_CHAN_PRESSURE}) {
 		CATCH_INFO(script);
@@ -473,74 +422,10 @@ end
 )";
 
 TEST_CASE("setKeyPressure produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_KEY_PRESSURE, LUA_KEY_PRESSURE);
+	requireBytes(runBoth(Pair{JS_KEY_PRESSURE, LUA_KEY_PRESSURE}), {{0xa5, 64, 90}});
 }
 
 
-// setKeyPressure clamping
-
-static const char* JS_KEY_PRESSURE_CLAMP = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let outHigh = midi.create();
-    midi.setKeyPressure(outHigh, 6, 64, 200);
-    midiOut.send(outHigh);
-    let outLow = midi.create();
-    midi.setKeyPressure(outLow, 6, 64, -1);
-    midiOut.send(outLow);
-};
-)";
-
-static const char* LUA_KEY_PRESSURE_CLAMP = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local outHigh = midi.create()
-    midi.setKeyPressure(outHigh, 6, 64, 200)
-    midiOut.send(outHigh)
-    local outLow = midi.create()
-    midi.setKeyPressure(outLow, 6, 64, -1)
-    midiOut.send(outLow)
-end
-)";
-
-TEST_CASE("setKeyPressure clamps out-of-range values identically (#A5)", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_KEY_PRESSURE_CLAMP, LUA_KEY_PRESSURE_CLAMP);
-}
-
-
-// setNoteOn clamping
-
-static const char* JS_NOTE_ON_CLAMP = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let outHigh = midi.create();
-    midi.setNoteOn(outHigh, 1, 60, 200);
-    midiOut.send(outHigh);
-    let outLow = midi.create();
-    midi.setNoteOn(outLow, 1, 60, -1);
-    midiOut.send(outLow);
-};
-)";
-
-static const char* LUA_NOTE_ON_CLAMP = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local outHigh = midi.create()
-    midi.setNoteOn(outHigh, 1, 60, 200)
-    midiOut.send(outHigh)
-    local outLow = midi.create()
-    midi.setNoteOn(outLow, 1, 60, -1)
-    midiOut.send(outLow)
-end
-)";
-
-TEST_CASE("setNoteOn clamps out-of-range velocity identically (#A5)", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_NOTE_ON_CLAMP, LUA_NOTE_ON_CLAMP);
-}
 
 
 // Setter arguments: rounded to an integer and clamped, never wrapped (review 1.3).
@@ -759,9 +644,10 @@ TEST_CASE("rack.msToFrames and framesToMs convert at the sample rate", "[MidiKit
 
 	// Usable with sendAtFrame: 10 ms after the event is still the event's frame
 	// plus 441, so the message is sent (identically in both engines).
-	requireEquivalent(
-		jsOnMessage("let m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midiOut.sendAtFrame(m, rack.getEventFrame() + rack.msToFrames(10));"),
-		luaOnMessage("local m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midiOut.sendAtFrame(m, rack.getEventFrame() + rack.msToFrames(10))"));
+	requireBytes(runBoth(
+		"let m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midiOut.sendAtFrame(m, rack.getEventFrame() + rack.msToFrames(10));",
+		"local m = midi.create(); midi.setNoteOn(m, 1, 60, 100); midiOut.sendAtFrame(m, rack.getEventFrame() + rack.msToFrames(10))"),
+		{{0x90, 60, 100}});
 
 	// Non-numbers are rejected rather than treated as 0.
 	for (const char* fn : {"msToFrames", "framesToMs"}) {
@@ -809,7 +695,8 @@ end
 )";
 
 TEST_CASE("midi.clone is an independent copy in both engines", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_MIDI_CLONE, LUA_MIDI_CLONE);
+	// The source keeps note 60; the clone carries the edit.
+	requireBytes(runBoth(Pair{JS_MIDI_CLONE, LUA_MIDI_CLONE}), {{0x90, 60, 100}, {0x90, 70, 100}});
 }
 
 
@@ -834,7 +721,8 @@ end
 )";
 
 TEST_CASE("midi.clone of the incoming message sends a modified copy", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_MIDI_CLONE_INCOMING, LUA_MIDI_CLONE_INCOMING);
+	// The default input is a Note-On on channel index 1; the clone moves to channel 5 (index 4).
+	requireBytes(runBoth(Pair{JS_MIDI_CLONE_INCOMING, LUA_MIDI_CLONE_INCOMING}), {{0x94, 60, 100}});
 }
 
 
@@ -861,7 +749,7 @@ end
 )";
 
 TEST_CASE("setNoteOff produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_NOTE_OFF, LUA_NOTE_OFF);
+	requireBytes(runBoth(Pair{JS_NOTE_OFF, LUA_NOTE_OFF}), {{0x86, 48, 0}});
 }
 
 
@@ -889,10 +777,6 @@ midi.onMessage = function(midiPort, msg)
     midiOut.send(out)
 end
 )";
-
-TEST_CASE("setNoteOff with velocity produces identical wire bytes", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_NOTE_OFF_VEL, LUA_NOTE_OFF_VEL);
-}
 
 static const char* JS_NOTE_OFF_VEL_PROBE = R"(/**
  * @engine QuickJs@v1
@@ -926,7 +810,8 @@ rack.onLoad = function()
 end
 )";
 
-TEST_CASE("setNoteOff velocity round-trips via getValue and clamps", "[MidiKit][CrossEngine]") {
+TEST_CASE("setNoteOff velocity is sent as byte 3, round-trips via getValue and clamps", "[MidiKit][CrossEngine]") {
+	requireBytes(runBoth(Pair{JS_NOTE_OFF_VEL, LUA_NOTE_OFF_VEL}), {{0x86, 48, 100}});
 	requireLoggedValues(JS_NOTE_OFF_VEL_PROBE, LUA_NOTE_OFF_VEL_PROBE, {"100", "0", "127", "0"});
 }
 

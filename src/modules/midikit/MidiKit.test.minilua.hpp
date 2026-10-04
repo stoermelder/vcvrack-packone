@@ -35,25 +35,6 @@ TEST_CASE("Script can override input.onTooltip", "[MidiKit][Lua]") {
 }
 
 
-static const char* LUA_JSON = R"(--[[
-@engine minilua@v1
---]]
-input.onTooltip = function(i)
-  local t = json.decode('{"a":[1,2,{"b":"x"}],"n":' .. i .. '}')
-  return json.encode({ t.a[3].b, t.n, #t.a })
-end
-)";
-
-TEST_CASE("Lua scripts have the json library", "[MidiKit][Lua]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
-
-	m->loadScript(LUA_JSON);
-	REQUIRE(m->host.seLua.L != nullptr);
-
-	REQUIRE(m->host.seLua.getInputName(1) == "[\"x\",2,3]");
-}
-
 
 // Each input index runs one json case, so a test reads the result through the tooltip.
 static const char* LUA_JSON_CASES = R"LUA(--[[
@@ -157,21 +138,6 @@ TEST_CASE("QuickJs-tagged script is rejected by Lua engine", "[MidiKit][Lua]") {
 }
 
 
-static const char* LUA_BAD_SYNTAX = R"(--[[
-@engine minilua@v1
---]]
-local x = ?
-)";
-
-TEST_CASE("Syntax error is handled gracefully", "[MidiKit][Lua]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
-
-	m->host.seLua.loadScriptOnWorker(LUA_BAD_SYNTAX, "");
-
-	REQUIRE(m->host.seLua.L == nullptr);
-}
-
 
 // Error reporting with a source position
 //
@@ -251,34 +217,6 @@ TEST_CASE("Successful load reports no error position", "[MidiKit][Lua]") {
 	REQUIRE(log.find("Script loaded") != std::string::npos);
 }
 
-
-// Local copy of the Lua onUnload script — kept per-header so this test stays
-// independent of the engine suite's LUA_ON_UNLOAD.
-static const char* LUA_ON_UNLOAD_CRASH = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg) end
-rack.onUnload = function()
-	rack.log("onUnload ran")
-	local msg = midi.create()
-	midi.setNoteOff(msg, 1, 60)
-	midiOut.send(msg)
-end
-)";
-
-
-TEST_CASE("onUnload runs on module destruction without crashing", "[MidiKit][Lua]") {
-	ModuleScaffold mods;
-	// See the matching QuickJs test for why this can only assert "doesn't crash":
-	// MidiKitModule's destructor calls host.unload() (which runs onUnload())
-	// while the module — the engines' handler — is still fully alive, so that
-	// callbacks like writeLog/trig.*/input.*/param.* resolve through the
-	// handler. Calling them from ~MidiScriptEngineLua() itself, after the
-	// module (and its handler) is already gone, would be undefined behaviour.
-	MidiKitModule* m = mods.create();
-	m->loadScript(LUA_ON_UNLOAD_CRASH);
-	REQUIRE(m->host.seLua.L != nullptr);
-}
 
 
 // ─── Memory / garbage collection ────────────────────────────────────────────

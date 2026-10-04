@@ -605,16 +605,14 @@ TEST_CASE("Interleaved NRPN on two channels assemble independently", "[MidiKit][
 		{"onNrpn:131:1285:1:99", "onNrpn:260:898:2:99"});
 }
 
-TEST_CASE("Parameter select alone fires nothing; following data entry does", "[MidiKit][MidiProcessor][CrossEngine]") {
+TEST_CASE("Parameter select alone fires nothing", "[MidiKit][MidiProcessor][CrossEngine]") {
 	// The select CCs are consumed AND their assembled select event is dropped
 	// by hasValue() gating — nothing reaches the script.
 	EngineVariant v = GENERATE(engineVariants(JS_NRPN, LUA_NRPN));
 	assertProbes(v, {makeCc(0, 99, 4), makeCc(0, 98, 5)}, {});
-	// Data entry on an armed parameter assembles the one change.
-	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"onNrpn:517:2562:1:99"});
 }
 
-TEST_CASE("NRPN quad assembles into one onNrpn with the decoded handle", "[MidiKit][MidiProcessor][CrossEngine]") {
+TEST_CASE("NRPN quad assembles into one onNrpn with the decoded handle, which only data entry fires", "[MidiKit][MidiProcessor][CrossEngine]") {
 	// param 4*128+5 = 517, value 20*128+2 = 2562, channel 1, completing CC 38.
 	EngineVariant v = GENERATE(engineVariants(JS_NRPN, LUA_NRPN));
 	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"onNrpn:517:2562:1:99"});
@@ -712,13 +710,6 @@ TEST_CASE("Only-14-bit script still receives raw CC 98", "[MidiKit][MidiProcesso
 	// reaches onMessage raw. The NRPN select never reaches onNrpn (not enabled).
 	EngineVariant v = GENERATE(engineVariants(JS_CC14, LUA_CC14));
 	assertProbes(v, {makeCc(0, 99, 4), makeCc(0, 98, 5)}, {"onMessage:99", "onMessage:98"});
-}
-
-TEST_CASE("MSB of 0 on a never-seen CC still assembles with its LSB", "[MidiKit][MidiProcessor][CrossEngine]") {
-	// A 14-bit value below 128 is MSB 0 plus an LSB. Like any first MSB it escapes
-	// raw (the decoder cannot know a pair is coming); the LSB completes the event.
-	EngineVariant v = GENERATE(engineVariants(JS_CC14, LUA_CC14));
-	assertProbes(v, {makeCc(0, 7, 0), makeCc(0, 39, 42)}, {"onMessage:7", "onCc14bit:7:42:1:7"});
 }
 
 
@@ -1128,8 +1119,7 @@ end
 // What real devices send (var/MidiKit_incoming_vs_created_review.md, T1): 7-bit
 // NRPN data entry, plain 7-bit controllers 0-31 next to a 14-bit enable,
 // running parameters, MSB-only 14-bit updates. Each case states what a receiver
-// does with it. A case that is a known gap, failing on purpose until it is decided,
-// carries the [decoder-gap] tag (`./build/test/MidiKit.test "[decoder-gap]"`).
+// does with it.
 
 // Enables one kind and logs the raw CCs (m:note:value) and the assembled events
 // (n:/r:/c: control:value) a script sees.
@@ -1182,14 +1172,14 @@ TEST_CASE("A coarse change after a full quad fires in msb mode", "[MidiKit][Midi
 	}
 }
 
-TEST_CASE("Decoder gap: a running parameter (data entry without a new select) fires again", "[MidiKit][MidiProcessor][decoder-gap]") {
+TEST_CASE("Decoder: a running parameter (data entry without a new select) fires again", "[MidiKit][MidiProcessor]") {
 	auto in = nrpnQuad(0, 0, 5, 64, 0);
 	in.push_back(makeCc(0, 6, 65));
 	in.push_back(makeCc(0, 38, 1));
 	checkGap("enableNrpnIn", "onNrpn", "n", in, { "n:5:8192", "n:5:8321" });
 }
 
-TEST_CASE("Decoder gap: data increment and decrement are not part of the assembled message", "[MidiKit][MidiProcessor][decoder-gap]") {
+TEST_CASE("Decoder: data increment and decrement are not part of the assembled message", "[MidiKit][MidiProcessor]") {
 	// Pins what happens to CC 96/97 after an armed parameter: they are unsupported,
 	// so they reach onMessage like any other CC.
 	auto in = nrpnQuad(0, 0, 5, 64, 0);

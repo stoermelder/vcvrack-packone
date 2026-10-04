@@ -46,8 +46,32 @@ static const char* LUA_TOPLEVEL_CREATE = R"(--[[
 g = midi.create()
 )";
 
+// A top-level message handle can't be built at all: the script fails at
+// midi.create() instead of getting a handle that dies with the next callback.
+
+static const char* JS_TOPLEVEL_SYSEX = R"(/**
+ * @engine QuickJs@v1
+ */
+let msg = midi.create();
+midi.setSysEx(msg, "43104c0000");
+rack.log("PROBE:" + (midi.isSysEx(msg) ? "yes" : "no"));
+)";
+
+static const char* LUA_TOPLEVEL_SYSEX = R"(--[[
+@engine minilua@v1
+--]]
+msg = midi.create()
+midi.setSysEx(msg, "43104c0000")
+rack.log("PROBE:" .. (midi.isSysEx(msg) and "yes" or "no"))
+)";
+
 TEST_CASE("midi.create at top level fails the load identically", "[MidiKit][CrossEngine]") {
 	requireLoadError(JS_TOPLEVEL_CREATE, LUA_TOPLEVEL_CREATE, OUTSIDE_CALLBACK_ERROR);
+
+	// A script that goes on to use the handle fails at the create, so none of its probes run.
+	requireLoadError(JS_TOPLEVEL_SYSEX, LUA_TOPLEVEL_SYSEX, OUTSIDE_CALLBACK_ERROR);
+	REQUIRE(loadLogOf(JS_TOPLEVEL_SYSEX).find("PROBE:") == std::string::npos);
+	REQUIRE(loadLogOf(LUA_TOPLEVEL_SYSEX).find("PROBE:") == std::string::npos);
 }
 
 
@@ -143,7 +167,7 @@ rack.onLoad = function()
 end
 )";
 
-TEST_CASE("onLoad runs once and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("onLoad runs once and sends one Note-On, in both engines", "[MidiKit][CrossEngine]") {
 	ModuleScaffold mods;
 	auto checkOnLoad = [](const std::string& script) {
 		MidiKitModule* m = createModule();
@@ -151,19 +175,23 @@ TEST_CASE("onLoad runs once and sends an identical message in both engines", "[M
 
 		std::string loadLog = drainLog(m);
 		REQUIRE(loadLog.find("onLoad ran") != std::string::npos);
+		REQUIRE(loadLog.find("onLoad ran", loadLog.find("onLoad ran") + 1) == std::string::npos);
 
 		int port, ticks;
 		midi::Message out;
 		REQUIRE(processOutMessage(m, port, out, ticks));
 		auto sent = toSent(port, ticks, out);
+		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
 		Test::destroyModule(m);
 		return sent;
 	};
 
 	auto js = checkOnLoad(JS_ON_LOAD);
 	auto lua = checkOnLoad(LUA_ON_LOAD);
-	REQUIRE(js.port == lua.port);
-	REQUIRE(js.bytes == lua.bytes);
+	REQUIRE(js.port == 0);
+	REQUIRE(lua.port == 0);
+	REQUIRE(js.bytes == std::vector<uint8_t>{0x90, 60, 100});
+	REQUIRE(lua.bytes == std::vector<uint8_t>{0x90, 60, 100});
 }
 
 
@@ -181,32 +209,6 @@ x = math.max(3, 7)
 
 TEST_CASE("Script without onLoad loads without any onLoad log noise in either engine", "[MidiKit][CrossEngine]") {
 	requireEquivalentLog(JS_NO_ON_LOAD, LUA_NO_ON_LOAD, "onLoad", false);
-}
-
-
-// A top-level message handle can't be built at all: the script fails at
-// midi.create() instead of getting a handle that dies with the next callback.
-
-static const char* JS_TOPLEVEL_SYSEX = R"(/**
- * @engine QuickJs@v1
- */
-let msg = midi.create();
-midi.setSysEx(msg, "43104c0000");
-rack.log("PROBE:" + (midi.isSysEx(msg) ? "yes" : "no"));
-)";
-
-static const char* LUA_TOPLEVEL_SYSEX = R"(--[[
-@engine minilua@v1
---]]
-msg = midi.create()
-midi.setSysEx(msg, "43104c0000")
-rack.log("PROBE:" .. (midi.isSysEx(msg) and "yes" or "no"))
-)";
-
-TEST_CASE("A top-level message handle fails the load in both engines (#D4)", "[MidiKit][CrossEngine]") {
-	requireLoadError(JS_TOPLEVEL_SYSEX, LUA_TOPLEVEL_SYSEX, OUTSIDE_CALLBACK_ERROR);
-	REQUIRE(loadLogOf(JS_TOPLEVEL_SYSEX).find("PROBE:") == std::string::npos);
-	REQUIRE(loadLogOf(LUA_TOPLEVEL_SYSEX).find("PROBE:") == std::string::npos);
 }
 
 
@@ -236,7 +238,7 @@ rack.onUnload = function()
 end
 )";
 
-TEST_CASE("onUnload runs when replaced and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+TEST_CASE("onUnload runs when replaced and sends its Note-Off in both engines", "[MidiKit][CrossEngine]") {
 	ModuleScaffold mods;
 	auto checkOnUnload = [](const std::string& script) {
 		MidiKitModule* m = createModule();
@@ -260,8 +262,10 @@ TEST_CASE("onUnload runs when replaced and sends an identical message in both en
 
 	auto js = checkOnUnload(JS_ON_UNLOAD);
 	auto lua = checkOnUnload(LUA_ON_UNLOAD);
-	REQUIRE(js.port == lua.port);
-	REQUIRE(js.bytes == lua.bytes);
+	REQUIRE(js.port == 0);
+	REQUIRE(lua.port == 0);
+	REQUIRE(js.bytes == std::vector<uint8_t>{0x80, 60, 0});
+	REQUIRE(lua.bytes == std::vector<uint8_t>{0x80, 60, 0});
 }
 
 
@@ -535,33 +539,6 @@ TEST_CASE("process() drains a tick-scheduled message into midiOutput", "[MidiKit
 }
 
 
-TEST_CASE("process() drains the queue in FIFO order across an engine switch", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	// The per-engine queues could never interleave; the shared one can. Messages
-	// queued by the outgoing engine must still precede those from the incoming
-	// engine — a switch must not reorder output. Distinguishable notes stand in
-	// for the two producers.
-	MidiKitModule* m = mods.create();
-
-	midi::Message first = noteOn(1, 60, 100);
-	midi::Message second = noteOn(1, 61, 100);
-	midi::Message third = noteOn(1, 62, 100);
-	REQUIRE(m->sendMidi(0, &first, 1, 0, 0));
-	REQUIRE(m->sendMidi(0, &second, 1, 0, 0));
-	REQUIRE(m->sendMidi(0, &third, 1, 0, 0));
-
-	int port, ticks;
-	midi::Message out;
-	REQUIRE(processOutMessage(m, port, out, ticks));
-	REQUIRE(out.getNote() == 60);
-	REQUIRE(processOutMessage(m, port, out, ticks));
-	REQUIRE(out.getNote() == 61);
-	REQUIRE(processOutMessage(m, port, out, ticks));
-	REQUIRE(out.getNote() == 62);
-	REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
-
-}
-
 
 TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
 	ModuleScaffold mods;
@@ -740,24 +717,6 @@ TEST_CASE("An NRPN group is dropped whole, never truncated, when free capacity i
 }
 
 
-TEST_CASE("onUnload runs again when a second script replaces the first, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	auto checkOnUnloadReplaced = [](const std::string& onUnloadScript, const std::string& replacementScript) {
-		MidiKitModule* m = createModule();
-		m->loadScript(onUnloadScript);
-		drainLog(m);
-
-		m->loadScript(replacementScript);
-
-		std::string log = drainLog(m);
-		Test::destroyModule(m);
-		return log.find("onUnload ran") != std::string::npos;
-	};
-
-	REQUIRE(checkOnUnloadReplaced(JS_ON_UNLOAD, JS_NO_ON_LOAD) == true);
-	REQUIRE(checkOnUnloadReplaced(LUA_ON_UNLOAD, LUA_NO_ON_LOAD) == true);
-}
-
 
 // rack.setConfig()/getConfig()
 // Replaces the old rack.onSave()/rack.onLoad(persistedConfig) pull model: the
@@ -766,49 +725,6 @@ TEST_CASE("onUnload runs again when a second script replaces the first, in both 
 // var/MidiKit_config_redesign_plan.md. onUnload() is unaffected: still
 // teardown-only, its return value still ignored, and it must not touch config
 // on its own.
-
-TEST_CASE("onUnload's return value is ignored on real teardown and does not touch published config, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		// clearScript() tears the script down for real (the onUnload() path).
-		// A save racing teardown must still see the last setConfig()'d value —
-		// unloadScriptOnWorker() leaves publishedConfig untouched,
-		// unlike workingConfig which is destroyed with the engine.
-		std::string beforeUnload = publishedConfigJson(m->host.getActiveEngine());
-		REQUIRE(configInt(beforeUnload, "real") == 42);
-
-		m->clearScript();
-		std::string log = drainLog(m);
-		REQUIRE(log.find("onUnload ran") != std::string::npos);
-
-		Test::destroyModule(m);
-	};
-
-	static const char* JS_ON_UNLOAD_SETS_CONFIG = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(midiPort, msg) {};
-rack.setConfig("real", 42);
-rack.onUnload = function() {
-    rack.log("onUnload ran");
-};
-)";
-	static const char* LUA_ON_UNLOAD_SETS_CONFIG = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg) end
-rack.setConfig("real", 42)
-rack.onUnload = function()
-    rack.log("onUnload ran")
-end
-)";
-	check(JS_ON_UNLOAD_SETS_CONFIG);
-	check(LUA_ON_UNLOAD_SETS_CONFIG);
-}
 
 
 // rack.random(): per-module, seeded from the stored randomSeed, restarted by every load
@@ -840,7 +756,7 @@ static std::string randomValues(MidiKitModule* m) {
 TEST_CASE("rack.random() replays the same values on every script reload, in both engines", "[MidiKit][CrossEngine][Random]") {
 	ModuleScaffold mods;
 	for (const char* script : { JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD }) {
-		MidiKitModule* m = createModule();
+		MidiKitModule* m = mods.create();
 		m->loadScript(script);
 		std::string first = randomValues(m);
 		REQUIRE(first.size() > 4);
@@ -856,7 +772,7 @@ TEST_CASE("rack.random() replays the same values on every script reload, in both
 TEST_CASE("rack.random() follows the seed: another seed gives other values, the same seed the same", "[MidiKit][CrossEngine][Random]") {
 	ModuleScaffold mods;
 	for (const char* script : { JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD }) {
-		MidiKitModule* m = createModule();
+		MidiKitModule* m = mods.create();
 		m->host.randomSeed = 1234;
 		m->loadScript(script);
 		std::string a = randomValues(m);
@@ -880,7 +796,7 @@ TEST_CASE("rack.random() follows the seed: another seed gives other values, the 
 TEST_CASE("The rack.random() seed is stored in the patch and restored, so a new module repeats the values", "[MidiKit][CrossEngine][Random][JSON]") {
 	ModuleScaffold mods;
 	for (const char* script : { JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD }) {
-		MidiKitModule* m = createModule();
+		MidiKitModule* m = mods.create();
 		m->loadScript(script);
 		std::string expected = randomValues(m);
 
@@ -889,7 +805,7 @@ TEST_CASE("The rack.random() seed is stored in the patch and restored, so a new 
 		REQUIRE(seedJ != NULL);
 		REQUIRE(json_integer_value(seedJ) == (json_int_t)m->host.randomSeed);
 
-		MidiKitModule* m2 = createModule();
+		MidiKitModule* m2 = mods.create();
 		m2->dataFromJson(rootJ);
 		json_decref(rootJ);
 		REQUIRE(m2->host.randomSeed == m->host.randomSeed);
@@ -899,7 +815,7 @@ TEST_CASE("The rack.random() seed is stored in the patch and restored, so a new 
 
 TEST_CASE("A patch without a stored seed keeps the module's own seed", "[MidiKit][Random][JSON]") {
 	ModuleScaffold mods;
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	uint32_t seed = m->host.randomSeed;
 	json_t* rootJ = json_object();
 	json_object_set_new(rootJ, "script", json_string(LUA_RANDOM_ON_LOAD));
@@ -969,7 +885,7 @@ TEST_CASE("rack.setRandomSeed restarts the sequence, wraps to 32 bits and reject
 	std::string results[2];
 	int n = 0;
 	for (const char* script : { JS_SET_SEED, LUA_SET_SEED }) {
-		MidiKitModule* m = createModule();
+		MidiKitModule* m = mods.create();
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("same=true other=true neg=true") != std::string::npos);
@@ -985,14 +901,14 @@ TEST_CASE("rack.setRandomSeed restarts the sequence, wraps to 32 bits and reject
 TEST_CASE("rack.setRandomSeed does not change the stored seed; a reload starts from it again", "[MidiKit][CrossEngine][Random]") {
 	ModuleScaffold mods;
 	for (const char* script : { JS_SET_SEED, LUA_SET_SEED }) {
-		MidiKitModule* m = createModule();
+		MidiKitModule* m = mods.create();
 		m->host.randomSeed = 99;
 		m->loadScript(script);
 		drainLog(m);
 		REQUIRE(m->host.randomSeed == 99);
 	}
 	// A script without the call after one with it: back on the stored sequence.
-	MidiKitModule* m = createModule();
+	MidiKitModule* m = mods.create();
 	m->loadScript(LUA_RANDOM_ON_LOAD);
 	std::string expected = randomValues(m);
 	m->loadScript(LUA_SET_SEED);

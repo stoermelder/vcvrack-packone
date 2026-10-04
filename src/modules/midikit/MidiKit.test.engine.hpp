@@ -92,8 +92,9 @@ static void requireEquivalent(EngineResult js, EngineResult lua) {
 	for (size_t i = 0; i < js.sent.size(); i++) {
 		REQUIRE(js.sent[i].port == lua.sent[i].port);
 		REQUIRE(js.sent[i].bytes == lua.sent[i].bytes);
-		// ticks is a scheduling detail, not wire content — only checked where
-		// a case cares, via the "ticks" field name in the case table below.
+		// Scheduling is part of the contract: sendAfterTrigger's delay is the one
+		// thing a script author sets that never shows up in the bytes.
+		REQUIRE(js.sent[i].ticks == lua.sent[i].ticks);
 	}
 }
 

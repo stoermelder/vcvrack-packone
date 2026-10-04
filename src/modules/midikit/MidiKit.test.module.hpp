@@ -69,7 +69,7 @@ TEST_CASE("process() does not crash with no script", "[MidiKit]") {
 	REQUIRE(m->timingCurrentFrame.load() == 20);
 }
 
-TEST_CASE("Default engine it not set", "[MidiKit]") {
+TEST_CASE("Default engine is not set", "[MidiKit]") {
 	Test::ModuleScaffold<MidiKitModule> mods;
 	MidiKitModule* m = mods.create("MidiKit");
 

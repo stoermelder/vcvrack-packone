@@ -1307,10 +1307,11 @@ typedef std::vector<std::pair<int, int>> Sent;
 TEST_CASE("Variant: interleaved sendAfterTrigger schedules on both trigger inputs release in clock order", "[MidiKit][Variant][TrigPorts]") {
 	for (const char* script : {JS_TRIG_SCHEDULES, LUA_TRIG_SCHEDULES}) {
 		CATCH_INFO(script);
+		// Declared before the scaffold: onRemove() flushes through the device, so it must outlive the module.
+		RecordingOutputDevice dev1, dev2;
 		MultiScaffold mods;
 		MultiModule* m = mods.create();
 		wireTrigPorts(m);
-		RecordingOutputDevice dev1, dev2;
 		m->midiOuts.ports[0].outputDevice = &dev1;
 		m->midiOuts.ports[1].outputDevice = &dev2;
 		m->midiOuts.ports[0].channel = -1;
@@ -1370,10 +1371,10 @@ TEST_CASE("Variant: interleaved sendAfterTrigger schedules on both trigger input
 }
 
 TEST_CASE("Variant: a script reload drops sendAfterTrigger messages pending on either trigger input", "[MidiKit][Variant][TrigPorts]") {
+	RecordingOutputDevice dev;
 	MultiScaffold mods;
 	MultiModule* m = mods.create();
 	wireTrigPorts(m);
-	RecordingOutputDevice dev;
 	m->midiOuts.ports[0].outputDevice = &dev;
 	m->midiOuts.ports[0].channel = -1;
 	m->loadScript(JS_TRIG_SCHEDULES);
@@ -1423,10 +1424,10 @@ end
 )";
 	for (const char* script : {js, lua}) {
 		CATCH_INFO(script);
+		RecordingOutputDevice dev;
 		MultiScaffold mods;
 		MultiModule* m = mods.create();
 		wireTrigPorts(m);
-		RecordingOutputDevice dev;
 		m->midiOuts.ports[0].outputDevice = &dev;
 		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(JS_TRIG_SCHEDULES);
@@ -1462,9 +1463,9 @@ midi.onMessage = function(port, msg) midiOut.send(msg) end
 )";
 	for (const char* script : {js, lua}) {
 		CATCH_INFO(script);
+		RecordingOutputDevice dev;
 		MultiScaffold mods;
 		MultiModule* m = mods.create();
-		RecordingOutputDevice dev;
 		m->midiOuts.ports[0].outputDevice = &dev;
 		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(script);
@@ -1701,7 +1702,7 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 	REQUIRE(mw->logDisplay != nullptr);
 
 	ClipboardSpy spy;
-	StoermelderPackOne::vcv::uiAccess = &spy;
+	Test::mock::Guard<StoermelderPackOne::vcv::UiAccess> uiGuard{StoermelderPackOne::vcv::uiAccess, &spy};
 
 	// Empty log: both entries are there but disabled.
 	rack::ui::Menu* menu = new rack::ui::Menu;
@@ -1739,7 +1740,6 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 	REQUIRE(findMenuItem(menu, "Clear")->disabled);
 	delete menu;
 
-	StoermelderPackOne::vcv::uiAccess = nullptr;
 	Test::destroyWidget(mw);
 }
 
@@ -1822,7 +1822,7 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	// Long lines wrap inside a fixed width: same width, but taller than a
 	// short line. The default UiAccess measures text without a window.
 	StoermelderPackOne::vcv::UiAccess measureFallback;
-	StoermelderPackOne::vcv::uiAccess = &measureFallback;
+	Test::mock::Guard<StoermelderPackOne::vcv::UiAccess> uiGuard{StoermelderPackOne::vcv::uiAccess, &measureFallback};
 	std::string longText;
 	for (int i = 0; i < 60; i++) longText += "word ";
 	m->writeLog(longText, false);
@@ -1839,7 +1839,6 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	shortLine->step();
 	REQUIRE(longLine->box.size.x == shortLine->box.size.x);
 	REQUIRE(longLine->box.size.y > shortLine->box.size.y);   // newest is the 400-char line
-	StoermelderPackOne::vcv::uiAccess = nullptr;
 	delete sub;
 	delete longMenu;
 
@@ -1904,9 +1903,9 @@ TEST_CASE("Variant: rack.onUnload output on a second port survives reload, clear
 		for (Action action : { RELOAD_SAME_ENGINE, RELOAD_OTHER_ENGINE, CLEAR, RESET }) {
 			CATCH_INFO(script);
 			CATCH_INFO(action);
+			RecordingOutputDevice dev2;
 			MultiScaffold mods;
 			MultiModule* m = mods.create();
-			RecordingOutputDevice dev2;
 			m->midiOuts.ports[1].outputDevice = &dev2;
 			m->midiOuts.ports[1].channel = -1;
 			m->loadScript(script);

@@ -50,8 +50,11 @@ TEST_CASE("onTrigger fires on a trigger input tick and sends an identical messag
 
 	auto js = checkOnTrigger(JS_ON_TRIGGER);
 	auto lua = checkOnTrigger(LUA_ON_TRIGGER);
-	REQUIRE(js.port == lua.port);
-	REQUIRE(js.bytes == lua.bytes);
+	// CC 10 carrying the trigger port (1).
+	REQUIRE(js.port == 0);
+	REQUIRE(lua.port == 0);
+	REQUIRE(js.bytes == std::vector<uint8_t>{0xb0, 10, 1});
+	REQUIRE(lua.bytes == std::vector<uint8_t>{0xb0, 10, 1});
 }
 
 
@@ -122,6 +125,8 @@ TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engi
 
 	auto js = checkNoOnTrigger(JS_NO_ON_LOAD);
 	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
+	REQUIRE(js.first.empty());
+	REQUIRE(lua.first.empty());
 	REQUIRE(js.second == false);
 	REQUIRE(lua.second == false);
 }

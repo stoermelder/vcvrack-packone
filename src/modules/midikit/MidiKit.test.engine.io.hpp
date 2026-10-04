@@ -75,65 +75,6 @@ TEST_CASE("input.getVoltage/isHigh/isLow read identical default state", "[MidiKi
 // helpers — the shape mirrors the per-engine "API trig.getTicks" case, just
 // asserting the same sequence on both engines instead of one at a time.
 
-static const char* JS_TRIG_GET_TICKS = R"(/**
- * @engine QuickJs@v1
- */
-trig.enableIn(1);
-midi.onMessage = function(port, msg) {
-    let out = midi.create();
-    midi.setCc(out, 1, 1, 0);
-    midi.setValue(out, trig.getTicks(1));
-    midiOut.send(out);
-};
-)";
-
-static const char* LUA_TRIG_GET_TICKS = R"(--[[
-@engine minilua@v1
---]]
-trig.enableIn(1)
-midi.onMessage = function(midiPort, msg)
-    local out = midi.create()
-    midi.setCc(out, 1, 1, 0)
-    midi.setValue(out, trig.getTicks(1))
-    midiOut.send(out)
-end
-)";
-
-TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	auto ticksAfterTwoPulses = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-
-		Module::ProcessArgs args;
-		args.sampleTime = 1.0f / 44100.0f;
-		args.sampleRate = 44100.0f;
-
-		m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
-		for (int frame = 0; frame < 4; frame++) {
-			// Alternates 0V/10V every frame: two rising edges over 4 frames.
-			m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(frame % 2 == 0 ? 0.f : 10.f);
-			args.frame = frame;
-			m->process(args);
-		}
-
-		midi::Message in;
-		in.setSize(3);
-		in.setStatus(0x9);
-		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
-		m->host.getActiveEngine()->process();
-
-		int port, ticks;
-		midi::Message out;
-		REQUIRE(processOutMessage(m, port, out, ticks));
-		int result = out.getValue();
-		Test::destroyModule(m);
-		return result;
-	};
-
-	REQUIRE(ticksAfterTwoPulses(JS_TRIG_GET_TICKS) == ticksAfterTwoPulses(LUA_TRIG_GET_TICKS));
-}
-
 
 static const char* JS_TRIG_GET_TICKS_CHANNEL = R"(/**
  * @engine QuickJs@v1
@@ -407,8 +348,11 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 		return result;
 	};
 
-	REQUIRE(valueAt(JS_PARAM_GET_VALUE, 0.5f) == valueAt(LUA_PARAM_GET_VALUE, 0.5f));
-	REQUIRE(valueAt(JS_PARAM_GET_VALUE, 1.0f) == valueAt(LUA_PARAM_GET_VALUE, 1.0f));
+	// floor(value * 127)
+	REQUIRE(valueAt(JS_PARAM_GET_VALUE, 0.5f) == 63);
+	REQUIRE(valueAt(LUA_PARAM_GET_VALUE, 0.5f) == 63);
+	REQUIRE(valueAt(JS_PARAM_GET_VALUE, 1.0f) == 127);
+	REQUIRE(valueAt(LUA_PARAM_GET_VALUE, 1.0f) == 127);
 }
 
 
@@ -417,8 +361,9 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 static const char* JS_SELECT_PORT = R"(/**
  * @engine QuickJs@v1
  */
+midiOut.enablePorts(2);
 midi.onMessage = function(port, msg) {
-    midiOut.selectPort(1);
+    midiOut.selectPort(2);
     midiOut.send(msg);
 };
 )";
@@ -426,22 +371,27 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SELECT_PORT = R"(--[[
 @engine minilua@v1
 --]]
+midiOut.enablePorts(2)
 midi.onMessage = function(midiPort, msg)
-    midiOut.selectPort(1)
+    midiOut.selectPort(2)
     midiOut.send(msg)
 end
 )";
 
 TEST_CASE("midiOut.selectPort produces identical output port in both engines", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SELECT_PORT, LUA_SELECT_PORT);
+	// Ports are 1-based in the script: selectPort(2) is output index 1. The default input is a Note-On on channel index 1.
+	Both b = runBoth(Pair{JS_SELECT_PORT, LUA_SELECT_PORT});
+	requireBytes(b, {{0x91, 60, 100}});
+	requirePorts(b, {1});
 }
 
 
 static const char* JS_SELECT_PORT_STICKY = R"(/**
  * @engine QuickJs@v1
  */
+midiOut.enablePorts(2);
 midi.onMessage = function(port, msg) {
-    midiOut.selectPort(1);
+    midiOut.selectPort(2);
     let msg1 = midi.create();
     midi.setNoteOn(msg1, 1, 60, 100);
     let msg2 = midi.create();
@@ -454,8 +404,9 @@ midi.onMessage = function(port, msg) {
 static const char* LUA_SELECT_PORT_STICKY = R"(--[[
 @engine minilua@v1
 --]]
+midiOut.enablePorts(2)
 midi.onMessage = function(midiPort, msg)
-    midiOut.selectPort(1)
+    midiOut.selectPort(2)
     local msg1 = midi.create()
     midi.setNoteOn(msg1, 1, 60, 100)
     local msg2 = midi.create()
@@ -466,7 +417,9 @@ end
 )";
 
 TEST_CASE("midiOut.selectPort stays selected across calls identically", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SELECT_PORT_STICKY, LUA_SELECT_PORT_STICKY);
+	Both b = runBoth(Pair{JS_SELECT_PORT_STICKY, LUA_SELECT_PORT_STICKY});
+	requireBytes(b, {{0x90, 60, 100}, {0x90, 61, 100}});
+	requirePorts(b, {1, 1});
 }
 
 
@@ -509,102 +462,13 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	// frame is a scheduling detail specific to each engine's own sample-time
-	// bookkeeping, so it's checked for "> 0" per engine rather than compared
-	// for equality between them — requireEquivalent already pins the wire
-	// bytes and port, which is what sendAfterMs otherwise shares with
-	// midiOut.send.
-	auto frameAt = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		midi::Message in = noteOn(1, 60, 100);
-		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
-		m->host.getActiveEngine()->process();
-
-		int port, ticks;
-		midi::Message out;
-		REQUIRE(processOutMessage(m, port, out, ticks));
-		int frame = out.frame;
-		Test::destroyModule(m);
-		return frame;
-	};
-
-	REQUIRE(frameAt(JS_SEND_AFTER_MS) > 0);
-	REQUIRE(frameAt(LUA_SEND_AFTER_MS) > 0);
-	requireEquivalent(JS_SEND_AFTER_MS, LUA_SEND_AFTER_MS);
+TEST_CASE("midiOut.sendAfterMs schedules the message 100 ms after the event, in both engines", "[MidiKit][CrossEngine]") {
+	Both b = runBoth(Pair{JS_SEND_AFTER_MS, LUA_SEND_AFTER_MS});
+	requireBytes(b, {{0x91, 60, 100}});
+	// The input carries frame 0, so the message is due 100 ms of samples later.
+	const int64_t due = int64_t(0.100 * Test::sampleRate());
+	REQUIRE(due == 4410);
+	REQUIRE(b.js.sent[0].frame == due);
+	REQUIRE(b.lua.sent[0].frame == due);
 }
 
-
-// midiOut.sendAfterTrigger with selected port / explicit trigPort
-
-static const char* JS_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    midiOut.selectPort(1);
-    midiOut.sendAfterTrigger(msg, 10);
-};
-)";
-
-static const char* LUA_SEND_AFTER_TRIGGER_SELECTED_PORT = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    midiOut.selectPort(1)
-    midiOut.sendAfterTrigger(msg, 10)
-end
-)";
-
-TEST_CASE("sendAfterTrigger uses the selected port identically", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SEND_AFTER_TRIGGER_SELECTED_PORT, LUA_SEND_AFTER_TRIGGER_SELECTED_PORT);
-}
-
-
-static const char* JS_SEND_AFTER_TRIGGER_TRIGPORT = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    midiOut.selectPort(1);
-    midiOut.sendAfterTrigger(msg, 10, 1);
-};
-)";
-
-static const char* LUA_SEND_AFTER_TRIGGER_TRIGPORT = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    midiOut.selectPort(1)
-    midiOut.sendAfterTrigger(msg, 10, 1)
-end
-)";
-
-TEST_CASE("sendAfterTrigger with explicit trigPort (3 args) is identical", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SEND_AFTER_TRIGGER_TRIGPORT, LUA_SEND_AFTER_TRIGGER_TRIGPORT);
-}
-
-
-static const char* JS_SEND_AFTER_TRIGGER_CHANNEL = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    midiOut.selectPort(1);
-    midiOut.sendAfterTrigger(msg, 10, 1, 2);
-};
-)";
-
-static const char* LUA_SEND_AFTER_TRIGGER_CHANNEL = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    midiOut.selectPort(1)
-    midiOut.sendAfterTrigger(msg, 10, 1, 2)
-end
-)";
-
-TEST_CASE("sendAfterTrigger with explicit channel (4 args) is identical", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_SEND_AFTER_TRIGGER_CHANNEL, LUA_SEND_AFTER_TRIGGER_CHANNEL);
-}

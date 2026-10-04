@@ -3,36 +3,6 @@
 // Part of the cross-engine suite: included into the __engine namespace by
 // MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
 
-// setCc14bit
-
-static const char* JS_CC_14BIT = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let msb = midi.create();
-    let lsb = midi.create();
-    midi.setCc14bit(msb, lsb, 8, 1, 12864);
-    midiOut.send(msb);
-    midiOut.send(lsb);
-};
-)";
-
-static const char* LUA_CC_14BIT = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local msb = midi.create()
-    local lsb = midi.create()
-    midi.setCc14bit(msb, lsb, 8, 1, 12864)
-    midiOut.send(msb)
-    midiOut.send(lsb)
-end
-)";
-
-TEST_CASE("setCc14bit produces identical MSB/LSB wire messages", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_CC_14BIT, LUA_CC_14BIT);
-}
-
 
 // setCc14bit on a createCc14bit() pair (atomic 2-message send)
 // The two-handle form above sends two independent messages. A
@@ -61,20 +31,11 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-TEST_CASE("createCc14bit pair produces identical MSB/LSB wire messages", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_CC_14BIT_PAIR, LUA_CC_14BIT_PAIR);
-}
-
-// Cross-engine equivalence only pins JS and Lua to each other — it can't
-// catch a bug shared by both (the NRPN quad once went out MSB-after-LSB in
-// both engines). This asserts the actual wire bytes/order against the
-// 14-bit CC convention: CC 1 (value MSB), then CC 33 (value LSB).
-TEST_CASE("createCc14bit pair wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
-	EngineResult r = run(JS_CC_14BIT_PAIR);
-	REQUIRE(r.sent.size() == 2);
-	// channel 8 -> status/channel byte 0xb7; value=100.5 -> MSB=100, LSB=64
-	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xb7, 1, 100});
-	REQUIRE(r.sent[1].bytes == std::vector<uint8_t>{0xb7, 33, 64});
+// Pinned wire bytes, since both engines agreeing could still both be wrong (the NRPN quad once
+// went out MSB-after-LSB in both). 14-bit CC convention: CC 1 (value MSB), then CC 33 (value LSB).
+// Channel 8 -> status/channel byte 0xb7; value 12864 -> MSB 100, LSB 64.
+TEST_CASE("createCc14bit pair sends MSB before LSB, identically in both engines", "[MidiKit][CrossEngine]") {
+	requireBytes(runBoth(Pair{JS_CC_14BIT_PAIR, LUA_CC_14BIT_PAIR}), {{0xb7, 1, 100}, {0xb7, 33, 64}});
 }
 
 
@@ -137,51 +98,6 @@ TEST_CASE("14-bit CC pairs are sent in send() order, not handle-creation order, 
 	}
 }
 
-
-// setNRPN (4 chained CC messages)
-// midiOut.send(nrpnHandle) sends all 4 underlying CC messages in order
-// when passed the first handle of an NRPN quad (per SCRIPTING.md), so
-// sending it is what actually exercises setNRPN's byte layout end to end.
-
-static const char* JS_4MESSAGE_NRPN = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let nrpn = midi.createNRPN();
-    midi.setNRPN(nrpn, 9, 1234, 5678);
-    midiOut.send(nrpn);
-};
-)";
-
-static const char* LUA_4MESSAGE_NRPN = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local nrpn = midi.createNRPN()
-    midi.setNRPN(nrpn, 9, 1234, 5678)
-    midiOut.send(nrpn)
-end
-)";
-
-TEST_CASE("setNRPN produces identical 4-message wire sequence", "[MidiKit][CrossEngine]") {
-	requireEquivalent(JS_4MESSAGE_NRPN, LUA_4MESSAGE_NRPN);
-}
-
-// Cross-engine equivalence above only pins JS and Lua to each other — it
-// can't catch a bug shared by both (as happened: both engines sent the
-// quad as CC98/CC99/CC38/CC6, MSB-after-LSB for both pairs, which desyncs
-// MidiProcessor::processCc's NRPN state machine and corrupts every value
-// after the first). This asserts the actual wire bytes/order against the
-// spec: CC99 (param MSB), CC98 (param LSB), CC6 (data MSB), CC38 (data LSB).
-TEST_CASE("setNRPN wire order is spec-compliant (MSB before LSB)", "[MidiKit]") {
-	EngineResult r = run(JS_4MESSAGE_NRPN);
-	REQUIRE(r.sent.size() == 4);
-	// channel 9 -> status/channel byte 0xb8; number=1234 -> msb=9,lsb=82; value=5678 -> msb=44,lsb=46
-	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>{0xb8, 99, 9});
-	REQUIRE(r.sent[1].bytes == std::vector<uint8_t>{0xb8, 98, 82});
-	REQUIRE(r.sent[2].bytes == std::vector<uint8_t>{0xb8, 6, 44});
-	REQUIRE(r.sent[3].bytes == std::vector<uint8_t>{0xb8, 38, 46});
-}
 
 
 // NRPN send() order

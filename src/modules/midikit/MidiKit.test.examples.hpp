@@ -344,14 +344,11 @@ static void checkPreset(const PresetInfo& p, const char* engine) {
 // its own Catch2 leaf: a failure names the preset that broke and the others
 // still run. Listing the names is unavoidable - a TEST_CASE is registered at
 // static-init time, so it can't be produced per array element.
-TEST_CASE("JavaScript preset loads and runs without errors", "[MidiKit][Presets]") {
+TEST_CASE("Preset loads and runs without errors, in both engines", "[MidiKit][Presets]") {
+	const char* engine = GENERATE(from_range(std::begin(ENGINES), std::end(ENGINES)));
 	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
-	checkPreset(p, "JavaScript");
-}
-
-TEST_CASE("Lua preset loads and runs without errors", "[MidiKit][Presets]") {
-	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
-	checkPreset(p, "Lua");
+	CATCH_INFO("engine: " << engine);
+	checkPreset(p, engine);
 }
 
 
@@ -386,14 +383,11 @@ static void checkPresetOnMicro(const PresetInfo& p, const char* engine) {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("JavaScript preset loads on MIDI-µKIT", "[MidiKit][Presets][Micro]") {
+TEST_CASE("Preset loads on MIDI-µKIT, in both engines", "[MidiKit][Presets][Micro]") {
+	const char* engine = GENERATE(from_range(std::begin(ENGINES), std::end(ENGINES)));
 	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
-	checkPresetOnMicro(p, "JavaScript");
-}
-
-TEST_CASE("Lua preset loads on MIDI-µKIT", "[MidiKit][Presets][Micro]") {
-	PresetInfo p = GENERATE(from_range(std::begin(PRESETS), std::end(PRESETS)));
-	checkPresetOnMicro(p, "Lua");
+	CATCH_INFO("engine: " << engine);
+	checkPresetOnMicro(p, engine);
 }
 
 // Scripts adapt to the variant through these read-only counts.
@@ -526,7 +520,7 @@ TEST_CASE("'Arpeggiator.js/.lua' Down mode steps the held chord in reverse", "[M
 	std::string path = GENERATE(presetPaths("Arpeggiator"));
 	CATCH_INFO("preset: " << path);
 
-	// playmode=0.99 -> last entry in PLAYMODES (Down is index 1 of 3, so 0.5).
+	// playmode=0.5 -> Down (index 1 of 3 in PLAYMODES).
 	MidiKitModule* m = loadArp(path, 0.f, 0.f, 0.5f, 0.5f);
 
 	feed(m, noteOn(1, 60, 100));

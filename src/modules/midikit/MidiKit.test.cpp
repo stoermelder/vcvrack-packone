@@ -71,6 +71,10 @@ namespace __editor {
 	namespace Catch = ::Catch;
 	#include "MidiKit.test.editor.hpp"
 }
+namespace __harness {
+	namespace Catch = ::Catch;
+	#include "MidiKit.test.harness.hpp"
+}
 
 // The examples header's OutEvent StringMaker specialization has to live at
 // global scope — the namespace alias above makes `namespace Catch { ... }`

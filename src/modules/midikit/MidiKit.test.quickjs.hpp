@@ -49,21 +49,6 @@ TEST_CASE("Lua-tagged script is rejected by QuickJs engine", "[MidiKit][QuickJs]
 }
 
 
-static const char* QJS_BAD_SYNTAX = R"(/**
- * @engine QuickJs@v1
- */
-let x = ;
-)";
-
-TEST_CASE("JS syntax error is handled gracefully", "[MidiKit][QuickJs]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
-
-	m->host.seQuickJs.loadScriptOnWorker(QJS_BAD_SYNTAX, "");
-
-	REQUIRE(m->host.seQuickJs.ctx == nullptr);
-}
-
 
 // Parse-error reporting with a source position
 //
@@ -204,38 +189,6 @@ TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiO
 	REQUIRE(log.find("got cc 99") != std::string::npos);
 }
 
-
-static const char* QJS_NRPN = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, m) {
-	let n = midi.createNRPN();
-	midi.setNRPN(n, 1, 300, 500);
-	midiOut.send(n);
-}
-)";
-
-TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiKit][QuickJs]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
-	m->loadScript(QJS_NRPN);
-	REQUIRE(m->host.seQuickJs.ctx != nullptr);
-
-	midi::Message msg;
-	msg.setSize(3);
-	m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
-	m->host.seQuickJs.process();
-
-	REQUIRE(m->midiOuts.queue.size() == 4);
-	int expectedNote[4] = {99, 98, 6, 38};
-	for (int i = 0; i < 4; i++) {
-		int port, ticks;
-		midi::Message out;
-		REQUIRE(processOutMessage(m, port, out, ticks));
-		REQUIRE(out.getStatus() == 0xb);
-		REQUIRE(out.getNote() == expectedNote[i]);
-	}
-}
 
 
 // ─── Memory / garbage collection ────────────────────────────────────────────

@@ -1,6 +1,9 @@
 #pragma once
 #include "../../test/framework.hpp"
 #include "MidiKit.cpp"
+#include <fstream>
+#include <initializer_list>
+#include <sstream>
 
 using namespace StoermelderPackOne::MidiKit;
 using StoermelderPackOne::MidiScript::MidiScriptEngine;
@@ -186,3 +189,610 @@ static std::vector<std::tuple<LOG_FORMAT, std::string>> drainLogEntries(MidiKitM
 	}
 	return out;
 }
+
+
+// ── Test harness ─────────────────────────────────────────────────────────
+// A reusable rig for new tests (var/MidiKit_test_review.md §7). It sits next to
+// the helpers above and nothing in the suite uses it yet; the existing files
+// keep their local copies until they are migrated. Everything here is inline
+// or a template, so an unused piece costs nothing and warns about nothing.
+//
+// Per-file namespaces in MidiKit.test.cpp hide a same-named local helper from
+// this global one, so a file can be migrated one helper at a time.
+
+// ── Files and text ───────────────────────────────────────────────────────
+
+// Repo root, so paths never depend on the test binary's working directory.
+// __FILE__ is repo-root-relative (make passes "$<"); strip the known
+// "src/modules/midikit/" suffix, and "." (make's cwd) is correct when nothing is left.
+inline std::string repoRoot() {
+	static const std::string suffix = "src/modules/midikit/";
+	std::string f = __FILE__;
+	size_t at = f.rfind(suffix);
+	std::string root = (at == std::string::npos) ? "" : f.substr(0, at);
+	while (root.size() > 1 && root.back() == '/') root.pop_back();
+	return root.empty() ? "." : root;
+}
+
+inline std::string readFile(const std::string& path) {
+	std::ifstream f(path);
+	CATCH_INFO("cannot open " << path);
+	REQUIRE(f.good());
+	std::stringstream ss;
+	ss << f.rdbuf();
+	return ss.str();
+}
+
+// Number of non-overlapping occurrences of `needle` in `text`.
+inline size_t countOf(const std::string& text, const std::string& needle) {
+	REQUIRE_FALSE(needle.empty());
+	size_t n = 0;
+	for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) n++;
+	return n;
+}
+
+// `text` split at '\n'; a trailing newline does not add an empty last line.
+inline std::vector<std::string> lines(const std::string& text) {
+	std::vector<std::string> out;
+	size_t pos = 0;
+	while (pos < text.size()) {
+		size_t nl = text.find('\n', pos);
+		if (nl == std::string::npos) nl = text.size();
+		out.push_back(text.substr(pos, nl - pos));
+		pos = nl + 1;
+	}
+	return out;
+}
+
+// ── Languages and scripts ────────────────────────────────────────────────
+
+enum class Lang { Js, Lua };
+
+inline const char* langName(Lang l) { return l == Lang::Js ? "QuickJs" : "Lua"; }
+
+// One Catch leaf per engine: a failure names the engine, and the other still runs.
+#define FOR_EACH_LANG Lang lang = GENERATE(Lang::Js, Lang::Lua); CATCH_INFO(langName(lang))
+
+// The header comment that selects the engine. `tags` are extra lines such as "@requires messages=64".
+inline std::string header(Lang l, const std::string& tags = "") {
+	if (l == Lang::Js) {
+		std::string h = "/**\n * @engine QuickJs@v1\n";
+		if (!tags.empty()) h += " * " + tags + "\n";
+		return h + " */\n";
+	}
+	std::string h = "--[[\n@engine minilua@v1\n";
+	if (!tags.empty()) h += tags + "\n";
+	return h + "--]]\n";
+}
+
+inline std::string script(Lang l, const std::string& body, const std::string& tags = "") {
+	return header(l, tags) + body + "\n";
+}
+
+// `body` run for every incoming message, with `port` and `msg` in scope.
+inline std::string onMessage(Lang l, const std::string& body) {
+	if (l == Lang::Js) return script(l, "midi.onMessage = function(port, msg) {\n" + body + "\n};");
+	return script(l, "midi.onMessage = function(port, msg)\n" + body + "\nend");
+}
+
+// The script with midiOut.enableTiming() inserted after the header comment.
+// `report` passes true, which makes the engine log what it sends.
+inline std::string withTiming(const std::string& src, bool report = false) {
+	size_t at = src.find("*/\n");
+	if (at != std::string::npos) at += 3;
+	else {
+		at = src.find("--]]\n");
+		REQUIRE(at != std::string::npos);
+		at += 5;
+	}
+	bool lua = src.find("minilua") != std::string::npos;
+	std::string call = std::string("midiOut.enableTiming(") + (report ? "true" : "") + (lua ? ")\n" : ");\n");
+	return src.substr(0, at) + call + src.substr(at);
+}
+
+// A script that does nothing, for the engine.
+inline const char* EMPTY(Lang l) {
+	return l == Lang::Js ? "/**\n * @engine QuickJs@v1\n */\n" : "--[[\n@engine minilua@v1\n--]]\n";
+}
+
+// The JS_X / LUA_X constants as one value, so existing scripts stay usable.
+struct Pair {
+	const char* js;
+	const char* lua;
+	const char* get(Lang l) const { return l == Lang::Js ? js : lua; }
+};
+
+// JavaScript statements as Lua: `let`/`const` become `local` and the semicolons go.
+// Only for statements that differ in nothing else.
+inline std::string stmt(Lang l, const std::string& jsStatements) {
+	if (l == Lang::Js) return jsStatements;
+	std::string out;
+	for (size_t i = 0; i < jsStatements.size();) {
+		if (jsStatements.compare(i, 4, "let ") == 0) { out += "local "; i += 4; }
+		else if (jsStatements.compare(i, 6, "const ") == 0) { out += "local "; i += 6; }
+		else if (jsStatements[i] == ';') { i++; }
+		else out += jsStatements[i++];
+	}
+	return out;
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────
+// Channels are Rack's 0-based ones; a script sees them as 1-based.
+
+namespace msg {
+
+inline midi::Message raw(std::initializer_list<uint8_t> bytes) {
+	midi::Message m;
+	m.setSize(int(bytes.size()));
+	int i = 0;
+	for (uint8_t b : bytes) m.bytes[i++] = b;
+	return m;
+}
+
+inline midi::Message noteOn(int ch, int note, int vel) { return raw({uint8_t(0x90 | ch), uint8_t(note), uint8_t(vel)}); }
+inline midi::Message noteOff(int ch, int note, int vel = 0) { return raw({uint8_t(0x80 | ch), uint8_t(note), uint8_t(vel)}); }
+inline midi::Message cc(int ch, int num, int value) { return raw({uint8_t(0xb0 | ch), uint8_t(num), uint8_t(value)}); }
+// A 14-bit pitch wheel value: the LSB goes in the first data byte.
+inline midi::Message pitchWheel(int ch, int value14) { return raw({uint8_t(0xe0 | ch), uint8_t(value14 & 0x7f), uint8_t((value14 >> 7) & 0x7f)}); }
+inline midi::Message chanPressure(int ch, int v) { return raw({uint8_t(0xd0 | ch), uint8_t(v)}); }
+inline midi::Message programChange(int ch, int p) { return raw({uint8_t(0xc0 | ch), uint8_t(p)}); }
+
+inline midi::Message clock() { return raw({0xf8}); }
+inline midi::Message start() { return raw({0xfa}); }
+inline midi::Message cont() { return raw({0xfb}); }
+inline midi::Message stop() { return raw({0xfc}); }
+
+// NRPN / RPN as the four controller messages a sender emits: parameter MSB and LSB, then data MSB and LSB.
+inline std::vector<midi::Message> nrpn(int ch, int number, int value) {
+	return { cc(ch, 99, number >> 7), cc(ch, 98, number & 0x7f), cc(ch, 6, value >> 7), cc(ch, 38, value & 0x7f) };
+}
+inline std::vector<midi::Message> rpn(int ch, int number, int value) {
+	return { cc(ch, 101, number >> 7), cc(ch, 100, number & 0x7f), cc(ch, 6, value >> 7), cc(ch, 38, value & 0x7f) };
+}
+// A 14-bit controller: the MSB on `msbCc` (0..31), the LSB on msbCc + 32.
+inline std::vector<midi::Message> cc14(int ch, int msbCc, int value) {
+	return { cc(ch, msbCc, value >> 7), cc(ch, msbCc + 32, value & 0x7f) };
+}
+// Both encodings of a key release: a Note-Off and, as most keyboards send it, a Note-On with velocity 0.
+inline std::vector<midi::Message> releasesOf(int ch, int note) {
+	return { noteOff(ch, note), noteOn(ch, note, 0) };
+}
+
+} // namespace msg
+
+// ── Output ───────────────────────────────────────────────────────────────
+
+// One message queued by the module or delivered to a device.
+struct Out {
+	int port = 0;
+	uint8_t status = 0;     // status nibble: 0x9 Note-On, 0xb CC; 0xf for system messages
+	uint8_t channel = 0;    // 0-based
+	uint8_t note = 0;       // first data byte
+	uint8_t value = 0;      // second data byte
+	int ticks = 0;          // 0 = send now, N = once the trigger tick counter reaches N
+	int64_t frame = -1;     // Message::frame as handed over; -1 = "now"
+	int64_t releasedAt = 0; // the process() frame it was delivered on (devices only)
+	bool cancel = false;    // a midiOut.cancel() with its pattern in the fields above
+	std::vector<uint8_t> bytes;
+
+	static Out of(const midi::Message& m, int port = 0, int ticks = 0, bool cancel = false) {
+		Out o;
+		o.port = port;
+		o.status = m.getStatus();
+		o.channel = m.getChannel();
+		o.note = m.getNote();
+		o.value = m.getValue();
+		o.ticks = ticks;
+		o.frame = m.frame;
+		o.cancel = cancel;
+		o.bytes.assign(m.bytes.begin(), m.bytes.begin() + m.getSize());
+		return o;
+	}
+	// An expectation: what a test writes, e.g. Out::want(0x9, 0, 60, 100).
+	static Out want(uint8_t status, uint8_t channel, uint8_t note, uint8_t value, int ticks = 0, int port = 0) {
+		Out o;
+		o.port = port;
+		o.status = status;
+		o.channel = channel;
+		o.note = note;
+		o.value = value;
+		o.ticks = ticks;
+		return o;
+	}
+	// Frame, delivery time and bytes are observations, not part of an expectation.
+	bool operator==(const Out& o) const {
+		return port == o.port && status == o.status && channel == o.channel && note == o.note
+			&& value == o.value && ticks == o.ticks && cancel == o.cancel;
+	}
+	bool operator!=(const Out& o) const { return !(*this == o); }
+};
+
+inline std::ostream& operator<<(std::ostream& os, const Out& o) {
+	return os << "{port " << o.port << " status " << int(o.status) << " ch " << int(o.channel) << " " << int(o.note)
+	          << " " << int(o.value) << " ticks " << o.ticks << (o.cancel ? " cancel" : "") << "}";
+}
+
+// What midi::OutputDevice::sendMessage() really receives. midi::Output::sendMessage() forwards to
+// `outputDevice`, so attaching one observes the production path end to end.
+struct Device : midi::OutputDevice {
+	std::vector<Out> sent;
+	int64_t now = 0;   // set by DeviceKit::step()
+
+	void sendMessage(const midi::Message& m) override {
+		Out o = Out::of(m);
+		o.releasedAt = now;
+		sent.push_back(o);
+	}
+	// First data bytes of the sent messages with `status` (all of them when -1), in send order.
+	std::vector<int> notes(int status = -1) const {
+		std::vector<int> out;
+		for (const Out& o : sent) if (status < 0 || o.status == status) out.push_back(o.note);
+		return out;
+	}
+	std::vector<int> values() const {
+		std::vector<int> out;
+		for (const Out& o : sent) out.push_back(o.value);
+		return out;
+	}
+	int count(int status) const {
+		int n = 0;
+		for (const Out& o : sent) if (o.status == status) n++;
+		return n;
+	}
+};
+
+// ── Modules ──────────────────────────────────────────────────────────────
+
+// Every variant the same way: an injected worker (synchronous by default), a random id, 44.1 kHz.
+// MidiKitModule, MultiModule and MidiKitMicroModule all accept a WorkerDomain.
+template <typename M = MidiKitModule>
+inline M* newModule(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>(),
+                    std::shared_ptr<StoermelderPackOne::MidiScript::BroadcastBus> bus = nullptr) {
+	M* m = new M(std::make_shared<StoermelderPackOne::MidiKit::WorkerDomain>(std::move(worker), std::move(bus)));
+	m->id = rand();
+	Module::SampleRateChangeEvent e{44100.f, 1.f / 44100.f};
+	m->onSampleRateChange(e);
+	return m;
+}
+
+// Replacements for a preset's text: the first occurrence of each `first` becomes `second`.
+// Each must be found, so a preset edit cannot silently skip a field.
+typedef std::vector<std::pair<std::string, std::string>> Edits;
+
+// The module under test, owned. Destroys it after the test, pass or fail.
+template <typename M = MidiKitModule>
+struct Kit {
+	Test::ModuleScaffold<M> mods;
+	M* m;
+	int64_t frame = 0;   // monotonic across step()/pumpDivider(): never replays frames
+
+	explicit Kit(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>(),
+	             std::shared_ptr<StoermelderPackOne::MidiScript::BroadcastBus> bus = nullptr)
+		: mods([worker, bus]() { return newModule<M>(worker, bus); }) {
+		m = mods.create();
+	}
+	virtual ~Kit() {}
+
+	// ── Loading ──
+	// loadRaw() loads and returns the load log, which is drained. For tests about failing loads.
+	std::string loadRaw(const std::string& src) {
+		m->loadScript(src);
+		// The audio thread's half of the load, as the first process() would do it.
+		m->syncScriptGen();
+		return log();
+	}
+	// load() REQUIREs a clean load: "Script loaded" and no error.
+	Kit& load(const std::string& src) {
+		std::string log = loadRaw(src);
+		CATCH_INFO("load log:\n" << log);
+		REQUIRE(log.find("rror") == std::string::npos);
+		REQUIRE(log.find("Script loaded") != std::string::npos);
+		return *this;
+	}
+	// A preset from presets/, relative to the repo root.
+	Kit& loadPreset(const std::string& relPath, const Edits& edits = Edits()) {
+		std::string src = readFile(repoRoot() + "/" + relPath);
+		for (const auto& e : edits) {
+			size_t at = src.find(e.first);
+			CATCH_INFO("preset " << relPath << ": text not found: " << e.first);
+			REQUIRE(at != std::string::npos);
+			src.replace(at, e.first.size(), e.second);
+		}
+		CATCH_INFO("preset: " << relPath);
+		return load(src);
+	}
+
+	StoermelderPackOne::MidiScript::MidiScriptEngine* engine() {
+		REQUIRE(m->host.getActiveEngine() != nullptr);
+		return m->host.getActiveEngine();
+	}
+	Kit& param(int i, float v) { m->params[M::PARAM + i].setValue(v); return *this; }
+	Kit& cv(int i, float v, int ch = 0) { m->inputs[M::INPUT_CV + i].setVoltage(v, ch); return *this; }
+
+	// ── Engine layer: no decoder, no divider, no frames ──
+	// Queues one message on the engine, runs it and returns what it sent.
+	std::vector<Out> dispatch(const midi::Message& in, int port = 0) {
+		engine()->processInMessage(port, StoermelderPackOne::MidiScript::QueuedMessage(in));
+		engine()->process();
+		return drain();
+	}
+	// One trigger-input tick.
+	std::vector<Out> dispatchTick(int trigPort = 0, int ch = 0) {
+		engine()->processInTick(trigPort, ch);
+		engine()->process();
+		return drain();
+	}
+	// The module's out-queue, oldest first, midiOut.cancel() included.
+	std::vector<Out> drain() {
+		std::vector<Out> out;
+		while (!m->midiOuts.queue.empty()) {
+			auto t = m->midiOuts.queue.shift();
+			out.push_back(Out::of(t.msg, t.port, t.cancel ? 0 : int(t.tick), t.cancel));
+		}
+		return out;
+	}
+
+	// ── Module layer: the real input queue, decoder, divider and frames ──
+	// Queues a message as Rack would deliver it: due at `atFrame` (-1: no frame, due now).
+	void inject(midi::Message in, int64_t atFrame = -1, int port = 0) {
+		if (atFrame >= 0) in.frame = atFrame;
+		m->midiIns.ports[port].processor.getInput().onMessage(in);
+	}
+	void step(int n = 1) {
+		for (int i = 0; i < n; i++) {
+			beforeStep(frame);
+			m->process(Test::makeProcessArgs(frame));
+			frame++;
+		}
+	}
+	void runUntil(int64_t untilFrame) {
+		while (frame < untilFrame) step();
+	}
+	// Enough process() calls to pass the divider once (it is 8), so anything queued is decoded and dispatched.
+	void pumpDivider() { step(9); }
+	// Sets one channel of one trigger input and processes one divider period.
+	void trig(int port, int ch, float v) {
+		rack::engine::Input& in = m->inputs[M::INPUT_TRIG + port];
+		if (in.getChannels() < ch + 1) in.setChannels(ch + 1);
+		in.setVoltage(v, ch);
+		pumpDivider();
+	}
+	// One rising edge, then low again so the next one is an edge.
+	void pulse(int port = 0, int ch = 0) {
+		trig(port, ch, 10.f);
+		trig(port, ch, 0.f);
+	}
+
+	// ── Log ──
+	std::string log() {
+		std::string all;
+		ScriptLog::Entry t;
+		while (m->log.tryPop(t)) all += std::get<2>(t) + "\n";
+		return all;
+	}
+	// The "P:" lines of the log (prefix stripped), in order.
+	std::vector<std::string> probes(const char* prefix = "P:") {
+		std::vector<std::string> out;
+		size_t n = std::strlen(prefix);
+		for (const std::string& l : lines(log())) if (l.compare(0, n, prefix) == 0) out.push_back(l.substr(n));
+		return out;
+	}
+	// Drains the log and REQUIREs it has no error. Returns it.
+	std::string requireNoError() {
+		std::string l = log();
+		CATCH_INFO("log:\n" << l);
+		REQUIRE(l.find("rror") == std::string::npos);
+		return l;
+	}
+
+	// ── Menus ──
+	std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> menus() {
+		std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem> out;
+		engine()->getContextMenus([&out](const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>& specs) { out = specs; });
+		engine()->process();
+		return out;
+	}
+	// The callback id of the menu entry labelled `label`; fails when there is none.
+	int menuId(const std::string& label) {
+		for (const auto& item : menus()) if (item.label == label) return item.callbackId;
+		FAIL("no menu entry labelled \"" << label << "\"");
+		return -1;
+	}
+	void click(const std::string& label, const StoermelderPackOne::MidiScript::ScriptMenuClick& c = StoermelderPackOne::MidiScript::ScriptMenuClick()) {
+		engine()->invokeContextMenuCallback(menuId(label), c);
+		engine()->process();
+	}
+
+protected:
+	virtual void beforeStep(int64_t) {}
+
+	Kit(const Kit&) = delete;
+	Kit& operator=(const Kit&) = delete;
+};
+
+// A Kit with a Device on every MIDI output (channel -1). Detaches them before the scaffold
+// destroys the module, because onRemove() flushes output through the device.
+template <typename M = MidiKitModule>
+struct DeviceKit : Kit<M> {
+	Device dev[M::MIDI_OUTPUTS];
+
+	explicit DeviceKit(std::shared_ptr<StoermelderPackOne::ITaskWorker> worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>(),
+	                   std::shared_ptr<StoermelderPackOne::MidiScript::BroadcastBus> bus = nullptr)
+		: Kit<M>(std::move(worker), std::move(bus)) {
+		for (int i = 0; i < M::MIDI_OUTPUTS; i++) {
+			this->m->midiOuts.ports[i].outputDevice = &dev[i];
+			this->m->midiOuts.ports[i].channel = -1;
+		}
+	}
+	~DeviceKit() {
+		for (int i = 0; i < M::MIDI_OUTPUTS; i++) this->m->midiOuts.ports[i].outputDevice = nullptr;
+	}
+
+protected:
+	void beforeStep(int64_t f) override {
+		for (int i = 0; i < M::MIDI_OUTPUTS; i++) dev[i].now = f;
+	}
+};
+
+// ── Cross-engine comparison that pins values ─────────────────────────────
+
+// One engine's observable result for one script run.
+struct EngineRun {
+	std::vector<Out> sent;
+	std::string loadLog;
+	std::string log;
+};
+
+inline EngineRun runOne(const std::string& src, const midi::Message& in) {
+	Kit<> k;
+	EngineRun r;
+	r.loadLog = k.loadRaw(src);
+	CATCH_INFO("load log:\n" << r.loadLog);
+	REQUIRE(r.loadLog.find("rror") == std::string::npos);
+	r.sent = k.dispatch(in);
+	r.log = k.log();
+	return r;
+}
+
+struct Both {
+	EngineRun js, lua;
+};
+
+inline Both runBoth(const Pair& p, const midi::Message& in = msg::noteOn(1, 60, 100)) {
+	CATCH_INFO("JS:\n" << p.js);
+	CATCH_INFO("Lua:\n" << p.lua);
+	Both b;
+	b.js = runOne(p.js, in);
+	b.lua = runOne(p.lua, in);
+	return b;
+}
+
+// Bodies of midi.onMessage(port, msg) in each language.
+inline Both runBoth(const std::string& jsBody, const std::string& luaBody, const midi::Message& in = msg::noteOn(1, 60, 100)) {
+	std::string js = onMessage(Lang::Js, jsBody);
+	std::string lua = onMessage(Lang::Lua, luaBody);
+	CATCH_INFO("JS:\n" << js);
+	CATCH_INFO("Lua:\n" << lua);
+	Both b;
+	b.js = runOne(js, in);
+	b.lua = runOne(lua, in);
+	return b;
+}
+
+// Both engines sent the same port, bytes and ticks, in the same order, and were equally silent in the log.
+inline void requireSame(const Both& b) {
+	REQUIRE(b.js.log.empty() == b.lua.log.empty());
+	REQUIRE(b.js.sent.size() == b.lua.sent.size());
+	for (size_t i = 0; i < b.js.sent.size(); i++) {
+		CATCH_INFO("message " << i);
+		REQUIRE(b.js.sent[i].port == b.lua.sent[i].port);
+		REQUIRE(b.js.sent[i].bytes == b.lua.sent[i].bytes);
+		REQUIRE(b.js.sent[i].ticks == b.lua.sent[i].ticks);
+	}
+}
+
+// Both engines sent exactly these wire messages, in this order.
+inline void requireBytes(const Both& b, const std::vector<std::vector<uint8_t>>& expected) {
+	for (const EngineRun* r : { &b.js, &b.lua }) {
+		CATCH_INFO((r == &b.js ? "QuickJs" : "Lua"));
+		REQUIRE(r->sent.size() == expected.size());
+		for (size_t i = 0; i < expected.size(); i++) {
+			CATCH_INFO("message " << i);
+			REQUIRE(r->sent[i].bytes == expected[i]);
+		}
+	}
+}
+
+// Both engines sent their messages to these output ports (0-based), in this order.
+inline void requirePorts(const Both& b, const std::vector<int>& expected) {
+	for (const EngineRun* r : { &b.js, &b.lua }) {
+		CATCH_INFO((r == &b.js ? "QuickJs" : "Lua"));
+		std::vector<int> got;
+		for (const Out& o : r->sent) got.push_back(o.port);
+		REQUIRE(got == expected);
+	}
+}
+
+// Both engines sent messages with these tick delays (0 = now), in this order.
+inline void requireTicks(const Both& b, const std::vector<int>& expected) {
+	for (const EngineRun* r : { &b.js, &b.lua }) {
+		CATCH_INFO((r == &b.js ? "QuickJs" : "Lua"));
+		std::vector<int> got;
+		for (const Out& o : r->sent) got.push_back(o.ticks);
+		REQUIRE(got == expected);
+	}
+}
+
+// Both engines logged these "P:" values, in this order.
+inline void requireLogged(const Both& b, const std::vector<std::string>& expected) {
+	for (const EngineRun* r : { &b.js, &b.lua }) {
+		CATCH_INFO((r == &b.js ? "QuickJs" : "Lua"));
+		std::vector<std::string> got;
+		for (const std::string& l : lines(r->log)) if (l.compare(0, 2, "P:") == 0) got.push_back(l.substr(2));
+		REQUIRE(got == expected);
+	}
+}
+
+// ── Fakes ────────────────────────────────────────────────────────────────
+
+// A MidiScriptEngine that does nothing; override only what a test observes. It hands output to the
+// real module as its handler, so sendMidi() reaches the module's own out-queue.
+struct StubEngine : MidiScriptEngine {
+	std::shared_ptr<StoermelderPackOne::MidiScript::WorkerDomain> ownedDomain;
+	MidiKitModule* module;
+
+	explicit StubEngine(MidiKitModule* module) : MidiScriptEngine(module, 4, 1, 1, 4, 1, 1), module(module) {
+		// Every engine needs a worker before any dispatch path (host.unload() from onRemove() included) can run.
+		ownedDomain = std::make_shared<StoermelderPackOne::MidiScript::WorkerDomain>(std::make_shared<StoermelderPackOne::SyncTaskWorker>());
+		setDomain(ownedDomain.get());
+	}
+
+	void process() override {}
+	void loadScriptOnWorker(const char*, const std::string&) override {}
+	bool testScript(const std::string&) override { return false; }
+	void unloadScriptOnWorker() override {}
+	void processInMessage(int, const StoermelderPackOne::MidiScript::QueuedMessage&) override {}
+	void processInTick(int, uint8_t, int64_t) override {}
+	void dispatchMidiMessage(int, midi::Message&) override {}
+	void dispatchNrpn(int, const StoermelderPackOne::MidiScript::QueuedMessage&, bool) override {}
+	void dispatchCc14bit(int, const StoermelderPackOne::MidiScript::QueuedMessage&) override {}
+	void dispatchTrigger(int, uint8_t) override {}
+	void dispatchTipsyMessage(const StoermelderPackOne::MidiScript::TipsyMessage&) override {}
+	void dispatchBroadcast(const StoermelderPackOne::MidiScript::InboundBroadcast&) override {}
+	std::string getInputName(int) override { return ""; }
+	std::string getParamName(int) override { return ""; }
+	std::string getParamFormatValue(int) override { return ""; }
+	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>&)>& callback) override {
+		callback(std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>());
+	}
+	void invokeContextMenuCallback(int, const StoermelderPackOne::MidiScript::ScriptMenuClick&) override {}
+	bool getMemoryUsage(size_t&, size_t&) override { return false; }
+};
+
+// Makes `eng` the module's active engine, and detaches it again before it is destroyed. Declare it
+// after the module's owner, so it goes first.
+template <typename E>
+struct AttachedEngine {
+	E eng;
+	MidiKitModule* m;
+	explicit AttachedEngine(MidiKitModule* m) : eng(m), m(m) { m->host.getActiveEngine() = &eng; }
+	~AttachedEngine() { m->host.getActiveEngine() = nullptr; }
+	AttachedEngine(const AttachedEngine&) = delete;
+	AttachedEngine& operator=(const AttachedEngine&) = delete;
+};
+
+// What the engine reports for its frame counter and block, which are zero without a window.
+struct EngineMock : StoermelderPackOne::vcv::EngineAccess {
+	int64_t frame = 0;
+	int64_t blockFrame = 0;
+	int64_t blockFrames = 0;
+	int64_t getFrame() const override { return frame; }
+	int64_t getBlockFrame() const override { return blockFrame; }
+	int64_t getBlockFrames() const override { return blockFrames; }
+};
+
+// An EngineMock installed for the scope.
+struct EngineScope {
+	EngineMock mock;
+	Test::mock::Guard<StoermelderPackOne::vcv::EngineAccess> guard{StoermelderPackOne::vcv::engineAccess, &mock};
+};

@@ -432,19 +432,18 @@ static std::vector<float> encodeTipsy(MidiKitModule* m, const char* mime, const 
 }
 
 TEST_CASE("Tipsy input round-trips an encoded message to trig.onTipsyMessage", "[MidiKit][Tipsy]") {
+	FOR_EACH_LANG;
 	ModuleScaffold mods;
 	// The script echoes what it receives into the log, so the test can assert on
 	// the decoded mime type and payload without extra plumbing.
-	const char* JS_SCRIPT = R"(/**
- * @engine QuickJs@v1
- */
-trig.onTipsyMessage = function(data, mimeType) {
-	rack.log("got:" + mimeType + ":" + data);
-};
-)";
+	std::string src = script(lang, lang == Lang::Js
+		? "trig.onTipsyMessage = function(data, mimeType) {\n\track.log(\"got:\" + mimeType + \":\" + data);\n};"
+		: "trig.onTipsyMessage = function(data, mimeType)\n\track.log(\"got:\" .. mimeType .. \":\" .. data)\nend");
+	const char* mime = lang == Lang::Js ? "text/plain" : "application/json";
+	std::string payload = lang == Lang::Js ? "Hello Tipsy!" : "{\"key\":42}";
 
 	MidiKitModule* m = mods.create();
-	m->loadScript(JS_SCRIPT);
+	m->loadScript(src);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	m->processTipsyInput();   // no trigger claimed yet: must be a no-op
 
@@ -452,7 +451,7 @@ trig.onTipsyMessage = function(data, mimeType) {
 	m->enableTipsyIn(0);
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
-	std::vector<float> voltages = encodeTipsy(m, "text/plain", "Hello Tipsy!");
+	std::vector<float> voltages = encodeTipsy(m, mime, payload);
 	REQUIRE(voltages.size() > 0);
 
 	// Exactly one message completes, at the end of the stream.
@@ -462,31 +461,7 @@ trig.onTipsyMessage = function(data, mimeType) {
 	// The worker dispatches it into the script.
 	m->host.getActiveEngine()->process();
 	REQUIRE(m->host.getActiveEngine()->tipsyInQueue.empty());
-	REQUIRE(drainLog(m).find("got:text/plain:Hello Tipsy!") != std::string::npos);
-}
-
-TEST_CASE("Tipsy input round-trips under Lua", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
-	const char* LUA_SCRIPT = R"(--[[
-@engine minilua@v1
---]]
-trig.onTipsyMessage = function(data, mimeType)
-	rack.log("got:" .. mimeType .. ":" .. data)
-end
-)";
-
-	MidiKitModule* m = mods.create();
-	m->loadScript(LUA_SCRIPT);
-	REQUIRE(m->host.getActiveEngine() != nullptr);
-
-	m->enableTipsyIn(0);
-	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
-
-	std::vector<float> voltages = encodeTipsy(m, "application/json", "{\"key\":42}");
-	REQUIRE(feedTipsy(m, 0, voltages) == 1);
-
-	m->host.getActiveEngine()->process();
-	REQUIRE(drainLog(m).find("got:application/json:{\"key\":42}") != std::string::npos);
+	REQUIRE(drainLog(m).find(std::string("got:") + mime + ":" + payload) != std::string::npos);
 }
 
 TEST_CASE("Tipsy input ignores the stream until the trigger is claimed", "[MidiKit][Tipsy]") {

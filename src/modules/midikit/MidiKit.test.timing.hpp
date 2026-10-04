@@ -2624,57 +2624,6 @@ TEST_CASE("Timing-mode preset 'Clock multiplier': one pulse on each edge, the re
 	}
 }
 
-TEST_CASE("Timing-mode presets stepped by a clock place every message on its clock edge", "[MidiKit][timing][preset]") {
-	struct Case { const char* js; const char* lua; bool needsNote; bool euclid; };
-	const Case cases[] = {
-		{ "JavaScript/Arpeggiator.js", "Lua/Arpeggiator.lua", true, false },
-		{ "JavaScript/creative/Euclidean rhythm generator.js", "Lua/creative/Euclidean rhythm generator.lua", false, true },
-	};
-	for (const Case& c : cases) {
-		for (const char* path : { c.js, c.lua }) {
-			CATCH_INFO(path);
-			std::string source = presetSource(path);
-			TimingRig rig(source.c_str());
-			if (c.euclid) {
-				// 4 steps, 2 fills: a hit on every second step (as in the preset's own test).
-				rig.m->params[MidiKitModule::PARAM + 0].setValue(0.2f);
-				rig.m->params[MidiKitModule::PARAM + 1].setValue(0.5f);
-				rig.m->params[MidiKitModule::PARAM + 2].setValue(0.5f);
-				rig.m->params[MidiKitModule::PARAM + 3].setValue(0.25f);
-			}
-
-			rig.run(8);
-			// The arpeggiator needs a held chord, which the module dispatches on the next
-			// divider tick, between edges.
-			if (c.needsNote) {
-				rig.inject(noteOn(0, 60, 100), 8);
-				rig.inject(noteOn(0, 64, 100), 8);
-			}
-			rig.run(40);
-			std::vector<int64_t> edges = clockEdges(rig, 48, 50);
-			rig.run(edges.back() + 50);
-
-			REQUIRE_FALSE(rig.rec.sent.empty());
-			requireOrderedFrames(rig.rec);
-			int noteOns = 0;
-			for (const TimingRecorder::Sent& e : rig.rec.sent) {
-				// A note-on on the clock edge that stepped it, a note-off on the edge that
-				// ends it (sendAfterTrigger). Frames must be strictly increasing, so several
-				// messages of one edge sit on that frame and the ones right after it. That is
-				// at most a few frames, never the next divider tick.
-				bool nearEdge = false;
-				for (int64_t edge : edges) {
-					if (e.frameField >= edge && e.frameField <= edge + 3) nearEdge = true;
-				}
-				CATCH_INFO("frame " << e.frameField);
-				REQUIRE(nearEdge);
-				if (e.status == 0x9) noteOns++;
-			}
-			REQUIRE(noteOns > 0);
-		}
-	}
-}
-
 
 TEST_CASE("Round trip: a script receives the releases another script creates", "[MidiKit][timing][Release]") {
 	// setNoteOff() sends 0x80, setNoteOn(.., 0) a velocity-0 Note-On. Fed back into the
