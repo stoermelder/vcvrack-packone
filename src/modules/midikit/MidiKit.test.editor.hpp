@@ -122,7 +122,6 @@ TEST_CASE("Editor: opens on the applied script and takes focus", "[MidiKit][Edit
 
 TEST_CASE("Editor: Alt+E opens it, a second request does not stack another", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 
 	rack::widget::EventContext c;
@@ -213,7 +212,6 @@ TEST_CASE("Editor: closing with unapplied changes asks, and 'no' keeps the text"
 
 TEST_CASE("Editor: closing a clean buffer does not ask", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 
@@ -226,7 +224,6 @@ TEST_CASE("Editor: closing a clean buffer does not ask", "[MidiKit][Editor]") {
 
 TEST_CASE("Editor: a buffer edited back to the applied text is clean again", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -238,7 +235,6 @@ TEST_CASE("Editor: a buffer edited back to the applied text is clean again", "[M
 
 TEST_CASE("Editor: Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y are consumed, and undo followed by redo leaves the text as typed", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	h.events().type("abc");
@@ -271,7 +267,6 @@ TEST_CASE("Editor: removing the module widget removes the editor without a promp
 
 TEST_CASE("Editor field: Tab inserts spaces, Enter inserts a newline", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -284,7 +279,6 @@ TEST_CASE("Editor field: Tab inserts spaces, Enter inserts a newline", "[MidiKit
 
 TEST_CASE("Editor field: Up/Down keep a sticky column across short lines", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -308,7 +302,6 @@ TEST_CASE("Editor field: Up/Down keep a sticky column across short lines", "[Mid
 
 TEST_CASE("Editor field: Home and End stay on the line, also on an empty first line", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -328,7 +321,6 @@ TEST_CASE("Editor field: Home and End stay on the line, also on an empty first l
 
 TEST_CASE("Editor field: a click lands on the character under it", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("ab\ncde\nf");
@@ -369,7 +361,6 @@ TEST_CASE("Editor: Revert discards the edits and shows the running script", "[Mi
 
 TEST_CASE("Editor field: Shift+Tab outdents, and Tab/Shift+Tab work on a multi-line selection", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -396,7 +387,6 @@ TEST_CASE("Editor field: Shift+Tab outdents, and Tab/Shift+Tab work on a multi-l
 
 TEST_CASE("Editor field: Enter keeps the indentation", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -601,7 +591,6 @@ TEST_CASE("Editor: the log area mirrors the module's log", "[MidiKit][Editor][Lo
 
 TEST_CASE("Editor: apply shows the new script's log output", "[MidiKit][Editor][Log]") {
 	EditorRig h(EditorRig::SyncWorker);
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -618,7 +607,6 @@ TEST_CASE("Editor: apply shows the new script's log output", "[MidiKit][Editor][
 
 TEST_CASE("Editor: a load error shows up in the log area, and the editor stays open", "[MidiKit][Editor][Log]") {
 	EditorRig h(EditorRig::SyncWorker);
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -656,7 +644,6 @@ static size_t menuOverlayCount() {
 
 TEST_CASE("Editor: right and middle clicks do not close it", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	OpenEditor e = openEditorOn(h, mw);
@@ -795,7 +782,6 @@ static void rightClickClosingMenu(Test::Harness& h, rack::math::Vec pos) {
 
 TEST_CASE("Editor: a right click moves the caret there, unless it hits the selection", "[MidiKit][Editor][Api]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first\nsecond\nthird");
@@ -826,7 +812,6 @@ TEST_CASE("Editor: a right click moves the caret there, unless it hits the selec
 
 TEST_CASE("Editor: header templates are inserted at the top and the engine accepts them", "[MidiKit][Editor][Api]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
@@ -935,7 +920,6 @@ TEST_CASE("Editor: the log area's context menu copies and clears", "[MidiKit][Ed
 
 TEST_CASE("Editor: dragging the handle trades space between code and log, the dialog keeps its size", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	auto* handle = h.events().find<SplitHandle>(e.dialog);
@@ -982,7 +966,6 @@ static void selectedRange(ScriptEditField* f, int& b, int& e) {
 
 TEST_CASE("Editor find: Ctrl+F opens the bar with focus in it, the dialog keeps its size", "[MidiKit][Editor][Find]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	REQUIRE_FALSE(e.dialog->findBar->isOpen);
@@ -1005,7 +988,6 @@ TEST_CASE("Editor find: Ctrl+F opens the bar with focus in it, the dialog keeps 
 
 TEST_CASE("Editor find: typing searches incrementally, Enter / Shift+Enter step and wrap", "[MidiKit][Editor][Find]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("foo bar\nFoo baz\nqux foo");   // matches (ignoring case) at 0, 8, 20
@@ -1048,7 +1030,6 @@ TEST_CASE("Editor find: typing searches incrementally, Enter / Shift+Enter step 
 
 TEST_CASE("Editor find: match case, no results, empty search", "[MidiKit][Editor][Find]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("Foo foo FOO");
@@ -1078,7 +1059,6 @@ TEST_CASE("Editor find: match case, no results, empty search", "[MidiKit][Editor
 
 TEST_CASE("Editor find: Esc closes the bar and returns to the editor without closing it", "[MidiKit][Editor][Find]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	OpenEditor e = openEditorOn(h, mw);
@@ -1109,7 +1089,6 @@ TEST_CASE("Editor find: Esc closes the bar and returns to the editor without clo
 
 TEST_CASE("Editor find: F3 steps from the editor, a one-line selection becomes the search", "[MidiKit][Editor][Find]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("one two one two one");
@@ -1141,7 +1120,6 @@ TEST_CASE("Editor find: F3 steps from the editor, a one-line selection becomes t
 
 TEST_CASE("Editor find: a match far down is scrolled into view; editing updates the matches", "[MidiKit][Editor][Find]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	std::string text;
@@ -1282,7 +1260,6 @@ TEST_CASE("Editor log filter: typing goes to the filter, Enter / Esc return to t
 
 TEST_CASE("Editor log panel: the filter row sits below the log, both inside one panel", "[MidiKit][Editor][Log][Filter]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	ScriptLogPanel* panel = e.dialog->logPanel;
@@ -1330,7 +1307,6 @@ TEST_CASE("Editor log panel: the scrollbar is shown even when everything fits", 
 
 TEST_CASE("Editor: the code area's scrollbar is shown even for a short script", "[MidiKit][Editor]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("short\n");
@@ -1359,7 +1335,6 @@ TEST_CASE("Editor: the code area's scrollbar is shown even for a short script", 
 
 TEST_CASE("Editor field: line operations by key, each one undoable", "[MidiKit][Editor][Lines]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	const int CTRL = RACK_MOD_CTRL;
@@ -1455,7 +1430,6 @@ TEST_CASE("Editor field: Ctrl+/ toggles comments in the running script's languag
 
 TEST_CASE("Editor field: double-click selects a word, triple-click the line, a fourth starts over", "[MidiKit][Editor][Click]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first line\nsecond word here\nthird");
@@ -1489,7 +1463,6 @@ TEST_CASE("Editor field: double-click selects a word, triple-click the line, a f
 
 TEST_CASE("Editor field: clicks far apart do not count as a double-click", "[MidiKit][Editor][Click]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("alpha beta gamma");
@@ -1504,7 +1477,6 @@ TEST_CASE("Editor field: clicks far apart do not count as a double-click", "[Mid
 
 TEST_CASE("Editor field: double-click then typing replaces the word", "[MidiKit][Editor][Click]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("alpha beta gamma");
@@ -1519,7 +1491,6 @@ TEST_CASE("Editor field: double-click then typing replaces the word", "[MidiKit]
 
 TEST_CASE("Editor field: the mouse moving while a double / triple click is held keeps the word / line selected", "[MidiKit][Editor][Click]") {
 	EditorRig h;
-	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first line\nsecond word here\nthird");

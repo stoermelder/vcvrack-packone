@@ -1681,3 +1681,43 @@ end
 TEST_CASE("midi.getChannel returns -1 on realtime/SysEx, the real channel otherwise", "[MidiKit][CrossEngine]") {
 	requireLoggedValues(JS_GET_CHANNEL_SENTINEL, LUA_GET_CHANNEL_SENTINEL, {"5", "-1"});
 }
+
+
+// Hex-string setters with an invalid string long enough to need heap storage:
+// the error must be raised cleanly in both engines, and the valid call after it
+// still works.
+TEST_CASE("setRaw and setSysEx reject long invalid hex strings, and a valid one still works", "[MidiKit][CrossEngine]") {
+	FOR_EACH_LANG;
+	const char* oddLong = "43104c000043104";     // odd length
+	const char* nonHex = "43104c00004310zz43104c";
+	const char* tooWide = "43104c0000ff43104c0000";   // 0xff is not a 7-bit byte
+	std::string calls[] = { "setSysEx", "setRaw" };
+	std::string body;
+	for (const std::string& call : calls) {
+		for (const char* bad : { oddLong, nonHex }) {
+			if (lang == Lang::Js) body += "    t('" + call + "', function() { midi." + call + "(m, '" + bad + "'); });\n";
+			else body += "    t('" + call + "', function() midi." + call + "(m, '" + bad + "') end)\n";
+		}
+	}
+	if (lang == Lang::Js) body += std::string("    t('wide', function() { midi.setSysEx(m, '") + tooWide + "'); });\n";
+	else body += std::string("    t('wide', function() midi.setSysEx(m, '") + tooWide + "') end)\n";
+	body += lang == Lang::Js ? "    midi.setSysEx(m, '43104c0000'); midiOut.send(m);\n" : "    midi.setSysEx(m, '43104c0000') midiOut.send(m)\n";
+
+	std::string src = lang == Lang::Js
+		? script(lang, "function t(name, f) { try { f(); rack.log('ok ' + name); } catch (e) { rack.log('err ' + name); } }\n"
+			"midi.onMessage = function(port, msg) {\n    let m = midi.create();\n" + body + "};")
+		: script(lang, "local function t(name, f) local ok = pcall(f) rack.log((ok and 'ok ' or 'err ') .. name) end\n"
+			"midi.onMessage = function(port, msg)\n    local m = midi.create()\n" + body + "end");
+
+	Kit<> kit;
+	kit.loadRaw(src);
+	std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+	std::string log = kit.log();
+	CATCH_INFO("log:\n" << log);
+	REQUIRE(countOf(log, "err setSysEx") == 2);
+	REQUIRE(countOf(log, "err setRaw") == 2);
+	REQUIRE(countOf(log, "err wide") == 1);
+	REQUIRE(log.find("ok ") == std::string::npos);
+	REQUIRE(sent.size() == 1);
+	REQUIRE(sent[0].bytes == std::vector<uint8_t>{0xf0, 0x43, 0x10, 0x4c, 0x00, 0x00, 0xf7});
+}

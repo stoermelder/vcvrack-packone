@@ -701,3 +701,40 @@ TEST_CASE("menuCallArgs maps a click to onChange's arguments, or refuses one tha
 	REQUIRE_FALSE(menuCallArgs(optItem, ScriptMenuClick::file("x", "x"), args));
 	REQUIRE_FALSE(menuCallArgs(actionItem, ScriptMenuClick::file("x", "x"), args));
 }
+
+
+// Every check of registerContextMenu runs before anything is registered, so a
+// bad item raises, registers nothing and leaves the module usable. (The Lua
+// binding must not keep C++ values alive across its errors: luaL_error longjmps.)
+TEST_CASE("registerContextMenu rejects bad items in both engines and registers only the good one", "[MidiKit][ContextMenu][CrossEngine]") {
+	FOR_EACH_LANG;
+	const char* label = "A label long enough to need heap storage";
+	std::string js = std::string("function t(name, f) { try { f(); rack.log('ok ' + name); } catch (e) { rack.log('err ' + name); } }\n")
+		+ "const L = '" + label + "';\n"
+		+ "t('nonString', function() { rack.registerContextMenu({ type: 'options', label: L, options: ['one option long enough for the heap', 3], onChange: function() {} }); });\n"
+		+ "t('empty', function() { rack.registerContextMenu({ type: 'options', label: L, options: [], onChange: function() {} }); });\n"
+		+ "t('noOnChange', function() { rack.registerContextMenu({ type: 'boolean', label: L }); });\n"
+		+ "t('badType', function() { rack.registerContextMenu({ type: 'knob', label: L, onChange: function() {} }); });\n"
+		+ "t('good', function() { rack.registerContextMenu({ type: 'options', label: L, options: ['a', 'b'], onChange: function() {} }); });\n";
+	std::string lua = std::string("local function t(name, f) local ok = pcall(f) rack.log((ok and 'ok ' or 'err ') .. name) end\n")
+		+ "local L = '" + label + "'\n"
+		+ "t('nonString', function() rack.registerContextMenu({ type = 'options', label = L, options = { 'one option long enough for the heap', 3 }, onChange = function() end }) end)\n"
+		+ "t('empty', function() rack.registerContextMenu({ type = 'options', label = L, options = {}, onChange = function() end }) end)\n"
+		+ "t('noOnChange', function() rack.registerContextMenu({ type = 'boolean', label = L }) end)\n"
+		+ "t('badType', function() rack.registerContextMenu({ type = 'knob', label = L, onChange = function() end }) end)\n"
+		+ "t('good', function() rack.registerContextMenu({ type = 'options', label = L, options = { 'a', 'b' }, onChange = function() end }) end)\n";
+
+	MenuResult r = runMenu(script(lang, lang == Lang::Js ? js : lua));
+	REQUIRE(r.loaded);
+	const std::string& log = r.loadLog;
+	CATCH_INFO("log:\n" << log);
+	for (const char* bad : { "nonString", "empty", "noOnChange", "badType" }) {
+		CATCH_INFO(bad);
+		REQUIRE(log.find(std::string("err ") + bad) != std::string::npos);
+		REQUIRE(log.find(std::string("ok ") + bad) == std::string::npos);
+	}
+	REQUIRE(log.find("ok good") != std::string::npos);
+
+	REQUIRE(r.specs.size() == 1);
+	REQUIRE(r.specs[0].label == label);
+}

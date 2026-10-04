@@ -1226,56 +1226,52 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return luaL_error(L, "registerContextMenu: expected a table");
 		}
 
-		ScriptMenuItem spec;
-
+		// luaL_error longjmps past C++ destructors (see sendEntry()), so nothing with
+		// a destructor may be alive across it: every check runs first, on the Lua
+		// stack and plain pointers into it, and `spec` is filled only afterwards.
+		// The checked values stay on the stack until then, so the pointers stay valid.
+		// Stack: 1 = the table, 2 = type, 3 = label, 4 = onChange, 5 = options (options items only).
 		lua_getfield(L, 1, "type");
-		if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: type must be a string");
-		std::string type = lua_tostring(L, -1);
-		lua_pop(L, 1);
-		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
-		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
-		else if (type == "action") spec.type = ScriptMenuItem::Type::Action;
-		else if (type == "file") spec.type = ScriptMenuItem::Type::File;
+		if (lua_type(L, 2) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: type must be a string");
+		const char* typeName = lua_tostring(L, 2);
+		ScriptMenuItem::Type type;
+		if (strcmp(typeName, "options") == 0) type = ScriptMenuItem::Type::Options;
+		else if (strcmp(typeName, "boolean") == 0) type = ScriptMenuItem::Type::Boolean;
+		else if (strcmp(typeName, "action") == 0) type = ScriptMenuItem::Type::Action;
+		else if (strcmp(typeName, "file") == 0) type = ScriptMenuItem::Type::File;
 		else return luaL_error(L, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"file\"");
 
 		lua_getfield(L, 1, "label");
-		if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");
+		if (lua_type(L, 3) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");
 		size_t labelLen;
-		const char* label = lua_tolstring(L, -1, &labelLen);
+		const char* label = lua_tolstring(L, 3, &labelLen);
 		if (labelLen == 0) return luaL_error(L, "registerContextMenu: label must be a non-empty string");
-		spec.label.assign(label, labelLen);
-		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "onChange");
-		if (!lua_isfunction(L, -1)) return luaL_error(L, "registerContextMenu: onChange must be a function");
+		if (!lua_isfunction(L, 4)) return luaL_error(L, "registerContextMenu: onChange must be a function");
 
-		if (spec.type == ScriptMenuItem::Type::Options) {
+		lua_Integer optionCount = 0;
+		if (type == ScriptMenuItem::Type::Options) {
 			lua_getfield(L, 1, "options");
-			if (!lua_istable(L, -1)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
-			lua_len(L, -1);
-			lua_Integer len = lua_tointeger(L, -1);
-			lua_pop(L, 1); // pop length; options table is now on top
-			if (len <= 0) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
-			spec.options.resize(static_cast<size_t>(len));
-			for (lua_Integer i = 1; i <= len; i++) {
-				lua_rawgeti(L, -1, i); // push options[i]
+			if (!lua_istable(L, 5)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
+			lua_len(L, 5);
+			optionCount = lua_tointeger(L, -1);
+			lua_pop(L, 1);
+			if (optionCount <= 0) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
+			for (lua_Integer i = 1; i <= optionCount; i++) {
+				lua_rawgeti(L, 5, i);
 				if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: options must contain only strings");
-				size_t olen;
-				const char* os = lua_tolstring(L, -1, &olen);
-				spec.options[static_cast<size_t>(i - 1)].assign(os, olen);
 				lua_pop(L, 1);
 			}
-			lua_pop(L, 1); // pop options table
 		}
 
 		// The current value isn't read at registration; it's evaluated lazily
-		// from onGetValue when the menu is built (optional, defaults to 0). Its
-		// ref is taken before onChange's so an options-validation error can't
-		// leak it.
+		// from onGetValue when the menu is built (optional, defaults to 0). Both
+		// refs are taken after the last check, so an error can't leak them.
 		lua_getfield(L, 1, "onGetValue");
 		int onGetValueRef = LUA_NOREF;
 		// Only boolean and options items have a value to show.
-		bool hasValue = spec.type == ScriptMenuItem::Type::Boolean || spec.type == ScriptMenuItem::Type::Options;
+		bool hasValue = type == ScriptMenuItem::Type::Boolean || type == ScriptMenuItem::Type::Options;
 		if (hasValue && lua_isfunction(L, -1)) {
 			onGetValueRef = luaL_ref(L, LUA_REGISTRYINDEX); // pops onGetValue
 		}
@@ -1284,7 +1280,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		assert(e->onWorkerThread());
-		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the onChange function
+		lua_pushvalue(L, 4);
+		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the copy of the onChange function
+
+		// Only calls that cannot raise from here on: copy into the C++ values.
+		ScriptMenuItem spec;
+		spec.type = type;
+		spec.label.assign(label, labelLen);
+		if (type == ScriptMenuItem::Type::Options) {
+			spec.options.resize(static_cast<size_t>(optionCount));
+			for (lua_Integer i = 1; i <= optionCount; i++) {
+				lua_rawgeti(L, 5, i);   // a string, checked above
+				size_t olen;
+				const char* os = lua_tolstring(L, -1, &olen);
+				spec.options[static_cast<size_t>(i - 1)].assign(os, olen);
+				lua_pop(L, 1);
+			}
+		}
 
 		// Registering a label that is already there replaces that item in place
 		// (same position, same callback id) instead of adding a second one - this
@@ -2176,26 +2188,31 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 0;
 	}
 
+	// The byte written as two hex digits at `s` (already checked to be hex).
+	static uint8_t hexByteAt(const char* s) {
+		auto nibble = [](char c) { return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10; };
+		return static_cast<uint8_t>(nibble(s[0]) * 16 + nibble(s[1]));
+	}
+
 	static int lua_midi_setRaw(lua_State* L) {
 		// midi.setRaw(msg, hexstring)
 		ScriptMessage* m = getMsg(L, 1);
 		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setRaw: %s", groupErr);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
-		std::string data(raw, len);
-		if (data.length() % 2 != 0) {
+		// Plain pointers, no std::string: luaL_error longjmps past destructors (see sendEntry()).
+		if (len % 2 != 0) {
 			luaL_error(L, "midi.setRaw: hex string length must be even");
 		}
-		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+		if (strspn(raw, "0123456789abcdefABCDEF") != len) {
 			luaL_error(L, "midi.setRaw: invalid hex string");
 		}
-		if (data.length() / 2 > static_cast<size_t>(MidiScriptEngine::sysExMaxPayloadLength) + 2) {
+		if (len / 2 > static_cast<size_t>(MidiScriptEngine::sysExMaxPayloadLength) + 2) {
 			luaL_error(L, "midi.setRaw: message exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength + 2);
 		}
-		m->in.msg.setSize(static_cast<int>(data.length() / 2));
-		for (size_t i = 0; i < data.length(); i += 2) {
-			char byte = static_cast<char>(strtol(data.substr(i, 2).c_str(), nullptr, 16));
-			m->in.msg.bytes[i / 2] = byte;
+		m->in.msg.setSize(static_cast<int>(len / 2));
+		for (size_t i = 0; i < len; i += 2) {
+			m->in.msg.bytes[i / 2] = static_cast<char>(hexByteAt(raw + i));
 		}
 		return 0;
 	}
@@ -2206,27 +2223,26 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (const char* groupErr = groupSetterError(*m)) luaL_error(L, "midi.setSysEx: %s", groupErr);
 		size_t len;
 		const char* raw = luaL_checklstring(L, 2, &len);
-		std::string data(raw, len);
-		if (data.length() % 2 != 0) {
+		// Plain pointers, no std::string: luaL_error longjmps past destructors (see sendEntry()).
+		if (len % 2 != 0) {
 			luaL_error(L, "midi.setSysEx: hex string length must be even");
 		}
-		if (data.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+		if (strspn(raw, "0123456789abcdefABCDEF") != len) {
 			luaL_error(L, "midi.setSysEx: invalid hex string");
 		}
-		if (data.length() / 2 > static_cast<size_t>(MidiScriptEngine::sysExMaxPayloadLength)) {
+		if (len / 2 > static_cast<size_t>(MidiScriptEngine::sysExMaxPayloadLength)) {
 			luaL_error(L, "midi.setSysEx: payload exceeds maximum of %d bytes", MidiScriptEngine::sysExMaxPayloadLength);
 		}
-		for (size_t i = 0; i < data.length(); i += 2) {
-			uint8_t byte = static_cast<uint8_t>(strtol(data.substr(i, 2).c_str(), nullptr, 16));
+		for (size_t i = 0; i < len; i += 2) {
+			uint8_t byte = hexByteAt(raw + i);
 			if (byte > 0x7f) {
 				luaL_error(L, "midi.setSysEx: payload bytes must be 7-bit (00-7f)");
 			}
 		}
-		m->in.msg.setSize(static_cast<int>(data.length() / 2 + 2));
+		m->in.msg.setSize(static_cast<int>(len / 2 + 2));
 		m->in.msg.bytes[0] = 0xf0;
-		for (size_t i = 0; i < data.length(); i += 2) {
-			char byte = static_cast<char>(strtol(data.substr(i, 2).c_str(), nullptr, 16));
-			m->in.msg.bytes[i / 2 + 1] = byte;
+		for (size_t i = 0; i < len; i += 2) {
+			m->in.msg.bytes[i / 2 + 1] = static_cast<char>(hexByteAt(raw + i));
 		}
 		m->in.msg.bytes[m->in.msg.getSize() - 1] = 0xf7;
 		return 0;
@@ -2378,11 +2394,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		bool msbDataEntry = false;
 		if (lua_gettop(L) >= 3 && !lua_isnil(L, 3)) {
-			std::string mode = luaL_checkstring(L, 3);
-			if (mode != "lsb" && mode != "msb") {
+			const char* mode = luaL_checkstring(L, 3);
+			if (strcmp(mode, "lsb") != 0 && strcmp(mode, "msb") != 0) {
 				return luaL_error(L, "%s: dataEntry must be \"lsb\" or \"msb\"", name);
 			}
-			msbDataEntry = mode == "msb";
+			msbDataEntry = strcmp(mode, "msb") == 0;
 		}
 		e->handler->enableNrpnIn(midiPort - 1, kind, channel, msbDataEntry);
 		return 0;
