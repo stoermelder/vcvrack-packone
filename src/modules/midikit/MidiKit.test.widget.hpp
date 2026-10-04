@@ -154,6 +154,36 @@ TEST_CASE("Context menu: boolean item is built and click fires the callback", "[
 	Test::destroyWidget(mw);
 }
 
+TEST_CASE("Log display: the lines scroll once they outgrow the area, and a view scrolled back stays put", "[MidiKit][Log]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->model = modelMidiKit;
+	MidiKitWidget* mw = Test::createWidget<MidiKitWidget>(m);
+	REQUIRE(mw->logDisplay != nullptr);
+	rack::ui::ScrollWidget* scroll = mw->logScroll;
+	auto add = [&](int i) {
+		mw->bufferLogEntry(ScriptLog::Entry(LOG_FORMAT::TEXT_WO_TS, 0.f, "line" + std::to_string(i), 0));
+		mw->logDisplay->step();
+	};
+
+	// Few lines: nothing to scroll.
+	add(0);
+	REQUIRE(mw->logDisplay->box.size.y == scroll->box.size.y);
+
+	for (int i = 1; i < 100; i++) add(i);
+	REQUIRE(mw->logDisplay->box.size.y > scroll->box.size.y);
+
+	// Scrolled back, a new line does not move what is on screen; a clear starts over.
+	scroll->offset.y = 50.f;
+	add(100);
+	REQUIRE(scroll->offset.y == 50.f + mw->logDisplay->fontSize);
+	mw->resetLog();
+	mw->logDisplay->step();
+	REQUIRE(scroll->offset.y == 0.f);
+	REQUIRE(mw->logDisplay->box.size.y == scroll->box.size.y);
+	Test::destroyWidget(mw);
+}
+
 TEST_CASE("Context menu: the log display's menu starts with the running script's section", "[MidiKit][ContextMenu]") {
 	FOR_EACH_LANG;
 	const char* script = Pair{QJS_BOOL, LUA_BOOL}.get(lang);

@@ -243,11 +243,16 @@ static std::string formatLogEntry(const ScriptLog::Entry& s, LOG_TIME time = LOG
 }
 
 
+// The log text, newest line first. It is the content of a ScrollWidget (see the
+// widget's addLogDisplay()), so it is as tall as all its lines and scrolling, clipping and
+// the scrollbar are the ScrollWidget's.
 struct LogDisplay : LedTextDisplay {
 	std::list<ScriptLog::Entry>* buffer;
 	// Owned by the module; null shows timestamps.
 	LOG_TIME* logTime = nullptr;
 	bool dirty = true;
+	// At least the height of the ScrollWidget's viewport, so the whole area takes clicks.
+	float minHeight = 0.f;
 
 	LOG_TIME time() const {
 		return logTime ? *logTime : LOG_TIME::TIMESTAMP;
@@ -270,15 +275,25 @@ struct LogDisplay : LedTextDisplay {
 		LedTextDisplay::step();
 		if (dirty) {
 			text = "";
-			// Cap to the number of lines that vertically fit.
-			size_t size = std::min(buffer->size(), static_cast<size_t>(box.size.y / fontSize) + 1);
-			size_t i = 0;
+			float lines = 0.f;
 			for (const auto& s : *buffer) {
-				if (i >= size) break;
 				if (std::get<0>(s) == LOG_FORMAT::RESET) continue;
 				text += formatLogEntry(s, time()) + "\n";
-				i++;
+				lines += 1.f;
 			}
+			// A line is one fontSize high; a long one wraps into more, which only the
+			// font can measure, so without a window (tests) the entries are counted.
+			float h = lines * fontSize;
+			if (APP->window && !text.empty()) {
+				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+				NVGcontext* vg = APP->window->vg;
+				nvgFontFaceId(vg, font->handle);
+				nvgFontSize(vg, fontSize);
+				float bounds[4];
+				nvgTextBoxBounds(vg, textOffset.x, textOffset.y + fontSize, box.size.x - 2 * textOffset.x, text.c_str(), NULL, bounds);
+				h = std::max(h, bounds[3] - bounds[1]);
+			}
+			box.size.y = std::max(minHeight, h + 2.f * textOffset.y);
 			dirty = false;
 		}
 	}

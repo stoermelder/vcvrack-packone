@@ -2231,6 +2231,8 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	const size_t BUFFERSIZE = 800;
 	// Null for variants without a log display (no addLogDisplay() call).
 	LogDisplay* logDisplay = nullptr;
+	// Scrolls the log display's lines; null along with it.
+	rack::ui::ScrollWidget* logScroll = nullptr;
 	// How many log entries the widget keeps; variants without a log display
 	// can lower this to what they show elsewhere.
 	size_t bufferLimit = BUFFERSIZE;
@@ -2280,10 +2282,21 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		textDisplay->box.size = r.size;
 		addChild(textDisplay);
 
-		logDisplay = createWidget<LogDisplay>(Vec());
+		// The lines scroll, newest on top; the scrollbar shows once they outgrow the area.
+		logScroll = new rack::ui::ScrollWidget;
+		// Like the lists of MIDI-KEY's display, but 3px above and below; the scrollbar is over the right edge.
+		logScroll->box.pos.y = 3.f;
+		// A narrow scrollbar is drawn partly beyond its box: stay clear of the right edge.
+		logScroll->box.size = Vec(textDisplay->box.size.x - 3.f, textDisplay->box.size.y - 2.f * logScroll->box.pos.y);
+		logScroll->verticalScrollbar->box.size.x = 8.f;
+		logScroll->horizontalScrollbar->hide();
+		textDisplay->addChild(logScroll);
+
+		logDisplay = new LogDisplay;
 		logDisplay->buffer = &buffer;
 		if (module) logDisplay->logTime = &module->logTime;
-		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 6.f));
+		logDisplay->box.size = Vec(logScroll->box.size.x - logScroll->verticalScrollbar->box.size.x, logScroll->box.size.y);
+		logDisplay->minHeight = logScroll->box.size.y;
 		logDisplay->fontSize = 7.2f;
 		logDisplay->appendScriptItems = [this](Menu* menu) {
 			if (!module) return false;
@@ -2291,7 +2304,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			appendScriptItems(menu);
 			return true;
 		};
-		textDisplay->addChild(logDisplay);
+		logScroll->container->addChild(logDisplay);
 	}
 
 	~MidiKitWidgetBase() {
@@ -2321,13 +2334,20 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		}
 		else {
 			buffer.push_front(s);
-			if (logDisplay) logDisplay->dirty = true;
+			if (logDisplay) {
+				logDisplay->dirty = true;
+				// A view scrolled back to older lines stays on them as the new one pushes them down.
+				if (logScroll->offset.y > 0.f) logScroll->offset.y += logDisplay->fontSize;
+			}
 		}
 	}
 
 	void resetLog() {
 		buffer.clear();
-		if (logDisplay) logDisplay->reset();
+		if (logDisplay) {
+			logDisplay->reset();
+			logScroll->offset = Vec();
+		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
