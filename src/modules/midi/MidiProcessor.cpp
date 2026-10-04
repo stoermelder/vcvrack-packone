@@ -233,6 +233,9 @@ void MidiDecoder::processCc(const rack::midi::Message& msg) {
 	if (cc == 6 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
 		// Store MSB for potential LSBs (CC 38) that may follow; do not clear immediately
 		ccDataEntryMsb[ch] = value;
+		// A 7-bit device sends no CC 38, so in MSB mode the coarse value is a change
+		// of its own; the LSB reads as 0, as after any new MSB.
+		if (isMsbDataEntry(ch)) notifyDataEntry(msg, ch, int16_t(value) * 128);
 	} 
 	else if (cc == 38 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
 		int16_t finalValue;
@@ -242,28 +245,14 @@ void MidiDecoder::processCc(const rack::midi::Message& msg) {
 		else {
 			finalValue = value; // LSB-only
 		}
-
-		MessageEx m = MessageEx(msg);
-		if (ccRpnParam[ch] >= 0) {
-			m.type = MessageEx::Type::RPN;
-			m.paramNumber = ccRpnParam[ch];
-			m.extraValue = finalValue;
-			notify(m);
-		}
-		if (ccNrpnParam[ch] >= 0) {
-			m.type = MessageEx::Type::NRPN;
-			m.paramNumber = ccNrpnParam[ch];
-			m.extraValue = finalValue;
-			notify(m);
-		}
+		notifyDataEntry(msg, ch, finalValue);
 	}
 
 	// 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
 	if (cc < 32) {
-		// CC 0-31: Store as MSB for potential 14-bit CC
-		// This is not according to standard, but to avoid spurious 14-bit CC messages
-		// after a MIDI reset, we ignore MSBs with value = 0.
-		if (value > 0 || cc14bitMsb[ch][cc] != -1) cc14bitMsb[ch][cc] = value;
+		// CC 0-31: Store as MSB for potential 14-bit CC. An MSB of 0 counts too: a
+		// 14-bit value below 128 is sent as MSB 0 plus its LSB.
+		cc14bitMsb[ch][cc] = value;
 	} 
 	else if (32 <= cc && cc < 64) {
 		// CC 32-63: LSB for 14-bit CC
@@ -276,6 +265,27 @@ void MidiDecoder::processCc(const rack::midi::Message& msg) {
 			m.extraValue = value14bit;
 			notify(m);
 		}
+	}
+}
+
+bool MidiDecoder::isMsbDataEntry(uint8_t ch) const {
+	uint16_t mask = ccRpnParam[ch] >= 0 ? msbDataEntryRpnMask : msbDataEntryNrpnMask;
+	return (mask >> ch) & 1;
+}
+
+void MidiDecoder::notifyDataEntry(const rack::midi::Message& msg, uint8_t ch, int16_t value) {
+	MessageEx m = MessageEx(msg);
+	if (ccRpnParam[ch] >= 0) {
+		m.type = MessageEx::Type::RPN;
+		m.paramNumber = ccRpnParam[ch];
+		m.extraValue = value;
+		notify(m);
+	}
+	if (ccNrpnParam[ch] >= 0) {
+		m.type = MessageEx::Type::NRPN;
+		m.paramNumber = ccNrpnParam[ch];
+		m.extraValue = value;
+		notify(m);
 	}
 }
 

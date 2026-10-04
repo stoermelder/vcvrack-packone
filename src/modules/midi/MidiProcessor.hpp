@@ -95,6 +95,14 @@ struct MidiDecoder {
     int16_t pendingRpnMsb[16];
     int16_t pendingNrpnMsb[16];
 
+    // Configuration, not decode state: reset() leaves these alone, as it drops
+    // stream state after a discontinuity and not the owner's settings. Bit c is
+    // MIDI channel c. Set, per kind, for channels whose device sends 7-bit data
+    // entry (CC 6 without CC 38): CC 6 then fires an event of its own, with the
+    // coarse value (msb << 7). Other modules never set them.
+    uint16_t msbDataEntryNrpnMask = 0;
+    uint16_t msbDataEntryRpnMask = 0;
+
     struct DecodeOnly {};
 
     MidiDecoder() {
@@ -110,10 +118,23 @@ struct MidiDecoder {
 
     void processCc(const rack::midi::Message& msg);
 
+    // Replaces both MSB data entry masks. Same thread as processMessage().
+    void setMsbDataEntry(uint16_t nrpnMask, uint16_t rpnMask) {
+        msbDataEntryNrpnMask = nrpnMask;
+        msbDataEntryRpnMask = rpnMask;
+    }
+
+    // Whether CC 6 on `ch` fires an event: the mask of the kind armed on that
+    // channel (RPN if one is, else NRPN).
+    bool isMsbDataEntry(uint8_t ch) const;
+
     // Whether `msg` (a CC) currently participates in an extended message; see
     // MessageEx::isComponent. Pure query -- it must be called BEFORE processCc()
     // updates the state, so it reports the state as of the message's arrival.
     bool isComponentCc(const rack::midi::Message& msg) const;
+
+    // Notifies the armed RPN and/or NRPN of `ch` with the data entry `value`.
+    void notifyDataEntry(const rack::midi::Message& msg, uint8_t ch, int16_t value);
 
     void notify(const MessageEx& m);
     void subscribe(MidiProcessorHandler* handler);
