@@ -1,54 +1,21 @@
-#include "MidiKit.test.hpp"
-
 // Tests for BroadcastBus on bare engines: no script, no module, no worker. The
 // bus only touches an engine's broadcastInQueue and its onBroadcastDropped() hook.
 
-struct BusEngine : MidiScriptEngine {
+struct BusEngine : StubEngine {
 	int dropped = 0;
 	// What dispatchBroadcast() received, in order.
 	std::vector<int> received;
 
 	// `handler`: a module, when the overflow notice should reach its log.
-	explicit BusEngine(StoermelderPackOne::MidiScript::MidiScriptEngineHandler* handler = nullptr) : MidiScriptEngine(handler, 1, 1, 1, 1, 1, 1) {
-		useBus(nullptr);
-	}
-
-	// Joins the engine to `bus`, keeping a synchronous worker.
-	void useBus(std::shared_ptr<StoermelderPackOne::MidiScript::BroadcastBus> bus) {
-		ownedDomain = std::make_shared<StoermelderPackOne::MidiScript::WorkerDomain>(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), std::move(bus));
-		setDomain(ownedDomain.get());
-	}
-	// What a host owns for its engines.
-	std::shared_ptr<StoermelderPackOne::MidiScript::WorkerDomain> ownedDomain;
-
-	~BusEngine() {
-		if (ownedDomain) ownedDomain->bus->leave(this);
-	}
+	explicit BusEngine(StoermelderPackOne::MidiScript::MidiScriptEngineHandler* handler = nullptr) : StubEngine(handler, 1, 1, 1, 1, 1, 1) {}
 
 	void onBroadcastDropped() override {
 		dropped++;
 		MidiScriptEngine::onBroadcastDropped();
 	}
-
-	bool testScript(const std::string&) override { return false; }
-	void loadScriptOnWorker(const char*, const std::string&) override {}
-	void unloadScriptOnWorker() override {}
-	void processInMessage(int, const StoermelderPackOne::MidiScript::QueuedMessage&) override {}
-	void processInTick(int, uint8_t, int64_t) override {}
-	bool getMemoryUsage(size_t&, size_t&) override { return false; }
-	void dispatchMidiMessage(int, midi::Message&) override {}
-	void dispatchNrpn(int, const StoermelderPackOne::MidiScript::QueuedMessage&, bool) override {}
-	void dispatchCc14bit(int, const StoermelderPackOne::MidiScript::QueuedMessage&) override {}
-	void dispatchTrigger(int, uint8_t) override {}
-	void dispatchTipsyMessage(const StoermelderPackOne::MidiScript::TipsyMessage&) override {}
 	void dispatchBroadcast(const StoermelderPackOne::MidiScript::InboundBroadcast& m) override {
 		received.push_back((int)json_integer_value(m.value.get()));
 	}
-	std::string getInputName(int) override { return ""; }
-	std::string getParamName(int) override { return ""; }
-	std::string getParamFormatValue(int) override { return ""; }
-	void getContextMenus(const std::function<void(const std::vector<StoermelderPackOne::MidiScript::ScriptMenuItem>&)>&) override {}
-	void invokeContextMenuCallback(int, const StoermelderPackOne::MidiScript::ScriptMenuClick&) override {}
 };
 
 static std::shared_ptr<json_t> makeValue(int n) {
@@ -139,11 +106,12 @@ TEST_CASE("BroadcastBus drops the new message for a full receiver", "[MidiKit][B
 }
 
 TEST_CASE("Modules built with a shared bus exchange a message", "[MidiKit][BroadcastBus]") {
-	ModuleScaffold mods;
 	auto bus = std::make_shared<StoermelderPackOne::MidiScript::BroadcastBus>();
 	auto worker = std::make_shared<StoermelderPackOne::SyncTaskWorker>();
-	MidiKitModule* m1 = mods.adopt(createModule(worker, bus));
-	MidiKitModule* m2 = mods.adopt(createModule(worker, bus));
+	Kit<> kit1(worker, bus);
+	Kit<> kit2(worker, bus);
+	MidiKitModule* m1 = kit1.m;
+	MidiKitModule* m2 = kit2.m;
 	REQUIRE(m1->host.domain->bus == bus);
 	REQUIRE(m2->host.domain->bus == bus);
 	REQUIRE(m1->host.seLua.domain->bus == bus);
@@ -166,10 +134,11 @@ TEST_CASE("Modules built with a shared bus exchange a message", "[MidiKit][Broad
 }
 
 TEST_CASE("A full receiver logs the message overflow once per episode on its own module", "[MidiKit][BroadcastBus]") {
-	ModuleScaffold mods;
 	auto bus = std::make_shared<StoermelderPackOne::MidiScript::BroadcastBus>();
-	MidiKitModule* m1 = mods.adopt(createModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), bus));
-	MidiKitModule* m2 = mods.adopt(createModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), bus));
+	Kit<> kit1(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), bus);
+	Kit<> kit2(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), bus);
+	MidiKitModule* m1 = kit1.m;
+	MidiKitModule* m2 = kit2.m;
 
 	BusEngine sender(m1), receiver(m2);
 	sender.useBus(bus);
@@ -205,7 +174,8 @@ TEST_CASE("Default-domain modules share a bus, injected-worker modules get a pri
 	ModuleScaffold mods;
 	MidiKitModule* d1 = mods.adopt(new MidiKitModule());
 	MidiKitModule* d2 = mods.adopt(new MidiKitModule());
-	MidiKitModule* t = mods.adopt(createModule());
+	Kit<> tKit;
+	MidiKitModule* t = tKit.m;
 	REQUIRE(d1->host.domain->bus);
 	REQUIRE(d1->host.domain->bus == d2->host.domain->bus);
 	REQUIRE(t->host.domain->bus);
@@ -217,8 +187,6 @@ TEST_CASE("Default-domain modules share a bus, injected-worker modules get a pri
 // a broadcast is queued on the receiver and dispatched by its next process().
 
 namespace {
-
-enum class Lang { Lua, Js };
 
 std::string scriptFor(Lang lang, const std::string& body) {
 	return lang == Lang::Lua
@@ -247,11 +215,12 @@ std::string receiverScript(Lang lang, const std::string& logExpr) {
 }
 
 struct BroadcastRig {
-	ModuleScaffold mods;
 	std::shared_ptr<StoermelderPackOne::MidiScript::BroadcastBus> bus = std::make_shared<StoermelderPackOne::MidiScript::BroadcastBus>();
+	std::vector<std::unique_ptr<Kit<>>> kits;   // declared after the bus, so they go first
 
 	MidiKitModule* create() {
-		return mods.adopt(createModule(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), bus));
+		kits.emplace_back(new Kit<>(std::make_shared<StoermelderPackOne::SyncTaskWorker>(), bus));
+		return kits.back()->m;
 	}
 	MidiKitModule* create(Lang lang, const std::string& script) {
 		MidiKitModule* m = create();
@@ -267,12 +236,6 @@ struct BroadcastRig {
 		return m;
 	}
 };
-
-size_t count(const std::string& s, const std::string& needle) {
-	size_t n = 0;
-	for (size_t p = s.find(needle); p != std::string::npos; p = s.find(needle, p + 1)) n++;
-	return n;
-}
 
 // The same logging expression for either engine.
 std::string gotExpr(Lang lang) {
@@ -361,7 +324,8 @@ TEST_CASE("A bypassed module still receives broadcasts", "[MidiKit][Broadcast]")
 
 TEST_CASE("A module with an injected worker and no bus receives nothing", "[MidiKit][Broadcast]") {
 	BroadcastRig rig;
-	MidiKitModule* isolated = rig.mods.adopt(createModule());
+	Kit<> isolatedKit;   // no bus: it gets a private one
+	MidiKitModule* isolated = isolatedKit.m;
 	isolated->loadScript(receiverScript(Lang::Lua, "'got'"));
 	drainLog(isolated);
 	MidiKitModule* sender = rig.load(Lang::Lua, senderScript(Lang::Lua, "1"));
@@ -425,9 +389,9 @@ TEST_CASE("More broadcasts than the queue holds are dropped and logged once", "[
 		fireTrigger(sender);
 
 		std::string overflow = drainLog(receiver);
-		REQUIRE(count(overflow, "Broadcast input queue full") == 1);
+		REQUIRE(countOf(overflow, "Broadcast input queue full") == 1);
 		receiver->host.getActiveEngine()->process();
-		REQUIRE(count(drainLog(receiver), "got") == 16);
+		REQUIRE(countOf(drainLog(receiver), "got") == 16);
 	}
 }
 
@@ -502,7 +466,7 @@ TEST_CASE("Two scripts that reply to each other are bounded per process", "[Midi
 			REQUIRE(a->host.getActiveEngine()->broadcastInQueue.size() <= 2);
 			REQUIRE(b->host.getActiveEngine()->broadcastInQueue.size() <= 2);
 		}
-		size_t replies = count(drainLog(a), "r") + count(drainLog(b), "r");
+		size_t replies = countOf(drainLog(a), "r") + countOf(drainLog(b), "r");
 		REQUIRE(replies <= (size_t)rounds * 2 * 2);
 		REQUIRE(replies > 0);
 	}
@@ -591,6 +555,6 @@ TEST_CASE("A topic that is not a string or is too long is rejected", "[MidiKit][
 		REQUIRE(log.find("b 0") != std::string::npos);
 		REQUIRE(log.find("c 1") != std::string::npos);
 		receiver->host.getActiveEngine()->process();
-		REQUIRE(count(drainLog(receiver), "got") == 1);
+		REQUIRE(countOf(drainLog(receiver), "got") == 1);
 	}
 }

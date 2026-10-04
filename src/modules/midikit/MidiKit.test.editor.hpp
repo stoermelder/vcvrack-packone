@@ -1,6 +1,3 @@
-#include "MidiKit.test.hpp"
-#include "../../test/test_harness.hpp"
-
 // Script editor: the dialog opened from MidiKitWidgetBase (menu / Alt+E), its apply and
 // close-guard behaviour, and the keys the editing field handles itself. The text arithmetic
 // is covered by src/ui/ScriptEditorText.test.cpp.
@@ -77,6 +74,26 @@ static OpenEditor openEditorOn(Test::Harness& h, MidiKitWidget* mw) {
 	return e;
 }
 
+// The harness with a MidiKit and its widget on the rack, and the overlays a test opens removed
+// again at the end. The module is the production one (its own worker) unless asked for a
+// synchronous worker, so rack.setConfig publishes inline.
+struct EditorRig : Test::Harness {
+	enum Worker { ProductionWorker, SyncWorker };
+	EditorCleanup cleanup;
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+
+	explicit EditorRig(Worker worker = ProductionWorker) {
+		if (worker == SyncWorker) {
+			m = addModule<MidiKitModule>(std::function<MidiKitModule*()>([]() { MidiKitModule* mod = createModule(); mod->model = modelMidiKit; return mod; }));
+		}
+		else {
+			m = addModule<MidiKitModule>("MidiKit");
+		}
+		mw = addWidget<MidiKitWidget>(m);
+	}
+};
+
 static bool selectKeyConsumed(ScriptEditField* field, int key, int mods) {
 	rack::widget::EventContext c;
 	rack::widget::Widget::SelectKeyEvent e;
@@ -91,10 +108,9 @@ static bool selectKeyConsumed(ScriptEditField* field, int key, int mods) {
 }
 
 TEST_CASE("Editor: opens on the applied script and takes focus", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	m->loadScript("// @engine QuickJs@v1\nlog(1);\n");
 
 	OpenEditor e = openEditorOn(h, mw);
@@ -105,10 +121,9 @@ TEST_CASE("Editor: opens on the applied script and takes focus", "[MidiKit][Edit
 }
 
 TEST_CASE("Editor: Alt+E opens it, a second request does not stack another", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 
 	rack::widget::EventContext c;
 	rack::widget::Widget::HoverKeyEvent k;
@@ -126,10 +141,9 @@ TEST_CASE("Editor: Alt+E opens it, a second request does not stack another", "[M
 }
 
 TEST_CASE("Editor: Ctrl+Enter applies the buffer and keeps the editor open", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	m->loadScript("// one\n");
 	EditorMock mock;
 
@@ -146,10 +160,9 @@ TEST_CASE("Editor: Ctrl+Enter applies the buffer and keeps the editor open", "[M
 }
 
 TEST_CASE("Editor: Ctrl+Shift+Enter applies and closes without asking", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 
 	OpenEditor e = openEditorOn(h, mw);
@@ -161,10 +174,9 @@ TEST_CASE("Editor: Ctrl+Shift+Enter applies and closes without asking", "[MidiKi
 }
 
 TEST_CASE("Editor: closing with unapplied changes asks, and 'no' keeps the text", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	m->loadScript("// kept\n");
 	EditorMock mock;
 	mock.ui.answer = false;
@@ -200,10 +212,9 @@ TEST_CASE("Editor: closing with unapplied changes asks, and 'no' keeps the text"
 }
 
 TEST_CASE("Editor: closing a clean buffer does not ask", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 
 	OpenEditor e = openEditorOn(h, mw);
@@ -214,10 +225,9 @@ TEST_CASE("Editor: closing a clean buffer does not ask", "[MidiKit][Editor]") {
 }
 
 TEST_CASE("Editor: a buffer edited back to the applied text is clean again", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	h.events().type("x");
@@ -227,10 +237,9 @@ TEST_CASE("Editor: a buffer edited back to the applied text is clean again", "[M
 }
 
 TEST_CASE("Editor: Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y are consumed, and undo followed by redo leaves the text as typed", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	h.events().type("abc");
 
@@ -261,10 +270,9 @@ TEST_CASE("Editor: removing the module widget removes the editor without a promp
 }
 
 TEST_CASE("Editor field: Tab inserts spaces, Enter inserts a newline", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_TAB));
@@ -275,10 +283,9 @@ TEST_CASE("Editor field: Tab inserts spaces, Enter inserts a newline", "[MidiKit
 }
 
 TEST_CASE("Editor field: Up/Down keep a sticky column across short lines", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	e.field->setText("abcdef\nxy\nlonger line");
@@ -300,10 +307,9 @@ TEST_CASE("Editor field: Up/Down keep a sticky column across short lines", "[Mid
 }
 
 TEST_CASE("Editor field: Home and End stay on the line, also on an empty first line", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	e.field->setText("\nabc\ndef");
@@ -321,10 +327,9 @@ TEST_CASE("Editor field: Home and End stay on the line, also on an empty first l
 }
 
 TEST_CASE("Editor field: a click lands on the character under it", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("ab\ncde\nf");
 
@@ -341,10 +346,9 @@ TEST_CASE("Editor field: a click lands on the character under it", "[MidiKit][Ed
 }
 
 TEST_CASE("Editor: Revert discards the edits and shows the running script", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	m->loadScript("// running\n");
 	OpenEditor e = openEditorOn(h, mw);
@@ -364,10 +368,9 @@ TEST_CASE("Editor: Revert discards the edits and shows the running script", "[Mi
 }
 
 TEST_CASE("Editor field: Shift+Tab outdents, and Tab/Shift+Tab work on a multi-line selection", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	e.field->setText("        x");
@@ -392,10 +395,9 @@ TEST_CASE("Editor field: Shift+Tab outdents, and Tab/Shift+Tab work on a multi-l
 }
 
 TEST_CASE("Editor field: Enter keeps the indentation", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	e.field->setText("    foo");
@@ -417,10 +419,9 @@ TEST_CASE("Editor field: Enter keeps the indentation", "[MidiKit][Editor]") {
 }
 
 TEST_CASE("Editor field: undo and redo", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	const int CTRL = RACK_MOD_CTRL;
 	const int CTRL_SHIFT = RACK_MOD_CTRL | GLFW_MOD_SHIFT;
@@ -490,10 +491,9 @@ TEST_CASE("Editor field: undo and redo", "[MidiKit][Editor]") {
 }
 
 TEST_CASE("Editor: the header names the running engine and follows an apply", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	const std::string em = "\xE2\x80\x94";
 
@@ -516,11 +516,10 @@ TEST_CASE("Editor: the header names the running engine and follows an apply", "[
 }
 
 TEST_CASE("Editor: applying keeps the script's saved config", "[MidiKit][Editor][Config]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
 	// Synchronous worker, so rack.setConfig publishes inline.
-	MidiKitModule* m = h.addModule<MidiKitModule>(std::function<MidiKitModule*()>([]() { MidiKitModule* mod = createModule(); mod->model = modelMidiKit; return mod; }));
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h(EditorRig::SyncWorker);
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 
 	// setConfig is applied before onLoad reads the key back, so only a restored value
@@ -537,44 +536,42 @@ rack.onLoad = function() { rack.setConfig("seen", rack.getConfig("channel")); };
 if rack.getConfig("channel") == nil then rack.setConfig("channel", 7) end
 rack.onLoad = function() rack.setConfig("seen", rack.getConfig("channel")) end
 )";
-	for (const char* script : {js, lua}) {
-		CATCH_INFO(script);
-		m->loadScript(script);
-		h.uiFrames(3);
-		REQUIRE(configInt(m->peekConfigJson(), "channel") == 7);
+	FOR_EACH_LANG;
+	const char* script = Pair{js, lua}.get(lang);
+	m->loadScript(script);
+	h.uiFrames(3);
+	REQUIRE(configInt(m->peekConfigJson(), "channel") == 7);
 
-		// Something the script saved that the new text knows nothing about.
-		std::string saved = m->peekConfigJson();
-		json_t* j = json_loads(saved.c_str(), 0, nullptr);
-		json_object_set_new(j, "extra", json_integer(42));
-		char* dumped = json_dumps(j, JSON_COMPACT);
-		m->loadScript(script, dumped);
-		free(dumped);
-		json_decref(j);
-		h.uiFrames(3);
-		REQUIRE(configInt(m->peekConfigJson(), "extra") == 42);
+	// Something the script saved that the new text knows nothing about.
+	std::string saved = m->peekConfigJson();
+	json_t* j = json_loads(saved.c_str(), 0, nullptr);
+	json_object_set_new(j, "extra", json_integer(42));
+	char* dumped = json_dumps(j, JSON_COMPACT);
+	m->loadScript(script, dumped);
+	free(dumped);
+	json_decref(j);
+	h.uiFrames(3);
+	REQUIRE(configInt(m->peekConfigJson(), "extra") == 42);
 
-		OpenEditor e = openEditorOn(h, mw);
-		e.field->setText(std::string(script) + "\n// edited\n");
-		e.dialog->apply();
-		h.uiFrames(3);
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->setText(std::string(script) + "\n// edited\n");
+	e.dialog->apply();
+	h.uiFrames(3);
 
-		REQUIRE(m->host.script == std::string(script) + "\n// edited\n");
-		std::string after = m->peekConfigJson();
-		REQUIRE(configInt(after, "channel") == 7);
-		REQUIRE(configInt(after, "extra") == 42);
-		REQUIRE(configInt(after, "seen") == 7);
+	REQUIRE(m->host.script == std::string(script) + "\n// edited\n");
+	std::string after = m->peekConfigJson();
+	REQUIRE(configInt(after, "channel") == 7);
+	REQUIRE(configInt(after, "extra") == 42);
+	REQUIRE(configInt(after, "seen") == 7);
 
-		e.dialog->requestClose();
-		for (ScriptEditorOverlay* o : editorOverlays()) { APP->event->finalizeWidget(o); APP->scene->removeChild(o); delete o; }
-	}
+	e.dialog->requestClose();
+	for (ScriptEditorOverlay* o : editorOverlays()) { APP->event->finalizeWidget(o); APP->scene->removeChild(o); delete o; }
 }
 
 TEST_CASE("Editor: the log area mirrors the module's log", "[MidiKit][Editor][Log]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 
 	// Entries from before the editor opened are there from the start, oldest first.
 	m->log.pushText("first");
@@ -603,10 +600,9 @@ TEST_CASE("Editor: the log area mirrors the module's log", "[MidiKit][Editor][Lo
 }
 
 TEST_CASE("Editor: apply shows the new script's log output", "[MidiKit][Editor][Log]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>(std::function<MidiKitModule*()>([]() { MidiKitModule* mod = createModule(); mod->model = modelMidiKit; return mod; }));
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h(EditorRig::SyncWorker);
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	e.field->setText("/**\n * @engine QuickJs@v1\n */\nrack.log(\"hello from the editor\");\n");
@@ -621,10 +617,9 @@ TEST_CASE("Editor: apply shows the new script's log output", "[MidiKit][Editor][
 }
 
 TEST_CASE("Editor: a load error shows up in the log area, and the editor stays open", "[MidiKit][Editor][Log]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>(std::function<MidiKitModule*()>([]() { MidiKitModule* mod = createModule(); mod->model = modelMidiKit; return mod; }));
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h(EditorRig::SyncWorker);
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	e.field->setText("/**\n * @engine QuickJs@v1\n */\nthis is not javascript(\n");
@@ -637,10 +632,9 @@ TEST_CASE("Editor: a load error shows up in the log area, and the editor stays o
 }
 
 TEST_CASE("Editor: closing it stops the log mirroring", "[MidiKit][Editor][Log]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	size_t before = mw->logs.size();
 	OpenEditor e = openEditorOn(h, mw);
 	REQUIRE(mw->logs.size() == before + 1);
@@ -661,10 +655,9 @@ static size_t menuOverlayCount() {
 }
 
 TEST_CASE("Editor: right and middle clicks do not close it", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	OpenEditor e = openEditorOn(h, mw);
 	h.events().type("unapplied");
@@ -720,10 +713,9 @@ static void clickMenuItem(rack::ui::MenuItem* item) {
 }
 
 TEST_CASE("Editor: the context menu lists the script API and a click inserts a snippet", "[MidiKit][Editor][Api]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	m->loadScript("// @engine QuickJs@v1\n");
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->cursor = e.field->selection = (int)e.field->text.size();
@@ -766,10 +758,9 @@ TEST_CASE("Editor: the context menu lists the script API and a click inserts a s
 }
 
 TEST_CASE("Editor: the script language is that of the running engine", "[MidiKit][Editor][Api]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	m->loadScript("/**\n * @engine QuickJs@v1\n */\n");
@@ -803,10 +794,9 @@ static void rightClickClosingMenu(Test::Harness& h, rack::math::Vec pos) {
 }
 
 TEST_CASE("Editor: a right click moves the caret there, unless it hits the selection", "[MidiKit][Editor][Api]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first\nsecond\nthird");
 	e.field->cursor = e.field->selection = 0;
@@ -835,10 +825,9 @@ TEST_CASE("Editor: a right click moves the caret there, unless it hits the selec
 }
 
 TEST_CASE("Editor: header templates are inserted at the top and the engine accepts them", "[MidiKit][Editor][Api]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 
 	for (const char* name : {"Insert QuickJs header", "Insert Lua header"}) {
@@ -861,8 +850,8 @@ TEST_CASE("Editor: header templates are inserted at the top and the engine accep
 		REQUIRE(e.field->text == "log(1);\n");
 
 		// The loader accepts what was inserted.
-		ModuleScaffold mods;
-		MidiKitModule* tm = mods.create();
+		Kit<> tk;
+		MidiKitModule* tm = tk.m;
 		tm->loadScript(text);
 		REQUIRE((js ? tm->host.isQuickJsEngine() : tm->host.isLuaEngine()));
 		REQUIRE(drainLog(tm).find("not compatible") == std::string::npos);
@@ -891,8 +880,8 @@ TEST_CASE("Editor: the API table is complete and matches what both engines expos
 		}
 	}
 	SECTION("QuickJs") {
-		ModuleScaffold mods;
-		MidiKitModule* m = mods.create();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(js);
 		std::string log = drainLog(m);
 		CATCH_INFO(log);
@@ -900,8 +889,8 @@ TEST_CASE("Editor: the API table is complete and matches what both engines expos
 		REQUIRE(log.find("missing") == std::string::npos);
 	}
 	SECTION("Lua") {
-		ModuleScaffold mods;
-		MidiKitModule* m = mods.create();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(lua);
 		std::string log = drainLog(m);
 		CATCH_INFO(log);
@@ -911,10 +900,9 @@ TEST_CASE("Editor: the API table is complete and matches what both engines expos
 }
 
 TEST_CASE("Editor: the log area's context menu copies and clears", "[MidiKit][Editor][Log]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	m->log.pushText("one");
 	m->log.pushText("two\nthree");
@@ -946,10 +934,9 @@ TEST_CASE("Editor: the log area's context menu copies and clears", "[MidiKit][Ed
 }
 
 TEST_CASE("Editor: dragging the handle trades space between code and log, the dialog keeps its size", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	auto* handle = h.events().find<SplitHandle>(e.dialog);
 
@@ -986,11 +973,6 @@ TEST_CASE("Editor: dragging the handle trades space between code and log, the di
 
 namespace {
 
-struct FindFixture {
-	ScriptEditField* field;
-	ScriptEditorDialog* dialog;
-};
-
 static void selectedRange(ScriptEditField* f, int& b, int& e) {
 	b = std::min(f->cursor, f->selection);
 	e = std::max(f->cursor, f->selection);
@@ -999,10 +981,9 @@ static void selectedRange(ScriptEditField* f, int& b, int& e) {
 }
 
 TEST_CASE("Editor find: Ctrl+F opens the bar with focus in it, the dialog keeps its size", "[MidiKit][Editor][Find]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	REQUIRE_FALSE(e.dialog->findBar->isOpen);
 	REQUIRE_FALSE(e.dialog->findBar->visible);
@@ -1023,10 +1004,9 @@ TEST_CASE("Editor find: Ctrl+F opens the bar with focus in it, the dialog keeps 
 }
 
 TEST_CASE("Editor find: typing searches incrementally, Enter / Shift+Enter step and wrap", "[MidiKit][Editor][Find]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("foo bar\nFoo baz\nqux foo");   // matches (ignoring case) at 0, 8, 20
 	e.field->cursor = e.field->selection = 0;
@@ -1067,10 +1047,9 @@ TEST_CASE("Editor find: typing searches incrementally, Enter / Shift+Enter step 
 }
 
 TEST_CASE("Editor find: match case, no results, empty search", "[MidiKit][Editor][Find]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("Foo foo FOO");
 	e.field->cursor = e.field->selection = 0;
@@ -1098,10 +1077,9 @@ TEST_CASE("Editor find: match case, no results, empty search", "[MidiKit][Editor
 }
 
 TEST_CASE("Editor find: Esc closes the bar and returns to the editor without closing it", "[MidiKit][Editor][Find]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("abc abc");
@@ -1130,10 +1108,9 @@ TEST_CASE("Editor find: Esc closes the bar and returns to the editor without clo
 }
 
 TEST_CASE("Editor find: F3 steps from the editor, a one-line selection becomes the search", "[MidiKit][Editor][Find]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("one two one two one");
 	e.field->selection = 4;
@@ -1163,10 +1140,9 @@ TEST_CASE("Editor find: F3 steps from the editor, a one-line selection becomes t
 }
 
 TEST_CASE("Editor find: a match far down is scrolled into view; editing updates the matches", "[MidiKit][Editor][Find]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	std::string text;
 	for (int i = 0; i < 150; i++) text += "line " + std::to_string(i) + "\n";
@@ -1204,10 +1180,9 @@ static std::vector<std::string> shownLines(ScriptLogView* v) {
 }
 
 TEST_CASE("Editor log filter: plain text narrows the shown lines, the rest is kept", "[MidiKit][Editor][Log][Filter]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	m->log.pushText("note on 60");
 	m->log.pushText("Error: boom");
@@ -1246,10 +1221,9 @@ TEST_CASE("Editor log filter: plain text narrows the shown lines, the rest is ke
 }
 
 TEST_CASE("Editor log filter: regular expressions, and an invalid one keeps every line", "[MidiKit][Editor][Log][Filter]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	m->log.pushText("note on 60");
 	m->log.pushText("cc 7 100");
 	m->log.pushText("note off 62");
@@ -1275,10 +1249,9 @@ TEST_CASE("Editor log filter: regular expressions, and an invalid one keeps ever
 }
 
 TEST_CASE("Editor log filter: typing goes to the filter, Enter / Esc return to the editor, clear keeps the filter", "[MidiKit][Editor][Log][Filter]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 	m->log.pushText("keep me");
 	h.uiFrame();
@@ -1308,10 +1281,9 @@ TEST_CASE("Editor log filter: typing goes to the filter, Enter / Esc return to t
 }
 
 TEST_CASE("Editor log panel: the filter row sits below the log, both inside one panel", "[MidiKit][Editor][Log][Filter]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	ScriptLogPanel* panel = e.dialog->logPanel;
 
@@ -1326,10 +1298,9 @@ TEST_CASE("Editor log panel: the filter row sits below the log, both inside one 
 }
 
 TEST_CASE("Editor log panel: the scrollbar is shown even when everything fits", "[MidiKit][Editor][Log]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	ScriptLogPanel* panel = e.dialog->logPanel;
 	e.overlay->step();
@@ -1358,10 +1329,9 @@ TEST_CASE("Editor log panel: the scrollbar is shown even when everything fits", 
 }
 
 TEST_CASE("Editor: the code area's scrollbar is shown even for a short script", "[MidiKit][Editor]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("short\n");
 	e.overlay->step();
@@ -1388,10 +1358,9 @@ TEST_CASE("Editor: the code area's scrollbar is shown even for a short script", 
 // ── Line operations ──
 
 TEST_CASE("Editor field: line operations by key, each one undoable", "[MidiKit][Editor][Lines]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	const int CTRL = RACK_MOD_CTRL;
 
@@ -1442,10 +1411,9 @@ TEST_CASE("Editor field: line operations by key, each one undoable", "[MidiKit][
 }
 
 TEST_CASE("Editor field: Ctrl+/ toggles comments in the running script's language", "[MidiKit][Editor][Lines]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	const int CTRL = RACK_MOD_CTRL;
 
@@ -1486,10 +1454,9 @@ TEST_CASE("Editor field: Ctrl+/ toggles comments in the running script's languag
 // ── Double / triple click ──
 
 TEST_CASE("Editor field: double-click selects a word, triple-click the line, a fourth starts over", "[MidiKit][Editor][Click]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first line\nsecond word here\nthird");
 	e.field->cursor = e.field->selection = 0;
@@ -1521,10 +1488,9 @@ TEST_CASE("Editor field: double-click selects a word, triple-click the line, a f
 }
 
 TEST_CASE("Editor field: clicks far apart do not count as a double-click", "[MidiKit][Editor][Click]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("alpha beta gamma");
 	e.field->cursor = e.field->selection = 0;
@@ -1537,10 +1503,9 @@ TEST_CASE("Editor field: clicks far apart do not count as a double-click", "[Mid
 }
 
 TEST_CASE("Editor field: double-click then typing replaces the word", "[MidiKit][Editor][Click]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("alpha beta gamma");
 	e.field->cursor = e.field->selection = 0;
@@ -1553,10 +1518,9 @@ TEST_CASE("Editor field: double-click then typing replaces the word", "[MidiKit]
 }
 
 TEST_CASE("Editor field: the mouse moving while a double / triple click is held keeps the word / line selected", "[MidiKit][Editor][Click]") {
-	Test::Harness h;
-	EditorCleanup cleanup;
-	MidiKitModule* m = h.addModule<MidiKitModule>("MidiKit");
-	MidiKitWidget* mw = h.addWidget<MidiKitWidget>(m);
+	EditorRig h;
+	MidiKitModule* m = h.m;
+	MidiKitWidget* mw = h.mw;
 	OpenEditor e = openEditorOn(h, mw);
 	e.field->setText("first line\nsecond word here\nthird");
 	e.field->cursor = e.field->selection = 0;

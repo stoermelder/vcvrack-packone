@@ -1,7 +1,7 @@
 // The script's view of the module: inputs, trigger in/out, params, MIDI output port selection and scheduled sends.
 //
-// Part of the cross-engine suite: included into the __engine namespace by
-// MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
+// Part of the cross-engine suite: the shared helpers (run, requireEquivalent, EngineRun, ...)
+// are in MidiKit.test.hpp.
 
 // input.enable
 // input.enable flips a flag on the module's own inputInfos, which is plain
@@ -23,16 +23,15 @@ input.enable(2)
 )";
 
 TEST_CASE("input.enable sets identical module state in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto checkEnabled = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		using StoermelderPackOne::MidiScript::ScriptPortInfo;
 		bool enabled[4];
 		for (int i = 0; i < 4; i++) {
 			enabled[i] = reinterpret_cast<ScriptPortInfo*>(m->inputInfos[i])->enabled;
 		}
-		Test::destroyModule(m);
 		return std::vector<bool>(enabled, enabled + 4);
 	};
 	std::vector<bool> expected = {true, true, false, false};
@@ -111,9 +110,9 @@ end
 )";
 
 TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto ticksPerChannel = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 
 		Module::ProcessArgs args;
@@ -151,7 +150,6 @@ TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both 
 		while (processOutMessage(m, port, out, ticks)) {
 			values.push_back(out.getValue());
 		}
-		Test::destroyModule(m);
 		return values;
 	};
 
@@ -183,9 +181,9 @@ trig.setTrigger(1)
 )";
 
 TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto checkTriggerActive = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 
 		// process() only writes the trigger output voltage while a cable is
@@ -202,7 +200,6 @@ TEST_CASE("trig.setTrigger produces identical output-trigger state", "[MidiKit][
 
 		float voltage = m->outputs[MidiKitModule::OUTPUT_TRIG].getVoltage(0);
 		bool active = m->triggerOuts.triggerActive[0][0];
-		Test::destroyModule(m);
 		return std::make_pair(voltage, active);
 	};
 
@@ -229,9 +226,9 @@ trig.setGate(1, 100)
 )";
 
 TEST_CASE("trig.setGate duration is milliseconds: gate falls after ~100 ms", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto checkGateLength = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 
 		// process() only writes the trigger output voltage while a cable is
@@ -251,7 +248,6 @@ TEST_CASE("trig.setGate duration is milliseconds: gate falls after ~100 ms", "[M
 				highSamples++;
 		}
 
-		Test::destroyModule(m);
 		return highSamples;
 	};
 
@@ -283,16 +279,15 @@ param.enable(3)
 )";
 
 TEST_CASE("param.enable sets identical module state in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto checkEnabled = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		using StoermelderPackOne::MidiScript::ScriptParamQuantity;
 		bool enabled[4];
 		for (int i = 0; i < 4; i++) {
 			enabled[i] = reinterpret_cast<ScriptParamQuantity*>(m->paramQuantities[i])->enabled;
 		}
-		Test::destroyModule(m);
 		return std::vector<bool>(enabled, enabled + 4);
 	};
 	std::vector<bool> expected = {true, false, true, false};
@@ -328,9 +323,9 @@ end
 )";
 
 TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto valueAt = [](const std::string& script, float paramValue) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		m->params[MidiKitModule::PARAM + 0].setValue(paramValue);
 
@@ -344,7 +339,6 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 		midi::Message out;
 		REQUIRE(processOutMessage(m, port, out, ticks));
 		int result = out.getValue();
-		Test::destroyModule(m);
 		return result;
 	};
 
@@ -471,4 +465,294 @@ TEST_CASE("midiOut.sendAfterMs schedules the message 100 ms after the event, in 
 	REQUIRE(b.js.sent[0].frame == due);
 	REQUIRE(b.lua.sent[0].frame == due);
 }
+// trig.onTrigger dispatch and the context-menu API.
+//
+// Part of the cross-engine suite: the shared helpers (run, requireEquivalent, EngineRun, ...)
+// are in MidiKit.test.hpp.
 
+static const char* JS_ON_TRIGGER = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1);
+trig.onTrigger = function(trigPort) {
+    rack.log("onTrigger " + number.toString(trigPort));
+    let msg = midi.create();
+    midi.setCc(msg, 1, 10, trigPort);
+    midiOut.send(msg);
+};
+)";
+
+static const char* LUA_ON_TRIGGER = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1)
+function trig.onTrigger(trigPort)
+    rack.log("onTrigger " .. trigPort)
+    local msg = midi.create()
+    midi.setCc(msg, 1, 10, trigPort)
+    midiOut.send(msg)
+end
+)";
+
+TEST_CASE("onTrigger fires on a trigger input tick and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
+	auto checkOnTrigger = [](const std::string& script) {
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
+		m->loadScript(script);
+		drainLog(m);
+
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
+
+		std::string log = drainLog(m);
+		REQUIRE(log.find("onTrigger 1") != std::string::npos);
+
+		int port, ticks;
+		midi::Message out;
+		REQUIRE(processOutMessage(m, port, out, ticks));
+		auto sent = Out::of(out, port, ticks);
+		return sent;
+	};
+
+	auto js = checkOnTrigger(JS_ON_TRIGGER);
+	auto lua = checkOnTrigger(LUA_ON_TRIGGER);
+	// CC 10 carrying the trigger port (1).
+	REQUIRE(js.port == 0);
+	REQUIRE(lua.port == 0);
+	REQUIRE(js.bytes == std::vector<uint8_t>{0xb0, 10, 1});
+	REQUIRE(lua.bytes == std::vector<uint8_t>{0xb0, 10, 1});
+}
+
+
+static const char* JS_ON_TRIGGER_CHANNEL = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.enableIn(1, 2);
+trig.onTrigger = function(trigPort, channel) {
+    rack.log("onTrigger " + number.toString(trigPort) + " " + number.toString(channel));
+};
+)";
+
+static const char* LUA_ON_TRIGGER_CHANNEL = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.enableIn(1, 2)
+function trig.onTrigger(trigPort, channel)
+    rack.log("onTrigger " .. trigPort .. " " .. channel)
+end
+)";
+
+TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][CrossEngine]") {
+	auto logChannels = [](const std::string& script) {
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
+		m->loadScript(script);
+		drainLog(m);
+
+		// Channels are 1-based in the callback: index 0 -> "1", index 1 -> "2".
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
+		m->host.getActiveEngine()->processInTick(0, 1);
+		m->host.getActiveEngine()->process();
+
+		std::string log = drainLog(m);
+		return log;
+	};
+
+	auto js = logChannels(JS_ON_TRIGGER_CHANNEL);
+	auto lua = logChannels(LUA_ON_TRIGGER_CHANNEL);
+	REQUIRE(js.find("onTrigger 1 1") != std::string::npos);
+	REQUIRE(js.find("onTrigger 1 2") != std::string::npos);
+	REQUIRE(lua.find("onTrigger 1 1") != std::string::npos);
+	REQUIRE(lua.find("onTrigger 1 2") != std::string::npos);
+}
+
+
+TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engines", "[MidiKit][CrossEngine]") {
+	auto checkNoOnTrigger = [](const std::string& script) {
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
+		m->loadScript(script);
+		drainLog(m);
+
+		m->host.getActiveEngine()->processInTick(0, 0);
+		m->host.getActiveEngine()->process();
+
+		std::string log = drainLog(m);
+		int port, ticks;
+		midi::Message out;
+		bool sentAnything = processOutMessage(m, port, out, ticks);
+		return std::make_pair(log, sentAnything);
+	};
+
+	auto js = checkNoOnTrigger(JS_NO_ON_LOAD);
+	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
+	REQUIRE(js.first.empty());
+	REQUIRE(lua.first.empty());
+	REQUIRE(js.second == false);
+	REQUIRE(lua.second == false);
+}
+
+
+static const char* JS_ON_TRIGGER_NOT_ENABLED = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.onTrigger = function(trigPort, channel) {
+    rack.log("onTrigger fired");
+};
+)";
+
+static const char* LUA_ON_TRIGGER_NOT_ENABLED = R"(--[[
+@engine minilua@v1
+--]]
+trig.onTrigger = function(trigPort, channel)
+    rack.log("onTrigger fired")
+end
+)";
+
+TEST_CASE("trig.onTrigger is not called until trig.enableIn() is used, in both engines", "[MidiKit][CrossEngine]") {
+	// trig.onTrigger is unused until the channel is enabled with trig.enableIn().
+	auto checkNotEnabled = [](const std::string& script) {
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
+		m->loadScript(script);
+		drainLog(m);
+
+		m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+		// Without trig.enableIn(), a rising edge is not processed at all.
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		m->process(Test::makeProcessArgs(0));
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		m->process(Test::makeProcessArgs(1));
+		m->host.getActiveEngine()->process();
+
+		std::string log = drainLog(m);
+		return log;
+	};
+
+	REQUIRE(checkNotEnabled(JS_ON_TRIGGER_NOT_ENABLED).find("onTrigger") == std::string::npos);
+	REQUIRE(checkNotEnabled(LUA_ON_TRIGGER_NOT_ENABLED).find("onTrigger") == std::string::npos);
+}
+
+
+static const char* JS_ON_TRIGGER_ENABLE_CH1_ONLY = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+trig.onTrigger = function(trigPort, channel) {
+    rack.log("onTrigger " + number.toString(channel));
+};
+)";
+
+static const char* LUA_ON_TRIGGER_ENABLE_CH1_ONLY = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+trig.onTrigger = function(trigPort, channel)
+    rack.log("onTrigger " .. channel)
+end
+)";
+
+TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[MidiKit][CrossEngine]") {
+	// Only channel 1 is enabled: a rising edge on channel 1 fires the callback,
+	// a rising edge on channel 2 (never enabled) is not processed at all.
+	auto checkPerChannel = [](const std::string& script) {
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
+		m->loadScript(script);
+		drainLog(m);
+
+		m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
+		// Prime both SchmittTriggers LOW first (a fresh trigger starts
+		// uninitialized; the first low call locks it so a later rise is real).
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
+		m->process(Test::makeProcessArgs(0));
+
+		// Rising edge on channel 1 (enabled) fires the callback.
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
+		m->process(Test::makeProcessArgs(1));
+		m->host.getActiveEngine()->process();
+		std::string log1 = drainLog(m);
+
+		// Rising edge on channel 2 (never enabled) is ignored.
+		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
+		m->process(Test::makeProcessArgs(2));
+		m->host.getActiveEngine()->process();
+		std::string log2 = drainLog(m);
+
+		return std::make_pair(log1, log2);
+	};
+
+	auto js = checkPerChannel(JS_ON_TRIGGER_ENABLE_CH1_ONLY);
+	auto lua = checkPerChannel(LUA_ON_TRIGGER_ENABLE_CH1_ONLY);
+	REQUIRE(js.first.find("onTrigger 1") != std::string::npos);
+	REQUIRE(js.second.find("onTrigger") == std::string::npos);
+	REQUIRE(lua.first.find("onTrigger 1") != std::string::npos);
+	REQUIRE(lua.second.find("onTrigger") == std::string::npos);
+}
+
+
+// send() order, not handle-creation order
+// Regression test for the send-order bug: the engine used to push the
+// out-queue in msgStore index (handle-creation) order, so a script that
+// created several messages and then sent them in a different order had them
+// reordered on the wire. The receiver must observe send() order. This
+// creates A, B, C (handle order) but sends C, A, B, and asserts the wire
+// order is C, A, B in both engines.
+
+static const char* JS_SEND_ORDER = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+    let a = midi.create();
+    midi.setNoteOn(a, 1, 60, 100);
+    let b = midi.create();
+    midi.setNoteOn(b, 1, 62, 100);
+    let c = midi.create();
+    midi.setNoteOn(c, 1, 64, 100);
+    midiOut.send(c);   // handle 2 sent first
+    midiOut.send(a);   // handle 0 sent second
+    midiOut.send(b);   // handle 1 sent last
+};
+)";
+
+static const char* LUA_SEND_ORDER = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(midiPort, msg)
+    local a = midi.create()
+    midi.setNoteOn(a, 1, 60, 100)
+    local b = midi.create()
+    midi.setNoteOn(b, 1, 62, 100)
+    local c = midi.create()
+    midi.setNoteOn(c, 1, 64, 100)
+    midiOut.send(c)
+    midiOut.send(a)
+    midiOut.send(b)
+end
+)";
+
+TEST_CASE("out-queue is in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
+	EngineRun js = run(JS_SEND_ORDER);
+	EngineRun lua = run(LUA_SEND_ORDER);
+
+	// Handle order would be 60, 62, 64; send() order is 64, 60, 62. The
+	// script's channel argument is 1-based, so channel 1 = internal channel 0
+	// = status nibble 0x9 | 0 = 0x90.
+	std::vector<uint8_t> expectC = {0x90, 64, 100};
+	std::vector<uint8_t> expectA = {0x90, 60, 100};
+	std::vector<uint8_t> expectB = {0x90, 62, 100};
+
+	REQUIRE(js.sent.size() == 3);
+	REQUIRE(js.sent[0].bytes == expectC);
+	REQUIRE(js.sent[1].bytes == expectA);
+	REQUIRE(js.sent[2].bytes == expectB);
+
+	REQUIRE(lua.sent.size() == 3);
+	REQUIRE(lua.sent[0].bytes == expectC);
+	REQUIRE(lua.sent[1].bytes == expectA);
+	REQUIRE(lua.sent[2].bytes == expectB);
+}

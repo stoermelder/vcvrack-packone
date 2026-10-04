@@ -1,6 +1,6 @@
 #include "MidiKit.test.hpp"
 
-// Self-tests for the harness at the end of MidiKit.test.hpp (var/MidiKit_test_review.md §7).
+// Self-tests for the harness at the end of MidiKit.test.hpp.
 // They pin what the rig does, so a test migrated onto it can trust a green or red result.
 
 TEST_CASE("Harness: msg builders produce the wire bytes of the MIDI spec", "[MidiKit][Harness]") {

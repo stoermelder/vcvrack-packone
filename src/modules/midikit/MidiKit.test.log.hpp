@@ -1,5 +1,3 @@
-#include "MidiKit.test.hpp"
-
 // LogDispatcher: fan-out of one queue to several subscribers.
 
 namespace {
@@ -83,8 +81,8 @@ TEST_CASE("A timestamped log line shows seconds, the engine frame, or nothing", 
 }
 
 TEST_CASE("writeLog records the engine frame it ran on", "[MidiKit][Log][LogTime]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	drainLog(m);
 	m->timingCurrentFrame.store(5000, std::memory_order_relaxed);
 	m->writeLog("late");
@@ -95,12 +93,13 @@ TEST_CASE("writeLog records the engine frame it ran on", "[MidiKit][Log][LogTime
 }
 
 TEST_CASE("The log time setting is stored in the patch", "[MidiKit][Log][LogTime]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	REQUIRE(m->logTime == LOG_TIME::TIMESTAMP);
 	m->logTime = LOG_TIME::FRAME;
 	json_t* j = m->dataToJson();
-	MidiKitModule* other = mods.create();
+	Kit<> kit2;
+	MidiKitModule* other = kit2.m;
 	other->dataFromJson(j);
 	REQUIRE(other->logTime == LOG_TIME::FRAME);
 
@@ -109,4 +108,121 @@ TEST_CASE("The log time setting is stored in the patch", "[MidiKit][Log][LogTime
 	other->dataFromJson(j);
 	REQUIRE(other->logTime == LOG_TIME::TIMESTAMP);
 	json_decref(j);
+}
+
+// Logging (midiLogMessages)
+
+TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	drainLogEntries(m);  // discard construction-time entries
+
+	for (int i = 0; i < 10; i++) {
+		m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("line") + std::to_string(i), 0));
+	}
+
+	auto entries = drainLogEntries(m);
+	REQUIRE(entries.size() == 10);
+	for (int i = 0; i < 10; i++) {
+		REQUIRE(std::get<1>(entries[i]) == "line" + std::to_string(i));
+	}
+}
+
+
+TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	drainLogEntries(m);  // discard construction-time entries
+
+	// Producer A: the module's handler writeLog (the worker-thread path).
+	m->writeLog("from-engine", true);
+	// Producer B: a direct push (the loadScript/onReset path).
+	m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("from-direct"), 0));
+	// Producer A again.
+	m->writeLog("from-engine-2", false);
+
+	auto entries = drainLogEntries(m);
+	REQUIRE(entries.size() == 3);
+	REQUIRE(std::get<1>(entries[0]) == "from-engine");
+	REQUIRE(std::get<1>(entries[1]) == "from-direct");
+	REQUIRE(std::get<1>(entries[2]) == "from-engine-2");
+	// writeLog(useTimestamp=true) -> TIMESTAMP, writeLog(useTimestamp=false) -> TEXT.
+	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::TIMESTAMP);
+	REQUIRE(std::get<0>(entries[1]) == LOG_FORMAT::TEXT);
+	REQUIRE(std::get<0>(entries[2]) == LOG_FORMAT::TEXT);
+}
+
+
+TEST_CASE("LoadScript emits a RESET log entry", "[MidiKit][Log]") {
+	// The synchronous worker: the test depends on the load having landed.
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	drainLogEntries(m);  // discard construction-time entries
+
+	m->loadScript(QUICKJS_SCRIPT);
+
+	auto entries = drainLogEntries(m);
+	REQUIRE(!entries.empty());
+	// loadScript() pushes the RESET marker before any script output.
+	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::RESET);
+}
+
+
+TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	drainLogEntries(m);  // discard construction-time entries
+
+	// The queue holds exactly 512 entries; pushing more must drop (try_push
+	// returns false) rather than block.
+	int pushed = 0;
+	for (int i = 0; i < 1000; i++) {
+		if (m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("x"), 0))) {
+			pushed++;
+		}
+	}
+	REQUIRE(pushed == 512);
+
+	// Every accepted entry is still drained out (no loss of accepted entries).
+	auto entries = drainLogEntries(m);
+	REQUIRE(entries.size() == 512);
+}
+
+// Notices raised from the audio thread: a flag set, no string built there. They
+// become log lines when the log is drained, and repeats before that are one.
+TEST_CASE("Raised log notices become one line each when the log is drained", "[MidiKit][Log]") {
+	ScriptLog log;
+	ScriptLog::Entry t;
+
+	REQUIRE_FALSE(log.tryPop(t));
+
+	log.raise(ScriptLog::OUTPUT_QUEUE_FULL);
+	log.raise(ScriptLog::OUTPUT_QUEUE_FULL);
+	log.raise(ScriptLog::TRIGGER_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "MIDI output queue full, message(s) dropped");
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Trigger output queue full, write(s) dropped");
+	REQUIRE_FALSE(log.tryPop(t));
+
+	// Raising again after the drain reports again.
+	log.raise(ScriptLog::OUTPUT_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+
+	log.raise(ScriptLog::TIMING_LATE);
+	log.raise(ScriptLog::TIMING_LATE);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Timing: message(s) reached the output too late");
+	REQUIRE_FALSE(log.tryPop(t));
+
+	log.raise(ScriptLog::TIPSY_INPUT_MALFORMED);
+	log.raise(ScriptLog::TIPSY_INPUT_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Tipsy input: malformed stream");
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "Tipsy input queue full, message(s) dropped");
+
+	log.raise(ScriptLog::SCHEDULE_QUEUE_FULL);
+	REQUIRE(log.tryPop(t));
+	REQUIRE(std::get<2>(t) == "MIDI schedule queue full, message(s) sent at once");
 }
