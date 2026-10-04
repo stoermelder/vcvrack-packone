@@ -277,12 +277,12 @@ static TwoDispatchResult runTwoMidiDispatches(const std::string& script) {
 
 	TwoDispatchResult r;
 	midi::Message in1 = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in1);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in1));
 	m->host.getActiveEngine()->process();
 	r.log1 = drainLog(m);
 
 	midi::Message in2 = noteOn(1, 61, 100);
-	m->host.getActiveEngine()->processInMessage(0, in2);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in2));
 	m->host.getActiveEngine()->process();
 	r.log2 = drainLog(m);
 
@@ -481,7 +481,7 @@ TEST_CASE("Defining midi.onMessage late (from onTrigger) never gets called, in b
 		REQUIRE(triggerLog.find("onTrigger fired") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.find("late midi.onMessage called") == std::string::npos);
@@ -537,7 +537,7 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.empty());
@@ -550,7 +550,7 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		bool isJs = script.find("QuickJs") != std::string::npos;
 		m->loadScript(isJs ? JS_REASSIGN_ON_MIDI_MESSAGE : LUA_REASSIGN_ON_MIDI_MESSAGE);
 		drainLog(m);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 		std::string reloadMidiLog = drainLog(m);
 		REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
@@ -595,7 +595,7 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	std::string midiLog = drainLog(m);
 	REQUIRE(midiLog.empty());
@@ -607,7 +607,7 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	// running for the first time on that ctx.
 	m->loadScript(JS_REASSIGN_ON_MIDI_MESSAGE);
 	drainLog(m);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	std::string reloadMidiLog = drainLog(m);
 	REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
@@ -753,7 +753,7 @@ static EngineResult runMessages(const std::string& script, int count) {
 
 	for (int i = 0; i < count; i++) {
 		midi::Message in = noteOn(1, 60 + i, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 	}
 	int port, ticks;

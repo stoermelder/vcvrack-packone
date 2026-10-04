@@ -57,12 +57,14 @@ let PLAYMODES = ["Up", "Down", "Up-Down"];
 // tickCount: counts trigger ticks up to the current clockDivision.
 // soundingNote/soundingChannel: the note+channel currently sustained by the
 // arp, so it can be released before the next one starts or on unload.
+// lengthTicks: the ticks after a step at which its note ends (the gate length).
 let state = {
     held: [],
     pattern: [],
     step: 0,
     tickCount: 0,
     soundingNote: -1,
+    lengthTicks: 1,
     soundingChannel: 1
 };
 
@@ -251,7 +253,13 @@ midi.onMessage = function(midiPort, msg) {
 trig.onTrigger = function(trigPort, channel) {
     let division = DIVISIONS[divisionIndex()];
     state.tickCount++;
-    if (state.tickCount < division) return;
+    if (state.tickCount < division) {
+        // The note's gate is over: end it here, on the tick, instead of scheduling a
+        // Note-Off ahead of time. The script then knows the note has ended, so the
+        // next step does not send a second Note-Off for it.
+        if (state.tickCount >= state.lengthTicks) releaseSounding();
+        return;
+    }
     state.tickCount = 0;
 
     releaseSounding();
@@ -269,10 +277,7 @@ trig.onTrigger = function(trigPort, channel) {
     if (lengthTicks < 1) lengthTicks = 1;
     if (lengthTicks > division - 1) lengthTicks = division > 1 ? division - 1 : 1;
 
-    let off = midi.create();
-    midi.setNoteOff(off, ch, note);
-    midiOut.sendAfterTrigger(off, lengthTicks);
-
+    state.lengthTicks = lengthTicks;
     state.soundingNote = note;
     state.soundingChannel = ch;
 

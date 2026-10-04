@@ -36,7 +36,7 @@ static std::string readFile(const std::string& path) {
 // processInMessage only queues the message — process() is what actually runs
 // midi.onMessage(), so both are needed or the script never executes at all.
 static void feed(MidiKitModule* m, midi::Message msg) {
-	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(msg));
 	m->host.getActiveEngine()->process();
 }
 
@@ -163,7 +163,7 @@ static std::vector<OutEvent> drainOut(MidiKitModule* m) {
 // the actual outgoing messages (and their tick scheduling), not just "ran
 // without erroring".
 static std::vector<OutEvent> feedCollect(MidiKitModule* m, midi::Message msg) {
-	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(msg));
 	m->host.getActiveEngine()->process();
 	return drainOut(m);
 }
@@ -697,6 +697,66 @@ TEST_CASE("'Arpeggiator.js/.lua' stops stepping once every note is released", "[
 	REQUIRE_FALSE(sawAnyNoteOnAfterRelease);
 
 	Test::destroyModule(m);
+}
+
+// Presets that track held notes treat a velocity-0 Note-On like a Note-Off. Each
+// case plays the same notes twice and releases them once as 0x80 and once as 0x90
+// with velocity 0; what reaches the output must agree, except that a preset which
+// forwards the message as it is leaves the velocity-0 Note-On as one.
+static OutEvent releaseNormalised(OutEvent e) {
+	if (e.status == 0x9 && e.value == 0) e.status = 0x8;
+	return e;
+}
+
+TEST_CASE("Presets that track held notes treat a velocity-0 Note-On as a release", "[MidiKit][Release]") {
+	struct Case {
+		const char* preset;
+		void (*setup)(MidiKitModule*);
+		std::vector<midi::Message> ons;
+		midi::Message release;
+		bool arp;
+	};
+	const Case cases[] = {
+		{ "Chord harmonizer", nullptr, { noteOn(1, 60, 100) }, noteOff(1, 60), false },
+		{ "Micro scale", nullptr, { noteOn(1, 60, 100), noteOn(1, 64, 100) }, noteOff(1, 64), false },
+		{ "Volca Sample", nullptr, { noteOn(15, 60, 100), noteOn(15, 64, 100) }, noteOff(15, 64), false },
+		{ "Keyboard split", nullptr, { noteOn(1, 50, 100), noteOn(1, 84, 100) }, noteOff(1, 84), false },
+		{ "Gravity well", [](MidiKitModule* m) {
+			m->params[MidiKitModule::PARAM + 0].setValue(60.0f / 127.0f);  // center 60
+			m->params[MidiKitModule::PARAM + 1].setValue(1.0f);            // strength 1
+		  }, { noteOn(1, 72, 40) }, noteOff(1, 72), false },
+		{ "Arpeggiator", nullptr, { noteOn(1, 60, 100) }, noteOff(1, 60), true },
+	};
+	for (const Case& c : cases) {
+		std::string path = GENERATE_COPY(presetPaths(c.preset));
+		CATCH_INFO("preset: " << path);
+
+		std::vector<OutEvent> results[2];
+		for (int encoding = 0; encoding < 2; encoding++) {
+			MidiKitModule* m = c.arp ? loadArp(path, 0.f, 0.f, 0.5f, 0.f) : loadPreset(path);
+			if (c.setup) c.setup(m);
+			drainOut(m);
+			drainLog(m);
+			for (const midi::Message& on : c.ons) feedCollect(m, on);
+
+			midi::Message release = c.release;
+			if (encoding == 1) release = noteOn(c.release.getChannel(), c.release.getNote(), 0);
+			CATCH_INFO("encoding: " << (encoding == 0 ? "Note-Off" : "Note-On velocity 0"));
+
+			std::vector<OutEvent> events = feedCollect(m, release);
+			// The arpeggiator's release shows in what it plays on the following ticks.
+			if (c.arp) {
+				for (int i = 0; i < 4; i++) {
+					for (const NoteEvent& n : feedTick(m)) events.push_back(OutEvent(n.status, n.channel, n.note, n.value, 0));
+				}
+				for (const OutEvent& e : events) REQUIRE(e.status != 0x9);
+			}
+			for (const OutEvent& e : events) results[encoding].push_back(releaseNormalised(e));
+			Test::destroyModule(m);
+		}
+		if (!c.arp) REQUIRE_FALSE(results[0].empty());
+		REQUIRE(results[1] == results[0]);
+	}
 }
 
 // onUnload releases whatever note the arp is currently sustaining
@@ -1234,7 +1294,7 @@ struct FrameEvent {
 };
 
 static std::vector<FrameEvent> feedFrames(MidiKitModule* m, midi::Message msg) {
-	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(msg));
 	m->host.getActiveEngine()->process();
 	std::vector<FrameEvent> events;
 	int port, ticks;
@@ -3688,7 +3748,7 @@ struct RoutedEvent {
 };
 
 static std::vector<RoutedEvent> feedRouted(MidiKitModule* m, midi::Message msg) {
-	m->host.getActiveEngine()->processInMessage(0, msg);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(msg));
 	m->host.getActiveEngine()->process();
 	std::vector<RoutedEvent> events;
 	int port, ticks;
@@ -3835,7 +3895,7 @@ TEST_CASE("'Channel router.js/.lua' ignores invalid channels in the config", "[M
 // next input. All inputs are tracked; a switch releases the old input's held
 // notes and replays the new input's CCs and held notes.
 static std::vector<OutEvent> feedPort(MidiKitModule* m, int port, midi::Message msg) {
-	m->host.getActiveEngine()->processInMessage(port, msg);
+	m->host.getActiveEngine()->processInMessage(port, QueuedMessage(msg));
 	m->host.getActiveEngine()->process();
 	return drainOut(m);
 }
@@ -4115,17 +4175,57 @@ TEST_CASE("'Arpeggiator.js/.lua' places its notes and note-offs on the clock edg
 	for (int i = 0; i < 9; i++) edges.push_back(1000 + 480 * i);
 	driveClockEdges(m, edges, 0, 6000);
 
-	// The first note starts on the 4th edge and its note-off, scheduled two ticks
-	// ahead, leaves on the frame of the 6th. The next step cuts the note on the
-	// 8th edge and starts the next one a sample behind it.
-	REQUIRE(rec.statuses == std::vector<int>{0x9, 0x8, 0x8, 0x9});
+	// The first note starts on the 4th edge and ends on the frame of the 6th, two
+	// ticks later. The next step, on the 8th edge, has nothing left to release and
+	// starts the next note on its own frame: one note-off per note.
+	REQUIRE(rec.statuses == std::vector<int>{0x9, 0x8, 0x9});
 	REQUIRE(rec.frames[0] == edges[3]);
 	REQUIRE(rec.frames[1] == edges[5]);
 	REQUIRE(rec.frames[2] == edges[7]);
-	REQUIRE(rec.frames[3] == edges[7] + 1);
 
 	m->midiOuts.ports[0].outputDevice = nullptr;
 	Test::destroyModule(m);
+}
+
+TEST_CASE("'Arpeggiator.js/.lua' sends one Note-Off per note at every clock division and length", "[MidiKit][Arpeggiator]") {
+	std::string path = GENERATE(presetPaths("Arpeggiator"));
+	CATCH_INFO("preset: " << path);
+
+	// Clock division (param 1) and note length (param 3), from 1 tick per step up.
+	struct Setting { float division; float length; };
+	for (const Setting& setting : { Setting{0.f, 0.5f}, Setting{0.2f, 0.5f}, Setting{0.35f, 0.5f}, Setting{0.35f, 1.f}, Setting{0.35f, 0.f}, Setting{0.6f, 0.5f} }) {
+		CATCH_INFO("division " << setting.division << " length " << setting.length);
+		MidiKitModule* m = loadArp(path, setting.division, 0.f, setting.length, 0.f);
+		feed(m, noteOn(1, 60, 100));
+		feed(m, noteOn(1, 64, 100));
+		drainLog(m);
+
+		std::vector<NoteEvent> all;
+		for (int i = 0; i < 64; i++) {
+			for (const NoteEvent& e : feedTick(m)) all.push_back(e);
+		}
+		REQUIRE_FALSE(all.empty());
+
+		// Every Note-Off ends a note that is sounding: it never repeats, and never
+		// comes before the Note-On it belongs to.
+		int sounding = -1;
+		int ons = 0, offs = 0;
+		for (const NoteEvent& e : all) {
+			if (e.status == 0x9) {
+				ons++;
+				sounding = e.note;
+			}
+			else if (e.status == 0x8) {
+				offs++;
+				REQUIRE(sounding == e.note);
+				sounding = -1;
+			}
+		}
+		REQUIRE(offs <= ons);
+		REQUIRE(offs >= ons - 1);   // the last note may still be sounding
+
+		Test::destroyModule(m);
+	}
 }
 
 TEST_CASE("'Bouncing ball delay.js/.lua' places its echoes on exact frames from the note", "[MidiKit][BouncingBall][Timing]") {

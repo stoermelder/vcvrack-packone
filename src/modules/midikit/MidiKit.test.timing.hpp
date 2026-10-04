@@ -2467,3 +2467,280 @@ TEST_CASE("Received group: forwarding an MSB-only change sends the whole group w
 		}
 	}
 }
+
+
+TEST_CASE("Received group: cancel by a received handle needs the same channel as the scheduled group", "[MidiKit][cancel][cc][timing]") {
+	// groupOf() reads the channel from the handle's bytes and the number from its
+	// decode fields; both have to agree between a received and a created group.
+	// A created NRPN 300 is scheduled on `created` (1-based). A received NRPN 300
+	// or 301 arrives on channel `received` (0-based) and cancels by its handle.
+	std::string js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.enableNrpnIn(1);
+midi.onMessage = function(port, msg) {
+    let n = midi.createNRPN();
+    midi.setNRPN(n, CREATED, 300, 1000);
+    midiOut.sendAfterMs(n, 10);
+};
+midi.onNrpn = function(port, msg) { midiOut.cancel(msg); };
+)";
+	std::string lua = R"(--[[
+@engine minilua@v1
+--]]
+midi.enableNrpnIn(1)
+midi.onMessage = function(port, msg)
+    local n = midi.createNRPN()
+    midi.setNRPN(n, CREATED, 300, 1000)
+    midiOut.sendAfterMs(n, 10)
+end
+midi.onNrpn = function(port, msg) midiOut.cancel(msg) end
+)";
+	struct Case { int created; int received; int numberLsb; bool cancelled; };
+	// 300 = 2 * 128 + 44
+	std::vector<Case> cases = {
+		{ 1, 0, 44, true },    // same channel and number
+		{ 1, 1, 44, false },   // same number on another channel: not cancelled
+		{ 2, 0, 44, false },   // created on channel 2, received on channel 1
+		{ 2, 1, 44, true },    // channel 2 on both sides
+		{ 16, 15, 44, true },  // the highest channel
+		{ 1, 15, 44, false },
+		{ 2, 1, 45, false },   // same channel, other number
+	};
+	for (bool isLua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(isLua ? "lua" : "js") + " created " + std::to_string(c.created) + " received " + std::to_string(c.received) + " lsb " + std::to_string(c.numberLsb));
+			std::string script = isLua ? lua : js;
+			size_t at = script.find("CREATED");
+			script.replace(at, 7, std::to_string(c.created));
+			TimingRig rig(script.c_str());
+			rig.inject(noteOn(0, 60, 100), 8);
+			rig.inject(Test::makeMidiMessage(0xb, c.received, 99, 2), 16);
+			rig.inject(Test::makeMidiMessage(0xb, c.received, 98, c.numberLsb), 16);
+			rig.inject(Test::makeMidiMessage(0xb, c.received, 6, 1), 16);
+			rig.inject(Test::makeMidiMessage(0xb, c.received, 38, 1), 16);
+			rig.run(cancelRunUntil());
+
+			REQUIRE(sentNotes(rig.rec) == (c.cancelled ? std::vector<int>{} : std::vector<int>({ 99, 98, 6, 38 })));
+			for (const TimingRecorder::Sent& sent : rig.rec.sent) REQUIRE(sent.channel == c.created - 1);
+		}
+	}
+}
+
+
+// ── Timing-mode presets, driven with real input frames ──────────────────────
+// The preset tests in MidiKit.test.examples.hpp feed messages straight into the
+// engine, with currentInFrame = -1, so the branch of the timing-mode presets
+// that places a message on the frame of the event that caused it never runs
+// there. In a real patch it always does. These run the shipped scripts through
+// the module's real input stage and check the frames that reach the output.
+
+static std::string presetSource(const std::string& relPath) {
+	static const std::string suffix = "src/modules/midikit/";
+	std::string f = __FILE__;
+	size_t at = f.rfind(suffix);
+	std::string root = at == std::string::npos ? "" : f.substr(0, at);
+	while (root.size() > 1 && root.back() == '/') root.pop_back();
+	if (root.empty()) root = ".";
+	std::ifstream in(root + "/presets/MidiKit/" + relPath);
+	CATCH_INFO("cannot open preset " << relPath);
+	REQUIRE(in.good());
+	std::stringstream ss;
+	ss << in.rdbuf();
+	return ss.str();
+}
+
+// Steps `edges` clock edges, `period` frames apart, on trigger input 1 (channel 1).
+// Returns the frames the edges were applied on.
+static std::vector<int64_t> clockEdges(TimingRig& rig, int edges, int64_t period) {
+	rig.m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
+	std::vector<int64_t> frames;
+	for (int i = 0; i < edges; i++) {
+		int64_t at = rig.frame;
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
+		rig.step();
+		rig.m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
+		frames.push_back(at);
+		rig.run(at + period);
+	}
+	return frames;
+}
+
+TEST_CASE("Timing-mode preset 'Bouncing ball delay': echoes are placed from the note's frame", "[MidiKit][timing][preset]") {
+	for (const char* path : { "JavaScript/creative/Bouncing ball delay.js", "Lua/creative/Bouncing ball delay.lua" }) {
+		CATCH_INFO(path);
+		std::string source = presetSource(path);
+		TimingRig rig(source.c_str());
+
+		// The note arrives on frame 100 but is dispatched on the next divider tick, so a
+		// preset that placed its echoes from the process() frame would drift by up to 7.
+		rig.run(100);
+		rig.inject(noteOn(0, 60, 100), 100);
+		rig.run(100 + 3 * int64_t(Test::sampleRate()));
+
+		REQUIRE_FALSE(rig.rec.sent.empty());
+		requireOrderedFrames(rig.rec);
+		// The dry note first, on the frame it arrived on.
+		REQUIRE(rig.rec.sent[0].status == 0x9);
+		REQUIRE(rig.rec.sent[0].frameField == 100);
+		// The first echo: initialInterval (250 ms) after the note's own frame.
+		int64_t expected = 100 + int64_t(std::llround(0.250 * Test::sampleRate()));
+		REQUIRE(rig.rec.sent.size() > 2);
+		REQUIRE(std::llabs(rig.rec.sent[1].frameField - expected) <= 1);
+		// The echoes continue and settle: every later echo is a Note-On with lower velocity.
+		int lastVelocity = rig.rec.sent[0].value;
+		for (const TimingRecorder::Sent& e : rig.rec.sent) {
+			if (e.status != 0x9) continue;
+			REQUIRE(e.value <= lastVelocity);
+			lastVelocity = e.value;
+		}
+	}
+}
+
+TEST_CASE("Timing-mode preset 'Clock multiplier': one pulse on each edge, the rest spread evenly", "[MidiKit][timing][preset]") {
+	for (const char* path : { "JavaScript/Clock multiplier.js", "Lua/Clock multiplier.lua" }) {
+		CATCH_INFO(path);
+		std::string source = presetSource(path);
+		TimingRig rig(source.c_str());
+
+		rig.run(100);
+		std::vector<int64_t> edges = clockEdges(rig, 3, 240);
+		rig.run(edges.back() + 240);
+
+		REQUIRE(edges == std::vector<int64_t>({ 100, 340, 580 }));
+		requireOrderedFrames(rig.rec);
+		std::vector<int64_t> frames;
+		for (const TimingRecorder::Sent& e : rig.rec.sent) {
+			REQUIRE(e.status == 0xf);
+			frames.push_back(e.frameField);
+		}
+		// Edge 1 has no period yet: its own pulse only. Edge 2 sends its pulse and
+		// 23 more, 240 / 24 = 10 frames apart. Edge 3 sends its own pulse on its
+		// frame, and 23 more.
+		std::vector<int64_t> expected = { 100 };
+		for (int k = 0; k < 24; k++) expected.push_back(340 + 10 * k);
+		for (int k = 0; k < 24; k++) expected.push_back(580 + 10 * k);
+		REQUIRE(frames == expected);
+	}
+}
+
+TEST_CASE("Timing-mode presets stepped by a clock place every message on its clock edge", "[MidiKit][timing][preset]") {
+	struct Case { const char* js; const char* lua; bool needsNote; bool euclid; };
+	const Case cases[] = {
+		{ "JavaScript/Arpeggiator.js", "Lua/Arpeggiator.lua", true, false },
+		{ "JavaScript/creative/Euclidean rhythm generator.js", "Lua/creative/Euclidean rhythm generator.lua", false, true },
+	};
+	for (const Case& c : cases) {
+		for (const char* path : { c.js, c.lua }) {
+			CATCH_INFO(path);
+			std::string source = presetSource(path);
+			TimingRig rig(source.c_str());
+			if (c.euclid) {
+				// 4 steps, 2 fills: a hit on every second step (as in the preset's own test).
+				rig.m->params[MidiKitModule::PARAM + 0].setValue(0.2f);
+				rig.m->params[MidiKitModule::PARAM + 1].setValue(0.5f);
+				rig.m->params[MidiKitModule::PARAM + 2].setValue(0.5f);
+				rig.m->params[MidiKitModule::PARAM + 3].setValue(0.25f);
+			}
+
+			rig.run(8);
+			// The arpeggiator needs a held chord, which the module dispatches on the next
+			// divider tick, between edges.
+			if (c.needsNote) {
+				rig.inject(noteOn(0, 60, 100), 8);
+				rig.inject(noteOn(0, 64, 100), 8);
+			}
+			rig.run(40);
+			std::vector<int64_t> edges = clockEdges(rig, 48, 50);
+			rig.run(edges.back() + 50);
+
+			REQUIRE_FALSE(rig.rec.sent.empty());
+			requireOrderedFrames(rig.rec);
+			int noteOns = 0;
+			for (const TimingRecorder::Sent& e : rig.rec.sent) {
+				// A note-on on the clock edge that stepped it, a note-off on the edge that
+				// ends it (sendAfterTrigger). Frames must be strictly increasing, so several
+				// messages of one edge sit on that frame and the ones right after it. That is
+				// at most a few frames, never the next divider tick.
+				bool nearEdge = false;
+				for (int64_t edge : edges) {
+					if (e.frameField >= edge && e.frameField <= edge + 3) nearEdge = true;
+				}
+				CATCH_INFO("frame " << e.frameField);
+				REQUIRE(nearEdge);
+				if (e.status == 0x9) noteOns++;
+			}
+			REQUIRE(noteOns > 0);
+		}
+	}
+}
+
+
+TEST_CASE("Round trip: a script receives the releases another script creates", "[MidiKit][timing][Release]") {
+	// setNoteOff() sends 0x80, setNoteOn(.., 0) a velocity-0 Note-On. Fed back into the
+	// input of a second module, both are releases, and only the first is a Note-Off.
+	for (bool sendLua : { false, true }) {
+		for (bool recvLua : { false, true }) {
+			CATCH_INFO(std::string("send ") + (sendLua ? "lua" : "js") + ", receive " + (recvLua ? "lua" : "js"));
+			std::string send = sendLua
+				? "--[[\n@engine minilua@v1\n--]]\nmidi.onMessage = function(port, msg)\n"
+				  "local a = midi.create(); midi.setNoteOff(a, 1, 60, 64); midiOut.send(a)\n"
+				  "local b = midi.create(); midi.setNoteOn(b, 1, 60, 0); midiOut.send(b)\n"
+				  "local c = midi.create(); midi.setNoteOn(c, 1, 60, 100); midiOut.send(c)\nend\n"
+				: "/**\n * @engine QuickJs@v1\n */\nmidi.onMessage = function(port, msg) {\n"
+				  "let a = midi.create(); midi.setNoteOff(a, 1, 60, 64); midiOut.send(a);\n"
+				  "let b = midi.create(); midi.setNoteOn(b, 1, 60, 0); midiOut.send(b);\n"
+				  "let c = midi.create(); midi.setNoteOn(c, 1, 60, 100); midiOut.send(c);\n};\n";
+			std::string recv = recvLua
+				? "--[[\n@engine minilua@v1\n--]]\nmidi.onMessage = function(port, msg)\n"
+				  "local function b(v) if v then return '1' else return '0' end end\n"
+				  "rack.log('P:' .. b(midi.isNoteOn(msg)) .. b(midi.isNoteOff(msg)) .. b(midi.isNoteRelease(msg)))\nend\n"
+				: "/**\n * @engine QuickJs@v1\n */\nmidi.onMessage = function(port, msg) {\n"
+				  "rack.log('P:' + (midi.isNoteOn(msg) ? '1' : '0') + (midi.isNoteOff(msg) ? '1' : '0') + (midi.isNoteRelease(msg) ? '1' : '0'));\n};\n";
+
+			TimingRig sender(send.c_str());
+			sender.inject(noteOn(0, 60, 100), 8);
+			sender.run(100);
+			REQUIRE(sender.rec.sent.size() == 3);
+
+			TimingRig receiver(recv.c_str());
+			for (const TimingRecorder::Sent& e : sender.rec.sent) {
+				receiver.inject(Test::makeMidiMessage(e.status, e.channel, e.note, e.value), 8);
+			}
+			receiver.run(100);
+
+			std::vector<std::string> probes;
+			std::string log = drainLog(receiver.m);
+			size_t pos = 0;
+			while (pos < log.size()) {
+				size_t nl = log.find('\n', pos);
+				if (nl == std::string::npos) break;
+				if (log.compare(pos, 2, "P:") == 0) probes.push_back(log.substr(pos + 2, nl - pos - 2));
+				pos = nl + 1;
+			}
+			// isNoteOn, isNoteOff, isNoteRelease: the Note-Off, the velocity-0 Note-On, a real Note-On.
+			REQUIRE(probes == std::vector<std::string>({ "011", "101", "100" }));
+		}
+	}
+}
+
+
+TEST_CASE("Received group: a running parameter is forwarded with the select the device never sent", "[MidiKit][cc][timing]") {
+	// The device selects NRPN 517 once, then sends data entry only (running parameter).
+	// Every received change is a complete group, so each forward carries 99 and 98.
+	for (bool lua : { false, true }) {
+		for (bool rpn : { false, true }) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + (rpn ? "rpn" : "nrpn"));
+			GroupInput g = rpn ? GroupInput{ "enableRpnIn", "onRpn", {}, {} } : GroupInput{ "enableNrpnIn", "onNrpn", {}, {} };
+			TimingRig rig(groupScript(lua, g, lua ? "    midiOut.send(msg)" : "    midiOut.send(msg);").c_str());
+			int sel = rpn ? 101 : 99;
+			auto cc = [&](int num, int value) { rig.inject(Test::makeMidiMessage(0xb, 0, num, value), 8); };
+			cc(sel, 4); cc(sel - 1, 5); cc(6, 20); cc(38, 2);   // a full write
+			cc(6, 21); cc(38, 3);                              // only the data entry
+			rig.run(100);
+
+			REQUIRE(sentNotes(rig.rec) == std::vector<int>({ sel, sel - 1, 6, 38, sel, sel - 1, 6, 38 }));
+			REQUIRE(sentValues(rig.rec) == std::vector<int>({ 4, 5, 20, 2, 4, 5, 21, 3 }));
+		}
+	}
+}

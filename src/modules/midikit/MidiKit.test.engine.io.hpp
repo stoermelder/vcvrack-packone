@@ -120,7 +120,7 @@ TEST_CASE("trig.getTicks counts identical rising edges in both engines", "[MidiK
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 
 		int port, ticks;
@@ -201,7 +201,7 @@ TEST_CASE("trig.getTicks(1, channel) counts each channel independently, in both 
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 
 		int port, ticks;
@@ -396,7 +396,7 @@ TEST_CASE("param.getValue reads identical value in both engines", "[MidiKit][Cro
 		midi::Message in;
 		in.setSize(3);
 		in.setStatus(0x9);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 
 		int port, ticks;
@@ -522,7 +522,7 @@ TEST_CASE("midiOut.sendAfterMs schedules an identical future-frame message", "[M
 		drainLog(m);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 
 		int port, ticks;

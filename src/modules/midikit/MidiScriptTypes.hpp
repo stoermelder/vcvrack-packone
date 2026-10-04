@@ -71,8 +71,10 @@ struct QueuedMessage {
 	int64_t frame = -1;
 
 	QueuedMessage() {}
-	// Implicit on purpose: a bare Message is an undecoded QueuedMessage.
-	QueuedMessage(const Message& msg) : msg(msg) {}
+	// Explicit: a bare Message is an undecoded QueuedMessage, one that skipped the
+	// input stage (MidiInputs::accepts(), the decoder, the arrival frame). Tests
+	// that feed the engine directly say so with QueuedMessage(msg).
+	explicit QueuedMessage(const Message& msg) : msg(msg) {}
 };
 
 

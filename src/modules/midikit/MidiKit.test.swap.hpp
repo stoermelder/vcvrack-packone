@@ -261,7 +261,7 @@ midi.onMessage = function(port, msg) {
 	r.step();
 
 	SECTION("still in the engine's queue when the swap runs") {
-		r.m->host.getActiveEngine()->processInMessage(0, noteOn(0, 60, 100));
+		r.m->host.getActiveEngine()->processInMessage(0, QueuedMessage(noteOn(0, 60, 100)));
 		r.m->loadScript(JS_LOGS_MESSAGES);
 		drainLog(r.m);
 		r.step(16);

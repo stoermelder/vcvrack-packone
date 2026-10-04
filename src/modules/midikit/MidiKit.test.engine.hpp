@@ -60,7 +60,7 @@ static EngineResult run(const std::string& script, const midi::Message& in) {
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message inCopy = in;
-	m->host.getActiveEngine()->processInMessage(0, inCopy);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(inCopy));
 	m->host.getActiveEngine()->process();
 
 	int port, ticks;

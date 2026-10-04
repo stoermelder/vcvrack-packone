@@ -102,7 +102,7 @@ struct PassThroughScript : Script {
 		MidiScriptEngine* se = m->host.getActiveEngine();
 		return [se](int) {
 			midi::Message msg = noteOn(1, 60, 100);
-			se->processInMessage(0, msg);
+			se->processInMessage(0, QueuedMessage(msg));
 			se->process();
 		};
 	}
@@ -118,7 +118,7 @@ struct NoteLengthScript : Script {
 		return [se](int i) {
 			int note = (i % 2 == 0) ? 60 : 62;
 			midi::Message msg = noteOn(1, note, 100);
-			se->processInMessage(0, msg);
+			se->processInMessage(0, QueuedMessage(msg));
 			se->process();
 		};
 	}
@@ -142,8 +142,8 @@ struct ArpeggiatorScript : Script {
 			int add = 48 + (i % 12);          // disjoint from the seed notes
 			midi::Message off = noteOff(1, remove);
 			midi::Message on = noteOn(1, add, 100);
-			se->processInMessage(0, off);
-			se->processInMessage(0, on);
+			se->processInMessage(0, QueuedMessage(off));
+			se->processInMessage(0, QueuedMessage(on));
 			se->processInTick(0, 0);
 			se->process();
 			held[0] = add;
@@ -157,7 +157,7 @@ struct ArpeggiatorScript : Script {
 		MidiScriptEngine* se = m->host.getActiveEngine();
 		for (int note : {60, 64, 67}) {
 			midi::Message on = noteOn(1, note, 100);
-			se->processInMessage(0, on);
+			se->processInMessage(0, QueuedMessage(on));
 			se->process();
 		}
 		barrier(worker);

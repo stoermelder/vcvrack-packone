@@ -484,7 +484,7 @@ TEST_CASE("setConfig() persists when called from top-level, onLoad, onUnload, mi
 
 		// midi.onMessage.
 		midi::Message msg = noteOn(1, 60, 100);
-		m->host.queueMessage(0, msg);
+		m->host.queueMessage(0, QueuedMessage(msg));
 		m->host.process();
 		REQUIRE(configInt(cfg(), "onMessage") == 1);
 

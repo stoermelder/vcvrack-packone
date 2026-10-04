@@ -39,7 +39,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process(); // SyncTaskWorker: runs midi.onMessage inline
 
 	// sendTipsy must have queued the payload for the audio thread.
@@ -68,7 +68,7 @@ end
 	m->loadScript(LUA_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 
 	REQUIRE(m->tipsyOut.outQueue.size() > 0);
@@ -100,7 +100,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process(); // SyncTaskWorker: runs midi.onMessage inline
 
 	REQUIRE(m->tipsyOut.outQueue.size() == 1);
@@ -319,7 +319,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 
 	// Empty payload still encodes the header and end sentinel.
@@ -352,7 +352,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 
@@ -367,7 +367,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	// The new script's sendTipsy works normally afterwards.
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 	std::vector<float> voltages = drainTipsy(m);

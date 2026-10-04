@@ -189,7 +189,7 @@ TEST_CASE("midi.onMessage dispatch round-trips a CC message through midi.*/midiO
 	msg.setNote(20);
 	msg.setValue(99);
 
-	m->host.seQuickJs.processInMessage(0, msg);
+	m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
 	m->host.seQuickJs.process();
 
 	int port, ticks;
@@ -223,7 +223,7 @@ TEST_CASE("midi.createNRPN/setNRPN queue all four CC messages in order", "[MidiK
 
 	midi::Message msg;
 	msg.setSize(3);
-	m->host.seQuickJs.processInMessage(0, msg);
+	m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
 	m->host.seQuickJs.process();
 
 	REQUIRE(m->midiOuts.queue.size() == 4);
@@ -284,7 +284,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	msg.setValue(100);
 
 	for (int i = 0; i < warmup; i++) {
-		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
 		m->host.seQuickJs.process();
 	}
 
@@ -294,7 +294,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Quick
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
 	for (int i = 0; i < run; i++) {
-		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
 		m->host.seQuickJs.process();
 	}
 
@@ -347,7 +347,7 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	msg.setValue(100);
 
 	for (int i = 0; i < warmup; i++) {
-		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
 		m->host.seQuickJs.process();
 	}
 
@@ -357,7 +357,7 @@ TEST_CASE("Retaining callbacks do grow RAM usage", "[MidiKit][QuickJs][GC]") {
 	REQUIRE(m->host.seQuickJs.getMemoryUsage(used0, total));
 
 	for (int i = 0; i < run; i++) {
-		m->host.seQuickJs.processInMessage(0, msg);
+		m->host.seQuickJs.processInMessage(0, QueuedMessage(msg));
 		m->host.seQuickJs.process();
 	}
 
@@ -403,7 +403,7 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Qu
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	// SyncTaskWorker runs inline — without the interrupt handler this would hang.
 	m->host.getActiveEngine()->process();
 
@@ -412,7 +412,7 @@ TEST_CASE("Infinite loop in onMessage is interrupted, not a hang", "[MidiKit][Qu
 	REQUIRE(log.find("onMessage error") != std::string::npos);
 
 	// Engine recovered: a second message is interrupted again.
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	std::string log2 = drainLog(m);
 	REQUIRE(log2.find("interrupted") != std::string::npos);
@@ -427,7 +427,7 @@ TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiK
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();   // enqueues the dispatch task
 
 	// Without the guard the worker spins forever and barrier() times out.
@@ -437,7 +437,7 @@ TEST_CASE("Infinite loop in onMessage does not wedge the shared worker", "[MidiK
 	REQUIRE(log.find("interrupted") != std::string::npos);
 
 	// A second message still dispatches — the worker recovered.
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	barrier(worker, 10.0);
 	std::string log2 = drainLog(m);
@@ -466,7 +466,7 @@ TEST_CASE("Infinite loop at script top level fails the load, and the module reco
 	drainLog(m);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	std::string reloadLog = drainLog(m);
 	REQUIRE(reloadLog.find("recovered") != std::string::npos);
