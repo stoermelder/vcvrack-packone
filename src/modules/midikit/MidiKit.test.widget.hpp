@@ -621,7 +621,7 @@ TEST_CASE("Context menu: a file item reads the chosen file and passes it to onCh
 	REQUIRE(drainLog(m).empty());
 	REQUIRE(ui.messages.size() == 1);
 	REQUIRE(ui.messages[0].find("scale.scl") != std::string::npos);
-	REQUIRE(ui.messages[0].find("2048") != std::string::npos);
+	REQUIRE(ui.messages[0].find("8192") != std::string::npos);
 
 	// A file that grew between the size check and the read is refused too.
 	ui.messages.clear();

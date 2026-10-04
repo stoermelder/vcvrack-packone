@@ -107,7 +107,7 @@ struct ScriptMenuItem {
 	// calls onChange(content, fileName) with the file's text; the file is at most
 	// fileMaxBytes long.
 	enum class Type { Boolean, Options, Action, File } type = Type::Boolean;
-	static const size_t fileMaxBytes = 2048;
+	static const size_t fileMaxBytes = 8192;
 	std::string label;
 	// Options variant: selectable labels and the current selection index.
 	std::vector<std::string> options;

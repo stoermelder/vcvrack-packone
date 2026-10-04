@@ -23,7 +23,7 @@
 // The tuning is defined by a Scala .scl file - the same text you would load
 // with "LOAD filename.scl" in the Scala program. The scale pasted into
 // config.scl below is the default; the module's context menu can load an .scl
-// file instead (at most 2 KB), which is then saved in the patch. onLoad parses it into a list of cents offsets per octave degree
+// file instead (at most 8 KB), which is then saved in the patch. onLoad parses it into a list of cents offsets per octave degree
 // (first entry always 0 = the tonic at baseNote); ratios like "5/4" are
 // converted with ratioToCents(numer, denom) = 1200 * log2(numer / denom).
 // See https://www.huygens-fokker.org/scala/ for the format.

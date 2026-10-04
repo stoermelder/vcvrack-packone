@@ -966,7 +966,7 @@ rack.registerContextMenu({
    type: "file",
    label: "Import scale…",
    onChange: function(content, fileName) {
-      // content: string, at most 2048 bytes; fileName: e.g. "just.scl"
+      // content: string, at most 8192 bytes; fileName: e.g. "just.scl"
       rack.log("read " + content.length + " bytes from " + fileName);
    }
 });
@@ -986,7 +986,7 @@ Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = f
 **Files** (`"file"` items)
 
 - The file is read as it is, so `content` holds the raw bytes, including line breaks as stored (`\r\n` for a file saved on Windows). Binary data is passed on unchanged in Lua; in JavaScript the string is decoded as UTF-8.
-- A file larger than **2048 bytes** is refused: the user gets a message, and `onChange` is not called. The same applies to a file that cannot be read.
+- A file larger than **8192 bytes** is refused: the user gets a message, and `onChange` is not called. The same applies to a file that cannot be read.
 - The dialog has no file type filter, and no starting folder is chosen.
 - If the script is replaced while the dialog is open, the chosen file is dropped.
 
@@ -1821,7 +1821,7 @@ Every limit a script can run into, with what happens at the limit. Anything not 
 | Delayed messages by trigger | 32 per trigger input channel (`sendAfterTrigger()`) | the message is sent at once, logged once per script |
 | SysEx created by a script | 256 payload bytes, 7-bit bytes only (`midi.setSysEx()`) | the call raises a script error |
 | Tipsy payload and MIME type | 256 bytes each (a MIME type of at most 255 characters) | nothing is sent; "Tipsy: invalid parameters" or "Tipsy: mime type too long" is logged. A received stream that is too long is reported as malformed |
-| File read by a context-menu file item | 2048 bytes | the user gets a message and `onChange` is not called |
+| File read by a context-menu file item | 8192 bytes | the user gets a message and `onChange` is not called |
 | Sending an empty or unset handle | not a size limit, but a message without a status byte cannot be sent | every `midiOut.send*()` call raises "message has no status byte" |
 
 The scheduling limits count from the same base as the delay itself: the latest frame the module has processed, or with `midiOut.enableTiming()` the frame of the event being handled. A delay of exactly `7200000` ms is not changed; for `sendAtFrame()` the limit is `7200` seconds of frames past that base.
