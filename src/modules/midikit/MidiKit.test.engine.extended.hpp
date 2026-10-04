@@ -314,6 +314,70 @@ TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEng
 }
 
 
+// midi.isNoteRelease: a Note-Off, or a Note-On with velocity 0 (how most keyboards
+// release a key). isNoteOn/isNoteOff keep reading the status only.
+// Per message the bits are isNoteOn, isNoteOff, isNoteRelease.
+static const char* JS_IS_NOTE_RELEASE = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onLoad = function() {
+    let on = midi.create(); midi.setNoteOn(on, 1, 60, 100);
+    let on0 = midi.create(); midi.setNoteOn(on0, 1, 60, 0);
+    let off = midi.create(); midi.setNoteOff(off, 1, 60, 64);
+    let cc = midi.create(); midi.setCc(cc, 1, 10, 0);
+    let short = midi.create(); midi.setRaw(short, "903c");
+    let sysex = midi.create(); midi.setSysEx(sysex, "43104c0000");
+    let all = [on, on0, off, cc, short, sysex];
+    let bits = "";
+    for (let i = 0; i < all.length; i++) {
+        bits += (midi.isNoteOn(all[i]) ? "1" : "0") + (midi.isNoteOff(all[i]) ? "1" : "0") + (midi.isNoteRelease(all[i]) ? "1" : "0");
+    }
+    rack.log("PROBE:" + bits);
+};
+)";
+
+static const char* LUA_IS_NOTE_RELEASE = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+    local function b(v) if v then return "1" else return "0" end end
+    local on = midi.create(); midi.setNoteOn(on, 1, 60, 100)
+    local on0 = midi.create(); midi.setNoteOn(on0, 1, 60, 0)
+    local off = midi.create(); midi.setNoteOff(off, 1, 60, 64)
+    local cc = midi.create(); midi.setCc(cc, 1, 10, 0)
+    local short = midi.create(); midi.setRaw(short, "903c")
+    local sysex = midi.create(); midi.setSysEx(sysex, "43104c0000")
+    local all = { on, on0, off, cc, short, sysex }
+    local bits = ""
+    for i = 1, #all do
+        bits = bits .. b(midi.isNoteOn(all[i])) .. b(midi.isNoteOff(all[i])) .. b(midi.isNoteRelease(all[i]))
+    end
+    rack.log("PROBE:" .. bits)
+end
+)";
+
+TEST_CASE("midi.isNoteRelease folds a velocity-0 Note-On into a release, in both engines", "[MidiKit][CrossEngine]") {
+	// on(100): 100, on(0): 101, off: 011, cc: 000, 2-byte Note-On: 100, sysex: 000
+	requireLoggedValues(JS_IS_NOTE_RELEASE, LUA_IS_NOTE_RELEASE, {"100101011000100000"});
+}
+
+static const char* JS_IS_NOTE_RELEASE_BAD = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) { midi.isNoteRelease(); };
+)";
+
+static const char* LUA_IS_NOTE_RELEASE_BAD = R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg) midi.isNoteRelease() end
+)";
+
+TEST_CASE("midi.isNoteRelease rejects a missing message", "[MidiKit][CrossEngine]") {
+	requireEquivalentLog(JS_IS_NOTE_RELEASE_BAD, LUA_IS_NOTE_RELEASE_BAD, "isNoteRelease", true);
+}
+
+
 // midi.getChannel on a realtime/SysEx message
 // Status 0xf (clock, start/stop/continue, SysEx) has no channel. getChannel()
 // used to return the low status nibble + 1 — a plausible-looking but

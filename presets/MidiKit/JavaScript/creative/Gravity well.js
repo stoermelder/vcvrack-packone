@@ -113,7 +113,7 @@ midi.onMessage = function(midiPort, msg) {
     let vel = midi.isNoteOn(msg) ? midi.getValue(msg) : 0;
     let isOn = midi.isNoteOn(msg) && vel > 0;
     // Velocity 0 is the running-status spelling of a Note-Off.
-    let isOff = midi.isNoteOff(msg) || (midi.isNoteOn(msg) && vel === 0);
+    let isOff = midi.isNoteRelease(msg);
 
     if (isOn) {
         let note = midi.getNote(msg);

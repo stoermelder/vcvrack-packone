@@ -120,6 +120,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("isCc", kPredicates, {{"msg", MSG}}),
 		ApiFunction("isNoteOn", kPredicates, {{"msg", MSG}}),
 		ApiFunction("isNoteOff", kPredicates, {{"msg", MSG}}),
+		ApiFunction("isNoteRelease", kPredicates, {{"msg", "message handle, true for a Note-Off or a Note-On with velocity 0"}}),
 		ApiFunction("isKeyPressure", kPredicates, {{"msg", MSG}}),
 		ApiFunction("isChanPressure", kPredicates, {{"msg", MSG}}),
 		ApiFunction("isProgramChange", kPredicates, {{"msg", MSG}}),

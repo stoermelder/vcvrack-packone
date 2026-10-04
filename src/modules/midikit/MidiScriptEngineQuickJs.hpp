@@ -855,6 +855,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "isContinue", JS_NewCFunction(ctx, js_midi_isContinue, "isContinue", 1));
 		JS_SetPropertyStr(ctx, _midi, "isKeyPressure", JS_NewCFunction(ctx, js_midi_isKeyPressure, "isKeyPressure", 1));
 		JS_SetPropertyStr(ctx, _midi, "isNoteOff", JS_NewCFunction(ctx, js_midi_isNoteOff, "isNoteOff", 1));
+		JS_SetPropertyStr(ctx, _midi, "isNoteRelease", JS_NewCFunction(ctx, js_midi_isNoteRelease, "isNoteRelease", 1));
 		JS_SetPropertyStr(ctx, _midi, "isNoteOn", JS_NewCFunction(ctx, js_midi_isNoteOn, "isNoteOn", 1));
 		JS_SetPropertyStr(ctx, _midi, "isProgramChange", JS_NewCFunction(ctx, js_midi_isProgramChange, "isProgramChange", 1));
 		JS_SetPropertyStr(ctx, _midi, "isPitchWheel", JS_NewCFunction(ctx, js_midi_isPitchWheel, "isPitchWheel", 1));
@@ -1931,6 +1932,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	static JSValue js_midi_isNoteOff(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		return js_midi_isType(ctx, argc, argv, 0x8, "isNoteOff");
+	}
+
+	static JSValue js_midi_isNoteRelease(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		size_t idx;
+		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isNoteRelease: invalid msg");
+		return JS_NewBool(ctx, isNoteRelease(getEngine(ctx)->msgStore[idx].in.msg));
 	}
 
 	static JSValue js_midi_isNoteOn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

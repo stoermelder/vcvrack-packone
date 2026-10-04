@@ -1310,6 +1310,32 @@ true for a received NRPN, RPN or 14-bit CC (see
 for handles from `midi.createNRPN()`, `midi.createRPN()` and
 `midi.createCc14bit()`, from the moment they are created.
 
+`isNoteOn` and `isNoteOff` read only the status: a Note-On with velocity 0 is a
+Note-On for them. Most keyboards send a key release that way (with running
+status), so a script that tracks held notes would treat the release as a new
+note. **`midi.isNoteRelease(msg)`** is true for a Note-Off *and* for a Note-On
+with velocity 0, as the MIDI specification defines a release. Test it first:
+
+```js
+if (midi.isNoteRelease(msg)) {
+   // a key was released, whichever way the device sent it
+} else if (midi.isNoteOn(msg)) {
+   // a real Note-On (velocity > 0)
+}
+```
+
+```lua
+if midi.isNoteRelease(msg) then
+   -- a key was released, whichever way the device sent it
+elseif midi.isNoteOn(msg) then
+   -- a real Note-On (velocity > 0)
+end
+```
+
+It is the rule `midiOut.cancel()` uses for a Note-Off address. A 2-byte Note-On
+has no velocity and stays a Note-On. Releases a script creates with
+`midi.setNoteOff()` (0x80) are recognised as well.
+
 #### Setters
 
 Setter arguments are never wrapped. A number is rounded to the nearest integer
@@ -1537,7 +1563,7 @@ With a message, only its *address* is compared, never its value:
 | NRPN or RPN handle | the whole NRPN/RPN with the same channel and parameter number |
 | 14-bit CC handle | the whole 14-bit CC with the same channel and MSB controller |
 
-- Note-On and Note-Off are different addresses: cancelling both takes two calls. A Note-On with velocity 0 counts as a Note-Off here, as in the MIDI specification, but `midi.isNoteOff()` does not: it only checks the Note-Off status.
+- Note-On and Note-Off are different addresses: cancelling both takes two calls. A Note-On with velocity 0 counts as a Note-Off here, as in the MIDI specification and for `midi.isNoteRelease()`, but `midi.isNoteOff()` does not: it only checks the Note-Off status.
 - A message received in `midi.onNrpn`, `midi.onRpn` or `midi.onCc14bit` is a group handle, so it cancels the scheduled group with the same channel and number: `midi.onNrpn = function(port, msg) { midiOut.cancel(msg); ... }`.
 - A group is never split. `midiOut.cancel(cc)` with a plain CC 99 leaves a scheduled NRPN whole, and only a handle of the same NRPN removes it. Without an argument, groups are removed whole too.
 - It never touches `midiOut.send()`, not even with `midiOut.enableTiming()`, and nothing that has already left.

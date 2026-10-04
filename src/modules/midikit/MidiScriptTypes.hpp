@@ -210,6 +210,14 @@ inline uint8_t addressType(const Message& m) {
 	return type;
 }
 
+// Whether `m` releases a note: a Note-Off, or a Note-On with velocity 0, which is
+// how most keyboards send a release. midi.isNoteRelease(); the same folding as
+// the address rules of midiOut.cancel(). False for anything without a status byte.
+inline bool isNoteRelease(const Message& m) {
+	if (m.bytes.empty() || m.bytes[0] < 0x80) return false;
+	return addressType(m) == 0x8;
+}
+
 // Same address under the rules of midiOut.cancel() (see SCRIPTING.md). False for
 // anything without a status byte. A default midi::Message has size 3 (zeros), so
 // "empty" is a status byte below 0x80, not bytes.empty().

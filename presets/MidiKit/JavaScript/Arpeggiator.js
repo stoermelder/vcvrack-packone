@@ -227,7 +227,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if ((midi.isNoteOff(msg) || (midi.isNoteOn(msg) && midi.getValue(msg) === 0)) && matchesChannel(ch)) {
+    if (midi.isNoteRelease(msg) && matchesChannel(ch)) {
         let note = midi.getNote(msg);
         let filtered = [];
         for (let i = 0; i < state.held.length; i++) {

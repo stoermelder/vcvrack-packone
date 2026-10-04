@@ -255,7 +255,9 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteOn(msg)) {
+    // A Note-On with velocity 0 is how most keyboards send a release, so it
+    // must take the release path below and use state.playedAs.
+    if (midi.isNoteOn(msg) && !midi.isNoteRelease(msg)) {
         let note = midi.getNote(msg);
         let snapped = quantise(note);
         state.playedAs[note] = snapped;
@@ -266,7 +268,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteOff(msg)) {
+    if (midi.isNoteRelease(msg)) {
         let note = midi.getNote(msg);
         // Release whatever was actually sent for this key. If the note was
         // never seen (script loaded mid-chord), fall back to the raw number.

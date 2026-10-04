@@ -200,6 +200,13 @@ static std::vector<OutEvent> feedPumpedCollect(MidiKitModule* m, midi::Message m
 }
 
 
+// Both encodings of a key release: a Note-Off (0x80) and, from most keyboards, a
+// Note-On with velocity 0. Presets that track held notes must treat them alike.
+static std::vector<midi::Message> releasesOf(int ch, int note) {
+	return { noteOff(ch, note), noteOn(ch, note, 0) };
+}
+
+
 // Preset metadata.
 //
 // PRESETS[] is the single table every behavioural preset is listed in: its
@@ -1566,6 +1573,28 @@ TEST_CASE("'Scale quantiser.js/.lua' rewrites the Note-Off to the snapped note",
 	Test::destroyModule(m);
 }
 
+TEST_CASE("'Scale quantiser.js/.lua' releases the played note in either encoding, even after the root moved", "[MidiKit][ScaleQuantiser][Release]") {
+	std::string path = GENERATE(presetPaths("Scale quantiser"));
+	CATCH_INFO("preset: " << path);
+
+	for (const midi::Message& release : releasesOf(1, 64)) {
+		CATCH_INFO("release status: " << int(release.getStatus()));
+		MidiKitModule* m = loadPreset(path);
+
+		// E4 snaps to D#4 under the default root.
+		REQUIRE(feedCollect(m, noteOn(1, 64, 100)) == std::vector<OutEvent>{{0x9, 1, 63, 100, 0}});
+
+		// The root moves while the key is held: the release must still end what was
+		// played (63), not what the key would snap to now.
+		m->inputs[MidiKitModule::INPUT].setVoltage(0.5f, 0);
+		auto ev = feedCollect(m, release);
+		REQUIRE(ev.size() == 1);
+		REQUIRE(ev[0].status == release.getStatus());
+		REQUIRE(ev[0].note == 63);
+		Test::destroyModule(m);
+	}
+}
+
 TEST_CASE("'Scale quantiser.js/.lua' releases the substituted note on unload", "[MidiKit][ScaleQuantiser]") {
 	std::string path = GENERATE(presetPaths("Scale quantiser"));
 	CATCH_INFO("preset: " << path);
@@ -2073,6 +2102,22 @@ TEST_CASE("'Note length quantiser.js/.lua' drops the incoming Note-Off", "[MidiK
 	Test::destroyModule(m);
 }
 
+TEST_CASE("'Note length quantiser.js/.lua' drops the release in either encoding", "[MidiKit][NoteLength][Release]") {
+	std::string path = GENERATE(presetPaths("Note length quantiser"));
+	CATCH_INFO("preset: " << path);
+
+	for (const midi::Message& release : releasesOf(1, 60)) {
+		CATCH_INFO("release status: " << int(release.getStatus()));
+		MidiKitModule* m = loadPreset(path);
+		m->triggerIns.triggerTick[0][0] = 40;
+		feedCollect(m, noteOn(1, 60, 100));
+
+		// Neither encoding cuts the note, schedules a Note-Off or reaches the output.
+		REQUIRE(feedCollect(m, release).empty());
+		Test::destroyModule(m);
+	}
+}
+
 TEST_CASE("'Note length quantiser.js/.lua' cuts a retriggered note before re-articulating", "[MidiKit][NoteLength]") {
 	std::string path = GENERATE(presetPaths("Note length quantiser"));
 	CATCH_INFO("preset: " << path);
@@ -2408,6 +2453,25 @@ TEST_CASE("'MPE to single channel.js/.lua' rewrites member-channel notes to the 
 	REQUIRE(off == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
 
 	Test::destroyModule(m);
+}
+
+TEST_CASE("'MPE to single channel.js/.lua' releases a member note in either encoding", "[MidiKit][MPE][Release]") {
+	std::string path = GENERATE(presetPaths("MPE to single channel"));
+	CATCH_INFO("preset: " << path);
+
+	for (const midi::Message& release : releasesOf(2, 60)) {
+		CATCH_INFO("release status: " << int(release.getStatus()));
+		MidiKitModule* m = loadPreset(path);
+		feedCollect(m, noteOn(2, 60, 100));
+
+		// A release, not a new note: a Note-Off on the output channel.
+		REQUIRE(feedCollect(m, release) == std::vector<OutEvent>{{0x8, 0, 60, 0, 0}});
+
+		// The note is gone: a later bend on that channel must not play it again.
+		auto bend = feedCollect(m, pitchWheel(2, 8320));
+		for (const OutEvent& e : bend) REQUIRE(e.status != 0x9);
+		Test::destroyModule(m);
+	}
 }
 
 TEST_CASE("'MPE to single channel.js/.lua' passes the master channel through untouched", "[MidiKit][MPE]") {

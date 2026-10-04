@@ -225,7 +225,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if (midi.isNoteOff(msg) or (midi.isNoteOn(msg) and midi.getValue(msg) == 0)) and matchesChannel(ch) then
+    if midi.isNoteRelease(msg) and matchesChannel(ch) then
         local note = midi.getNote(msg)
         local filtered = {}
         for i = 1, #state.held do

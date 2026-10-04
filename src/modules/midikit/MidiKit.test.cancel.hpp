@@ -105,6 +105,25 @@ TEST_CASE("Cancel: short messages are compared on what they carry", "[MidiKit][c
 	REQUIRE_FALSE(same(rawMsg(0xB0, 0, 0, 1), rawMsg(0xB0, 0, 0, 1)));
 }
 
+TEST_CASE("isNoteRelease: a Note-Off or a velocity-0 Note-On, nothing else", "[MidiKit][cancel][isNoteRelease]") {
+	REQUIRE(isNoteRelease(noteOff(0, 60)));
+	REQUIRE(isNoteRelease(rawMsg(0x85, 60, 64)));
+	REQUIRE(isNoteRelease(noteOn(0, 60, 0)));
+	REQUIRE_FALSE(isNoteRelease(noteOn(0, 60, 1)));
+	REQUIRE_FALSE(isNoteRelease(noteOn(0, 60, 127)));
+	// A 2-byte Note-On has no velocity and stays a Note-On.
+	REQUIRE_FALSE(isNoteRelease(rawMsg(0x90, 60, 0, 2)));
+	REQUIRE_FALSE(isNoteRelease(ccMsg(0, 60, 0)));
+	REQUIRE_FALSE(isNoteRelease(rawMsg(0xA0, 60, 0)));
+	REQUIRE_FALSE(isNoteRelease(rawMsg(0xF8, 0, 0, 1)));
+	// No status byte, or no bytes at all.
+	midi::Message empty;
+	midi::Message none;
+	none.bytes.clear();
+	REQUIRE_FALSE(isNoteRelease(empty));
+	REQUIRE_FALSE(isNoteRelease(none));
+}
+
 TEST_CASE("Cancel: cancelMatches by mode, groups and plain messages", "[MidiKit][cancel]") {
 	OutGroup none;
 	OutGroup nrpn;

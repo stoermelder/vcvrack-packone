@@ -1104,6 +1104,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("isContinue",      lua_midi_isContinue);
 		setTableFunc("isKeyPressure",   lua_midi_isKeyPressure);
 		setTableFunc("isNoteOff",       lua_midi_isNoteOff);
+		setTableFunc("isNoteRelease",   lua_midi_isNoteRelease);
 		setTableFunc("isNoteOn",        lua_midi_isNoteOn);
 		setTableFunc("isPitchWheel",    lua_midi_isPitchWheel);
 		setTableFunc("isProgramChange", lua_midi_isProgramChange);
@@ -1957,6 +1958,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midi_isNoteOff(lua_State* L) {
 		ScriptMessage* m = getMsg(L, 1);
 		lua_pushboolean(L, m->in.msg.getStatus() == 0x8);
+		return 1;
+	}
+	static int lua_midi_isNoteRelease(lua_State* L) {
+		ScriptMessage* m = getMsg(L, 1);
+		lua_pushboolean(L, isNoteRelease(m->in.msg));
 		return 1;
 	}
 	static int lua_midi_isNoteOn(lua_State* L) {
