@@ -103,10 +103,10 @@ struct MidiInRingBuffer : SlotRingBuffer<MidiInMessage, 128> {
 // the callbacks stay in the engine under callbackId, so a copy is safe on the
 // UI thread.
 struct ScriptMenuItem {
-	// Action: a plain entry, onChange() on every click. File: opens a file dialog and
+	// Action: a plain entry, onChange() on every click. FileOpen: opens a file dialog and
 	// calls onChange(content, fileName) with the file's text; the file is at most
 	// fileMaxBytes long.
-	enum class Type { Boolean, Options, Action, File } type = Type::Boolean;
+	enum class Type { Boolean, Options, Action, FileOpen } type = Type::Boolean;
 	static const size_t fileMaxBytes = 8192;
 	std::string label;
 	// Options variant: selectable labels and the current selection index.
@@ -124,7 +124,7 @@ struct ScriptMenuItem {
 
 // What one click on a menu item brings along, for the engine to turn into onChange's
 // arguments. An int converts implicitly: it is the new state of a boolean (0/1) or the
-// selected index of an options item, so those call sites just pass the number. A file
+// selected index of an options item, so those call sites just pass the number. A FileOpen
 // item's click carries the file instead.
 struct ScriptMenuClick {
 	int value = 0;
@@ -156,13 +156,13 @@ struct ScriptMenuArg {
 
 // The arguments of onChange for a click on `item`:
 //   boolean  (checked)             options  (selectedIndex, selectedLabel)
-//   action   ()                    file     (content, fileName)
+//   action   ()                    fileopen (content, fileName)
 // False if the click does not fit the item, which is then not called: a file click on
 // a non-file item (a reload may have put another item at that id while the dialog was
 // open), a click without a file on a file item, or an options index out of range.
 inline bool menuCallArgs(const ScriptMenuItem& item, const ScriptMenuClick& click, std::vector<ScriptMenuArg>& args) {
 	args.clear();
-	if (click.hasFile != (item.type == ScriptMenuItem::Type::File)) return false;
+	if (click.hasFile != (item.type == ScriptMenuItem::Type::FileOpen)) return false;
 	switch (item.type) {
 		case ScriptMenuItem::Type::Action:
 			return true;
@@ -174,7 +174,7 @@ inline bool menuCallArgs(const ScriptMenuItem& item, const ScriptMenuClick& clic
 			args.push_back(ScriptMenuArg::ofInt(click.value));
 			args.push_back(ScriptMenuArg::ofString(item.options[click.value]));
 			return true;
-		case ScriptMenuItem::Type::File:
+		case ScriptMenuItem::Type::FileOpen:
 			args.push_back(ScriptMenuArg::ofString(click.content));
 			args.push_back(ScriptMenuArg::ofString(click.fileName));
 			return true;

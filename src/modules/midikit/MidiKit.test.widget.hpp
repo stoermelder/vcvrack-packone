@@ -472,20 +472,20 @@ TEST_CASE("appendExampleItems shows 'None found' when nothing matches", "[MidiKi
 }
 
 
-// "action" and "file" items through the real menu
+// "action" and "fileopen" items through the real menu
 
 static const char* QJS_ACTION_FILE = R"(/**
  * @engine QuickJs@v1
  */
 rack.registerContextMenu({ type: "action", label: "Do it", onChange: function() { rack.log("did it"); } });
-rack.registerContextMenu({ type: "file", label: "Pick file", onChange: function(content, name) { rack.log("got [" + content + "] from " + name); } });
+rack.registerContextMenu({ type: "fileopen", label: "Pick file", onChange: function(content, name) { rack.log("got [" + content + "] from " + name); } });
 )";
 
 static const char* LUA_ACTION_FILE = R"(--[[
 @engine minilua@v1
 --]]
 rack.registerContextMenu({ type = "action", label = "Do it", onChange = function() rack.log("did it") end })
-rack.registerContextMenu({ type = "file", label = "Pick file", onChange = function(content, name) rack.log("got [" .. content .. "] from " .. name) end })
+rack.registerContextMenu({ type = "fileopen", label = "Pick file", onChange = function(content, name) rack.log("got [" .. content .. "] from " .. name) end })
 )";
 
 namespace {
@@ -559,7 +559,7 @@ TEST_CASE("Context menu: an action item calls onChange on every click", "[MidiKi
 	Test::destroyWidget(mw);
 }
 
-TEST_CASE("Context menu: a file item reads the chosen file and passes it to onChange", "[MidiKit][ContextMenu]") {
+TEST_CASE("Context menu: a fileopen item reads the chosen file and passes it to onChange", "[MidiKit][ContextMenu]") {
 	ScriptFileUiMock ui;
 	ScriptFileFsMock fs;
 	Test::mock::Guard<StoermelderPackOne::vcv::UiAccess> uiGuard{StoermelderPackOne::vcv::uiAccess, &ui};

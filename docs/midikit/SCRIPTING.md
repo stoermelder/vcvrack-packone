@@ -960,10 +960,10 @@ rack.registerContextMenu({
    }
 });
 ```
-*File*, a menu line that opens the file dialog. If a file is chosen, `onChange` is called with its content as a string and its name (without the folder). Cancelling the dialog calls nothing:
+*fileopen*, a menu line that opens the file dialog. If a file is chosen, `onChange` is called with its content as a string and its name (without the folder). Cancelling the dialog calls nothing:
 ```js
 rack.registerContextMenu({
-   type: "file",
+   type: "fileopen",
    label: "Import scale…",
    onChange: function(content, fileName) {
       // content: string, at most 8192 bytes; fileName: e.g. "just.scl"
@@ -971,19 +971,19 @@ rack.registerContextMenu({
    }
 });
 ```
-Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`, and likewise `type = "action"` and `type = "file"`.
+Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`, and likewise `type = "action"` and `type = "fileopen"`.
 
 **Fields**
 
 | Field | Required | Rule |
 | --- | --- | --- |
-| `type` | yes | `"boolean"`, `"options"`, `"action"` or `"file"` |
+| `type` | yes | `"boolean"`, `"options"`, `"action"` or `"fileopen"` |
 | `label` | yes | non-empty string |
 | `options` | for `"options"` | non-empty array of strings |
 | `onChange` | yes | function |
-| `onGetValue` | no | function returning the current value: a boolean, or an index for `"options"`. Defaults to `false` / `0` when absent. Ignored for `"action"` and `"file"`, which have no value |
+| `onGetValue` | no | function returning the current value: a boolean, or an index for `"options"`. Defaults to `false` / `0` when absent. Ignored for `"action"` and `"fileopen"`, which have no value |
 
-**Files** (`"file"` items)
+**Files** (`"fileopen"` items)
 
 - The file is read as it is, so `content` holds the raw bytes, including line breaks as stored (`\r\n` for a file saved on Windows). Binary data is passed on unchanged in Lua; in JavaScript the string is decoded as UTF-8.
 - A file larger than **8192 bytes** is refused: the user gets a message, and `onChange` is not called. The same applies to a file that cannot be read.
@@ -997,7 +997,7 @@ Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = f
 - Runs on the worker thread, when the item is clicked, and may call any other `rack.*` function. An exception inside it is logged as `Context menu callback error: ...` and does not crash anything.
 - It can send. Like `rack.onLoad` it is a callback without an event: MIDI built with `midi.create()` and sent with `midiOut.send()` (or any other `midiOut.*` sender) goes out when `onChange` returns, and trigger, voltage and Tipsy outputs work as usual. Timing is "as soon as possible", and `rack.getEventFrame()` is `-1`.
 - The checkmark or selection is updated as soon as the item is clicked, before the callback has run, so the menu reflects the change immediately.
-- Arguments by type: `"boolean"` gets `(checked)`, `"options"` gets `(selectedIndex, selectedLabel)`, `"action"` gets none and `"file"` gets `(content, fileName)`.
+- Arguments by type: `"boolean"` gets `(checked)`, `"options"` gets `(selectedIndex, selectedLabel)`, `"action"` gets none and `"fileopen"` gets `(content, fileName)`.
 
 **Changing items at runtime**
 
@@ -1821,7 +1821,7 @@ Every limit a script can run into, with what happens at the limit. Anything not 
 | Delayed messages by trigger | 32 per trigger input channel (`sendAfterTrigger()`) | the message is sent at once, logged once per script |
 | SysEx | 8192 payload bytes (8194 with `f0`/`f7`), 7-bit bytes only. About 2.6 s on a 31.25 kbaud DIN output | `midi.setSysEx()` and `midi.setRaw()` raise a script error. A longer received message is dropped whole at the input and "MIDI input: message(s) longer than 8194 bytes dropped" is logged, so what a script receives it can also forward or clone |
 | Tipsy payload and MIME type | 256 bytes each (a MIME type of at most 255 characters) | nothing is sent; "Tipsy: invalid parameters" or "Tipsy: mime type too long" is logged. A received stream that is too long is reported as malformed |
-| File read by a context-menu file item | 8192 bytes | the user gets a message and `onChange` is not called |
+| File read by a `"fileopen"` menu item | 8192 bytes | the user gets a message and `onChange` is not called |
 | Sending an empty or unset handle | not a size limit, but a message without a status byte cannot be sent | every `midiOut.send*()` call raises "message has no status byte" |
 
 The scheduling limits count from the same base as the delay itself: the latest frame the module has processed, or with `midiOut.enableTiming()` the frame of the event being handled. A delay of exactly `7200000` ms is not changed; for `sendAtFrame()` the limit is `7200` seconds of frames past that base.

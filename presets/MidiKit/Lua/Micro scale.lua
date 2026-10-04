@@ -302,7 +302,7 @@ rack.onLoad = function()
 
     -- The scale: a file from disk, or back to the one embedded in this script.
     rack.registerContextMenu({
-        type = "file",
+        type = "fileopen",
         label = "Load scale (.scl)...",
         onChange = function(content, fileName)
             if applyScl(content) then

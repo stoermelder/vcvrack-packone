@@ -1240,8 +1240,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (strcmp(typeName, "options") == 0) type = ScriptMenuItem::Type::Options;
 		else if (strcmp(typeName, "boolean") == 0) type = ScriptMenuItem::Type::Boolean;
 		else if (strcmp(typeName, "action") == 0) type = ScriptMenuItem::Type::Action;
-		else if (strcmp(typeName, "file") == 0) type = ScriptMenuItem::Type::File;
-		else return luaL_error(L, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"file\"");
+		else if (strcmp(typeName, "fileopen") == 0) type = ScriptMenuItem::Type::FileOpen;
+		else return luaL_error(L, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"fileopen\"");
 
 		lua_getfield(L, 1, "label");
 		if (lua_type(L, 3) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");

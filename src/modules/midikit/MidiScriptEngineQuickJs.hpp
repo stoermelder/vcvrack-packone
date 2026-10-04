@@ -999,6 +999,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// context menu:
 	//   { type: "boolean", label, onGetValue: fn() -> bool, onChange: fn(checked) }
 	//   { type: "options", label, options: [..], onGetValue: fn() -> int, onChange: fn(idx, label) }
+	//   { type: "fileopen", label, onChange: fn(content, fileName) }
 	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
 	// thread when the menu is built, so it always reflects the live config —
 	// unlike a value captured at registration. Returns true on success. An item
@@ -1016,8 +1017,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
 		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
 		else if (type == "action") spec.type = ScriptMenuItem::Type::Action;
-		else if (type == "file") spec.type = ScriptMenuItem::Type::File;
-		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"file\"");
+		else if (type == "fileopen") spec.type = ScriptMenuItem::Type::FileOpen;
+		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"fileopen\"");
 
 		JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
 		std::string label = JS_IsString(labelV) ? e->jsToStdString(labelV) : "";

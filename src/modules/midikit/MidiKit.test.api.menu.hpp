@@ -556,7 +556,7 @@ static const char* JS_ACTION_FILE_MENU = R"(/**
  * @engine QuickJs@v1
  */
 rack.registerContextMenu({ type: "action", label: "Go", onGetValue: function() { return 1; }, onChange: function() { rack.log("go args=" + arguments.length); } });
-rack.registerContextMenu({ type: "file", label: "Import", onChange: function(content, name) { rack.log("import " + content.length + " [" + content + "] " + name + " args=" + arguments.length); } });
+rack.registerContextMenu({ type: "fileopen", label: "Import", onChange: function(content, name) { rack.log("import " + content.length + " [" + content + "] " + name + " args=" + arguments.length); } });
 rack.registerContextMenu({ type: "boolean", label: "Flag", onChange: function(v) { rack.log("flag " + v); } });
 )";
 
@@ -564,7 +564,7 @@ static const char* LUA_ACTION_FILE_MENU = R"(--[[
 @engine minilua@v1
 --]]
 rack.registerContextMenu({ type = "action", label = "Go", onGetValue = function() return 1 end, onChange = function(...) rack.log("go args=" .. select('#', ...)) end })
-rack.registerContextMenu({ type = "file", label = "Import", onChange = function(content, name, ...) rack.log("import " .. #content .. " [" .. content .. "] " .. name .. " args=" .. (2 + select('#', ...))) end })
+rack.registerContextMenu({ type = "fileopen", label = "Import", onChange = function(content, name, ...) rack.log("import " .. #content .. " [" .. content .. "] " .. name .. " args=" .. (2 + select('#', ...))) end })
 rack.registerContextMenu({ type = "boolean", label = "Flag", onChange = function(v) rack.log("flag " .. tostring(v)) end })
 )";
 
@@ -577,7 +577,7 @@ TEST_CASE("Action and file context menu items are listed, in both engines", "[Mi
 	REQUIRE(js.specs.size() == 3);
 	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Action);
 	REQUIRE(js.specs[0].label == "Go");
-	REQUIRE(js.specs[1].type == ScriptMenuItem::Type::File);
+	REQUIRE(js.specs[1].type == ScriptMenuItem::Type::FileOpen);
 	REQUIRE(js.specs[1].label == "Import");
 	REQUIRE(js.specs[2].type == ScriptMenuItem::Type::Boolean);
 }
@@ -652,9 +652,9 @@ rack.registerContextMenu({ type = "button", label = "X", onChange = function() e
 	REQUIRE(js.specs.empty());
 	REQUIRE(lua.specs.empty());
 	REQUIRE(js.loadLog.find("\"action\"") != std::string::npos);
-	REQUIRE(js.loadLog.find("\"file\"") != std::string::npos);
+	REQUIRE(js.loadLog.find("\"fileopen\"") != std::string::npos);
 	REQUIRE(lua.loadLog.find("\"action\"") != std::string::npos);
-	REQUIRE(lua.loadLog.find("\"file\"") != std::string::npos);
+	REQUIRE(lua.loadLog.find("\"fileopen\"") != std::string::npos);
 }
 
 TEST_CASE("menuCallArgs maps a click to onChange's arguments, or refuses one that does not fit", "[MidiKit][ContextMenu]") {
@@ -689,7 +689,7 @@ TEST_CASE("menuCallArgs maps a click to onChange's arguments, or refuses one tha
 	REQUIRE(args.empty());
 
 	ScriptMenuItem fileItem;
-	fileItem.type = ScriptMenuItem::Type::File;
+	fileItem.type = ScriptMenuItem::Type::FileOpen;
 	REQUIRE(menuCallArgs(fileItem, ScriptMenuClick::file("data", "f.txt"), args));
 	REQUIRE(args.size() == 2);
 	REQUIRE(args[0].s == "data");

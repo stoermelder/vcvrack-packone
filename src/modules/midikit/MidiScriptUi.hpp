@@ -102,10 +102,10 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 		ui::MenuEntry::step();
 	}
 
-	// A "file" item's click: the file dialog, then the file's text to the script. The
+	// A "fileopen" item's click: the file dialog, then the file's text to the script. The
 	// dialog blocks, so the engine is looked up again afterwards: the script may have
 	// been replaced meanwhile, and a stale id is ignored by the engine.
-	static void chooseAndSendFile(MODULE* m, const MidiScript::ScriptMenuItem& spec) {
+	static void chooseAndReadFile(MODULE* m, const MidiScript::ScriptMenuItem& spec) {
 		std::string path = vcv::ui::openDialog("", "");
 		if (path.empty()) return;
 		// Too big is refused before reading, so a huge file is never loaded.
@@ -143,9 +143,9 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, MidiScript::ScriptMenuClick());
 				});
 			}
-			else if (spec.type == MidiScript::ScriptMenuItem::Type::File) {
+			else if (spec.type == MidiScript::ScriptMenuItem::Type::FileOpen) {
 				item = createMenuItem(spec.label, "", [m, spec]() {
-					chooseAndSendFile(m, spec);
+					chooseAndReadFile(m, spec);
 				});
 			}
 			else {
