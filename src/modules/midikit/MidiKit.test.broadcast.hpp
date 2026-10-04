@@ -382,6 +382,7 @@ TEST_CASE("More broadcasts than the queue holds are dropped and logged once", "[
 	for (Lang lang : {Lang::Lua, Lang::Js}) {
 		BroadcastRig rig;
 		MidiKitModule* receiver = rig.load(lang, receiverScript(lang, "'got'"));
+		receiver->log.repeats.quietMs = 0;   // report the repeat count on the first drain
 		std::string flood = lang == Lang::Lua
 			? scriptFor(lang, "trig.enableIn(1)\nfunction trig.onTrigger(p)\n  for i = 1, 17 do rack.sendBroadcast(i) end\nend\n")
 			: scriptFor(lang, "trig.enableIn(1);\ntrig.onTrigger = function(p) { for (let i = 1; i <= 17; i++) rack.sendBroadcast(i); };\n");
@@ -391,7 +392,10 @@ TEST_CASE("More broadcasts than the queue holds are dropped and logged once", "[
 		std::string overflow = drainLog(receiver);
 		REQUIRE(countOf(overflow, "Broadcast input queue full") == 1);
 		receiver->host.getActiveEngine()->process();
-		REQUIRE(countOf(drainLog(receiver), "got") == 16);
+		// All 16 arrived: three "got" lines and the count of the other 13.
+		std::string received = drainLog(receiver);
+		REQUIRE(countOf(received, "got") == 3);
+		REQUIRE(received.find("… repeated 13×") != std::string::npos);
 	}
 }
 

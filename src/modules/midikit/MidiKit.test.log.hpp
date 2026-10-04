@@ -226,3 +226,81 @@ TEST_CASE("Raised log notices become one line each when the log is drained", "[M
 	REQUIRE(log.tryPop(t));
 	REQUIRE(std::get<2>(t) == "MIDI schedule queue full, message(s) sent at once");
 }
+
+
+// Repeats: the worker logs identical consecutive lines three times, the rest become
+// one "… repeated N×" line, so a callback that fails on every clock tick cannot
+// push everything else out of the log. Other producers (push()) are not guarded.
+TEST_CASE("The log collapses identical consecutive lines after three", "[MidiKit][Log]") {
+	ScriptLog log;
+	for (int i = 0; i < 10; i++) log.pushText("same", 0.f, true);
+	log.pushText("other", 0.f, true);
+	log.pushText("same", 0.f, true);
+
+	std::vector<std::string> lines;
+	ScriptLog::Entry t;
+	while (log.tryPop(t)) lines.push_back(std::get<2>(t));
+	REQUIRE(lines == std::vector<std::string>{ "same", "same", "same", "… repeated 7×", "other", "same" });
+}
+
+TEST_CASE("A flood stays collapsed while it goes on and is reported once it has stopped", "[MidiKit][Log]") {
+	ScriptLog log;
+	log.repeats.quietMs = 60000;   // the flood has not stopped
+	ScriptLog::Entry t;
+	auto drain = [&]() {
+		std::vector<std::string> lines;
+		while (log.tryPop(t)) lines.push_back(std::get<2>(t));
+		return lines;
+	};
+	for (int i = 0; i < 6; i++) log.pushText("tick", 0.f, true);
+	REQUIRE(drain() == std::vector<std::string>{ "tick", "tick", "tick" });
+	// Drain after drain, one more repeat each time: still nothing.
+	for (int i = 0; i < 5; i++) {
+		log.pushText("tick", 0.f, true);
+		REQUIRE(drain().empty());
+	}
+
+	// Quiet for long enough: the drain reports all 8 (3 + 5) at once.
+	log.repeats.quietMs = 0;
+	REQUIRE(drain() == std::vector<std::string>{ "… repeated 8×" });
+	// And only once; the same line afterwards is still part of the run.
+	log.pushText("tick", 0.f, true);
+	REQUIRE(drain() == std::vector<std::string>{ "… repeated 1×" });
+}
+
+TEST_CASE("A reset ends a run of repeats, and the same line is logged again after it", "[MidiKit][Log]") {
+	ScriptLog log;
+	for (int i = 0; i < 5; i++) log.pushText("err", 0.f, true);
+	log.pushReset();
+	for (int i = 0; i < 2; i++) log.pushText("err", 0.f, true);
+
+	std::vector<std::string> lines;
+	ScriptLog::Entry t;
+	while (log.tryPop(t)) lines.push_back(std::get<LOG_FORMAT>(t) == LOG_FORMAT::RESET ? std::string("<reset>") : std::get<2>(t));
+	REQUIRE(lines == std::vector<std::string>{ "err", "err", "err", "… repeated 2×", "<reset>", "err", "err" });
+}
+
+TEST_CASE("A callback that fails on every message logs its error three times, then a count", "[MidiKit][Log][CrossEngine]") {
+	FOR_EACH_LANG;
+	Kit<> kit;
+	kit.m->log.repeats.quietMs = 0;   // report the count on the first drain
+	kit.load(onMessage(lang, lang == Lang::Js ? "let x = null; x.field;" : "local x = nil; return x.field"));
+	for (int i = 0; i < 50; i++) kit.dispatch(msg::noteOn(1, 60, 100));
+	std::string log = kit.log();
+	CATCH_INFO("log:\n" << log);
+	REQUIRE(countOf(log, "onMessage error") == 3);
+	REQUIRE(log.find("… repeated 47×") != std::string::npos);
+
+	// The log still takes other lines during the flood.
+	kit.m->writeLog("something else", false);
+	REQUIRE(kit.log().find("something else") != std::string::npos);
+}
+
+TEST_CASE("Lines from the other producers are never collapsed", "[MidiKit][Log]") {
+	ScriptLog log;
+	for (int i = 0; i < 6; i++) log.pushText("same");
+	size_t n = 0;
+	ScriptLog::Entry t;
+	while (log.tryPop(t)) n++;
+	REQUIRE(n == 6);
+}

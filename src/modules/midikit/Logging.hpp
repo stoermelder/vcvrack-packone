@@ -4,6 +4,7 @@
 #include "../../vcv/ui.hpp"
 #include <rigtorp/MPMCQueue.h>
 #include <atomic>
+#include <chrono>
 #include <cinttypes>
 #include <list>
 #include <string>
@@ -15,7 +16,6 @@ namespace MidiKit {
 enum class LOG_FORMAT {
 	RESET,
 	TIMESTAMP,
-	INDENTED,
 	TEXT
 };
 
@@ -89,14 +89,92 @@ struct ScriptLog {
 		notices[n].pending.store(true, std::memory_order_release);
 	}
 
-	// Worker side — writeLog(). Enqueues one entry.
-	void push(LOG_FORMAT format, float timestamp, const std::string& text, int64_t frame = 0) {
+	// Collapses a flood of identical lines (an error on every clock tick would
+	// push everything else out of the queue). After MAX_REPEATS in a row the
+	// rest are counted and reported as one "… repeated N×" line when a different
+	// line comes, on reset, or when the drain finds the flood quiet for quietMs.
+	// isRepeat() is worker-only; the rest is atomic, so no lock.
+	struct RepeatFilter {
+		std::atomic<int> suppressed{0};        // repeats counted, not logged yet
+		std::atomic<uint32_t> resetGen{0};     // bumped by every RESET marker
+		std::atomic<int64_t> lastRepeatMs{0};  // steady-clock time of the last counted repeat
+		std::string lastText;                  // worker only from here
+		int lastCount = 0;                     // identical lines in a row, logged or counted
+		uint32_t seenResetGen = 0;
+
+		static constexpr int MAX_REPEATS = 3;
+		int64_t quietMs = 2000;                // quiet time before a drain reports the count
+
+		static int64_t steadyMs() {
+			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		}
+
+		// Worker: true if `text` is one more of a run past MAX_REPEATS, which is
+		// counted instead of logged. Otherwise it starts or continues a run, and
+		// `finished` gets the count of the run it ends, for the caller to report.
+		bool isRepeat(const std::string& text, int& finished) {
+			finished = 0;
+			uint32_t gen = resetGen.load(std::memory_order_relaxed);
+			if (gen != seenResetGen) {
+				seenResetGen = gen;
+				lastCount = 0;
+			}
+			if (lastCount > 0 && text == lastText) {
+				if (lastCount >= MAX_REPEATS) {
+					lastRepeatMs.store(steadyMs(), std::memory_order_relaxed);
+					suppressed.fetch_add(1, std::memory_order_relaxed);
+					return true;
+				}
+				lastCount++;
+				return false;
+			}
+			finished = count();
+			lastText = text;
+			lastCount = 1;
+			return false;
+		}
+
+		// Any thread: ends the current run, as a RESET marker does.
+		void reset() {
+			resetGen.fetch_add(1, std::memory_order_relaxed);
+		}
+
+		// Any thread: the repeats counted so far, which are not counted again.
+		int count() {
+			return suppressed.exchange(0);
+		}
+
+		// The drain: whether the repeats are waiting and the flood has stopped.
+		bool reportable() const {
+			return suppressed.load(std::memory_order_relaxed) > 0
+				&& steadyMs() - lastRepeatMs.load(std::memory_order_relaxed) >= quietMs;
+		}
+	};
+	RepeatFilter repeats;
+
+	// Enqueues one entry. `collapseRepeats` is for the worker (writeLog) alone,
+	// since the filter's run belongs to it: every other producer (the
+	// loadScript/onReset callers, the drain's notices) leaves it false. Never the
+	// audio thread. A RESET marker ends a run of repeats.
+	void push(LOG_FORMAT format, float timestamp, const std::string& text, int64_t frame = 0, bool collapseRepeats = false) {
+		if (format == LOG_FORMAT::RESET) {
+			pushRepeats(repeats.count());
+			repeats.reset();
+		}
+		else if (collapseRepeats) {
+			int finished;
+			if (repeats.isRepeat(text, finished)) return;
+			pushRepeats(finished);
+		}
 		midiLogMessages.try_push(std::make_tuple(format, timestamp, text, frame));
 	}
 
 	// Takes the next log entry, after turning the notices raised since the last
 	// call into lines. For the thread that drains the log (the widget; tests).
+	// Also emits the repeat line of a flood that has stopped, so it shows up
+	// without waiting for a different line; one that goes on stays collapsed.
 	bool tryPop(Entry& entry) {
+		if (repeats.reportable()) pushRepeats(repeats.count());
 		for (int i = 0; i < NOTICE_COUNT; i++) {
 			if (notices[i].pending.exchange(false, std::memory_order_acquire)) pushText(notices[i].text);
 		}
@@ -104,14 +182,19 @@ struct ScriptLog {
 	}
 
 	// Plain text line. The timestamp is not displayed.
-	void pushText(const std::string& text, float timestamp = 0.f) {
-		push(LOG_FORMAT::TEXT, timestamp, text);
+	void pushText(const std::string& text, float timestamp = 0.f, bool collapseRepeats = false) {
+		push(LOG_FORMAT::TEXT, timestamp, text, 0, collapseRepeats);
+	}
+
+	// The "… repeated N×" line, if n > 0.
+	void pushRepeats(int n) {
+		if (n > 0) midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, string::f("… repeated %d×", n), int64_t(0)));
 	}
 
 	// Line prefixed with the timestamp (seconds since the script loaded) or the
 	// engine frame, as the display is set to.
-	void pushTimestamped(float timestamp, const std::string& text, int64_t frame = 0) {
-		push(LOG_FORMAT::TIMESTAMP, timestamp, text, frame);
+	void pushTimestamped(float timestamp, const std::string& text, int64_t frame = 0, bool collapseRepeats = false) {
+		push(LOG_FORMAT::TIMESTAMP, timestamp, text, frame, collapseRepeats);
 	}
 
 	// Marks a script load/reset; the widget clears its display on it.
@@ -141,8 +224,6 @@ static std::string formatLogEntry(const ScriptLog::Entry& s, LOG_TIME time = LOG
 			}
 		case LOG_FORMAT::TEXT:
 			return text;
-		case LOG_FORMAT::INDENTED:
-			return "     " + text;
 		default:
 			return "";
 	}

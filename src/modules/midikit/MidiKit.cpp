@@ -1634,10 +1634,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		if (useTimestamp) {
 			float sr = sampleRate.load(std::memory_order_relaxed);
 			int64_t frames = getTimingCurrentFrame() - scriptStartFrame.load(std::memory_order_relaxed);
-			log.pushTimestamped(sr != 0.f ? float(frames) / sr : 0.f, text, getTimingCurrentFrame());
+			log.pushTimestamped(sr != 0.f ? float(frames) / sr : 0.f, text, getTimingCurrentFrame(), true);
 		}
 		else {
-			log.pushText(text);
+			log.pushText(text, 0.f, true);
 		}
 	}
 

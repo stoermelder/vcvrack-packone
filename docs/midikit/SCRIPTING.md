@@ -1821,6 +1821,7 @@ Every limit a script can run into, with what happens at the limit. Anything not 
 | Delayed messages by trigger | 32 per trigger input channel (`sendAfterTrigger()`) | the message is sent at once, logged once per script |
 | SysEx | 8192 payload bytes (8194 with `f0`/`f7`), 7-bit bytes only. About 2.6 s on a 31.25 kbaud DIN output | `midi.setSysEx()` and `midi.setRaw()` raise a script error. A longer received message is dropped whole at the input and "MIDI input: message(s) longer than 8194 bytes dropped" is logged, so what a script receives it can also forward or clone |
 | Tipsy payload and MIME type | 256 bytes each (a MIME type of at most 255 characters) | nothing is sent; "Tipsy: invalid parameters" or "Tipsy: mime type too long" is logged. A received stream that is too long is reported as malformed |
+| Identical log lines in a row | 3 logged | the rest are counted and shown as one "… repeated N×" line once a different line comes or the repetition has stopped for half a second, so an error on every clock tick does not fill the log. Applies to everything the script logs, errors and `rack.log()` alike |
 | File read by a `"fileopen"` menu item | 8192 bytes | the user gets a message and `onChange` is not called |
 | Sending an empty or unset handle | not a size limit, but a message without a status byte cannot be sent | every `midiOut.send*()` call raises "message has no status byte" |
 
