@@ -117,10 +117,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Formats a QuickJS exception with its source position: reads message +
-	// "stack" (file/line info when available, e.g. a parse-time SyntaxError)
-	// straight off the exception object.
+	// "stack" (file/line info, for a parse-time SyntaxError and for a runtime
+	// error in a callback) straight off the exception object. Used at every site
+	// that logs a script error, so the log shows the line as Lua's does.
 	std::string formatError(JSValueConst exc) {
 		std::string message = jsToStdString(exc);
+		// Only an object has a stack: a thrown string or number has none, and
+		// reading a property of undefined/null would raise a second exception.
+		if (!JS_IsObject(exc)) return message;
 		JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
 		if (!JS_IsUndefined(stack)) {
 			std::string s = jsToStdString(stack);
@@ -381,7 +385,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onLoad error: %s", jsToStdString(exc).c_str()));
+			handler->writeLog(string::f("onLoad error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -406,7 +410,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onUnload error: %s", jsToStdString(exc).c_str()));
+			handler->writeLog(string::f("onUnload error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 			return JS_UNDEFINED;
 		}
@@ -444,7 +448,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onMessage error: %s", jsToStdString(exc).c_str()));
+					handler->writeLog(string::f("onMessage error: %s", formatError(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -477,7 +481,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("%s error: %s", name, jsToStdString(exc).c_str()));
+			handler->writeLog(string::f("%s error: %s", name, formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -509,7 +513,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
 				JSValue exc = JS_GetException(ctx);
-				handler->writeLog(string::f("onTrigger error: %s", jsToStdString(exc).c_str()));
+				handler->writeLog(string::f("onTrigger error: %s", formatError(exc).c_str()));
 				JS_FreeValue(ctx, exc);
 			}
 			else {
@@ -540,7 +544,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onBroadcast error: %s", jsToStdString(exc).c_str()));
+			handler->writeLog(string::f("onBroadcast error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -567,7 +571,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onTipsyMessage error: %s", jsToStdString(exc).c_str()));
+					handler->writeLog(string::f("onTipsyMessage error: %s", formatError(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -671,7 +675,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					if (JS_IsException(r)) {
 						JS_FreeValue(ctx, r);
 						JSValue exc = JS_GetException(ctx);
-						handler->writeLog(string::f("Context menu error: %s", jsToStdString(exc).c_str()));
+						handler->writeLog(string::f("Context menu error: %s", formatError(exc).c_str()));
 						JS_FreeValue(ctx, exc);
 					}
 					else {
@@ -738,7 +742,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
 				JSValue exc = JS_GetException(ctx);
-				handler->writeLog(string::f("Context menu callback error: %s", jsToStdString(exc).c_str()));
+				handler->writeLog(string::f("Context menu callback error: %s", formatError(exc).c_str()));
 				JS_FreeValue(ctx, exc);
 			}
 			else {

@@ -63,6 +63,39 @@ TEST_CASE("Successful load reports no error", "[MidiKit][Engine]") {
 }
 
 
+// A runtime error in a callback carries the script line, in both engines
+// (Lua: "script:6: ...", QuickJs: a stack line "at <anonymous> (script:6:...)").
+static const Pair RUNTIME_ERROR_ON_LINE{
+R"(/**
+ * @engine QuickJs@v1
+ */
+midi.onMessage = function(port, msg) {
+  let x = null;
+  return x.field;
+};
+)",
+R"(--[[
+@engine minilua@v1
+--]]
+midi.onMessage = function(port, msg)
+  local x = nil
+  return x.field
+end
+)"};
+
+TEST_CASE("A runtime error in onMessage reports the line it happened on", "[MidiKit][Engine]") {
+	FOR_EACH_LANG;
+	Kit<> kit;
+	kit.loadRaw(RUNTIME_ERROR_ON_LINE.get(lang));
+	kit.dispatch(msg::noteOn(1, 60, 100));
+	std::string log = kit.log();
+	CATCH_INFO("log:\n" << log);
+	REQUIRE(log.find("onMessage error") != std::string::npos);
+	// x.field is on line 6 in both scripts.
+	REQUIRE(log.find("script:6:") != std::string::npos);
+}
+
+
 // ── Memory / garbage collection ─────────────────────────────────────────────
 // Each midi.onMessage callback allocates scratch garbage (strings, tables) that
 // nothing retains; across a large number of callbacks the heap must not grow.
