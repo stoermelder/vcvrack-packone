@@ -1074,14 +1074,14 @@ end
 }
 
 TEST_CASE("sendAfterMs keeps full precision in both engines", "[MidiKit][Timing]") {
-	// 16777217 ms (4.7 hours) has no float representation; both engines must
-	// land on the same frame.
+	// 7199999 ms is the last whole millisecond under the 2 hour limit; both
+	// engines must land on the same frame, exactly.
 	const char* js = R"(/**
  * @engine QuickJs@v1
  */
 midiOut.enableTiming();
 midi.onMessage = function(port, msg) {
-    midiOut.sendAfterMs(msg, 16777217);
+    midiOut.sendAfterMs(msg, 7199999);
 };
 )";
 	const char* lua = R"(--[[
@@ -1089,7 +1089,7 @@ midi.onMessage = function(port, msg) {
 --]]
 midiOut.enableTiming()
 midi.onMessage = function(port, msg)
-    midiOut.sendAfterMs(msg, 16777217)
+    midiOut.sendAfterMs(msg, 7199999)
 end
 )";
 	Pair scripts{js, lua};
@@ -1102,7 +1102,7 @@ end
 	rig.run(40);
 
 	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.size() == 1);
-	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 20 + int64_t(16777217.0 / 1000.0 * sr));
+	REQUIRE(rig.m->midiOuts.ports[0].frameQueue.top().msg.frame == 20 + int64_t(7199999.0 / 1000.0 * sr));
 }
 
 TEST_CASE("Each send call on a handle schedules its own copy, in both engines", "[MidiKit][Timing]") {

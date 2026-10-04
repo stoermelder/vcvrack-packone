@@ -476,15 +476,30 @@ struct MidiScriptEngine {
 		~InFrameScope() { slot = prev; }
 	};
 
-	// The frame for sendAfterMs: `ms` after the causing event in timing mode,
-	// otherwise after the module's latest process() frame. A negative `ms` means
-	// "behind Rack's output queue": framed messages handed over late in a block go
-	// out up to two blocks later, so this lands two blocks and a frame on.
+	// How far ahead a script can schedule: sendAfterMs and sendAtFrame are
+	// limited to 2 hours past the base frame, sendAfterTrigger to 10000 trigger
+	// ticks. A larger finite value is clamped to the limit; NaN and Infinity are
+	// refused by the bindings (a 60000 / bpm with bpm = 0 gives Infinity), since
+	// a message stuck for good would also use up a queue slot for good.
+	static constexpr double MAX_SCHEDULE_MS = 2.0 * 3600.0 * 1000.0;
+	static constexpr int MAX_SCHEDULE_TICKS = 10000;
+
+	// The frame scheduling is relative to: the causing event in timing mode,
+	// otherwise the module's latest process() frame.
+	int64_t scheduleBase() const {
+		return handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getTimingCurrentFrame();
+	}
+
+	// The frame for sendAfterMs: `ms` (at most MAX_SCHEDULE_MS) after the base. A
+	// negative `ms` means "behind Rack's output queue": framed messages handed
+	// over late in a block go out up to two blocks later, so this lands two
+	// blocks and a frame on. `ms` must be finite (checked by the bindings).
 	int64_t frameAfterMs(double ms) const {
-		int64_t base = handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getTimingCurrentFrame();
+		int64_t base = scheduleBase();
 		if (ms < 0.0) return base + 2 * handler->getTimingBlockFrames() + 1;
 		float sr = handler->getSampleRate();
-		return base + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
+		const double maxMs = MAX_SCHEDULE_MS;   // a copy: std::min would odr-use the constant (C++11)
+		return base + int64_t(sr > 0.f ? std::min(ms, maxMs) / 1000.0 * sr : 0.0);
 	}
 
 	// rack.msToFrames() / framesToMs() at the current sample rate (read per call,
@@ -513,9 +528,14 @@ struct MidiScriptEngine {
 		return handler->isTimingEnabled() ? currentInFrame : -1;
 	}
 
-	// The frame for sendAtFrame. Negatives collide with the -1 "no frame".
-	static int64_t frameAtFrame(double frame) {
-		return frame < 0.0 ? -1 : int64_t(frame);
+	// The frame for sendAtFrame, at most MAX_SCHEDULE_MS past the base. Negatives
+	// collide with the -1 "no frame". `frame` must be finite (checked by the bindings).
+	int64_t frameAtFrame(double frame) const {
+		if (frame < 0.0) return -1;
+		int64_t base = scheduleBase();
+		float sr = handler->getSampleRate();
+		double limit = double(base) + (sr > 0.f ? MAX_SCHEDULE_MS / 1000.0 * sr : 0.0);
+		return int64_t(std::min(frame, limit));
 	}
 
 	// Setter-argument rule: round to nearest and clamp to [lo, hi], never wrap.

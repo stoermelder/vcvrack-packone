@@ -479,6 +479,73 @@ TEST_CASE("Sending an empty or unset handle raises, whichever send call is used"
 }
 
 
+// Scheduling limits
+// sendAfterMs and sendAtFrame reach at most 2 hours ahead, sendAfterTrigger at
+// most 10000 trigger ticks; larger finite values are clamped. NaN and Infinity
+// raise (a 60000 / bpm with bpm = 0 gives Infinity), instead of leaving the
+// message queued for good or sending it at once.
+
+static std::string schedulingScript(Lang lang, const std::string& call, const std::string& arg) {
+	if (lang == Lang::Js) {
+		return script(lang, "midi.onMessage = function(port, msg) {\n    try { " + call + "(msg, " + arg + "); } catch (e) { rack.log('err ' + e); }\n};");
+	}
+	return script(lang, "midi.onMessage = function(port, msg)\n    local ok, err = pcall(" + call + ", msg, " + arg + ")\n    if not ok then rack.log('err ' .. tostring(err)) end\nend");
+}
+
+TEST_CASE("Non-finite scheduling arguments raise and send nothing", "[MidiKit][CrossEngine]") {
+	FOR_EACH_LANG;
+	const char* calls[] = { "midiOut.sendAfterMs", "midiOut.sendAtFrame", "midiOut.sendAfterTrigger" };
+	for (const char* call : calls) {
+		for (const char* arg : { "0 / 0", "1 / 0", "-1 / 0" }) {   // NaN, Infinity, -Infinity
+			CATCH_INFO(call << " " << arg);
+			Kit<> kit;
+			kit.loadRaw(schedulingScript(lang, call, arg));
+			std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+			std::string log = kit.log();
+			CATCH_INFO("log:\n" << log);
+			// The Lua sendAfterTrigger refuses non-integers with its own wording.
+			REQUIRE(log.find("err ") != std::string::npos);
+			REQUIRE(sent.empty());
+		}
+	}
+}
+
+TEST_CASE("Huge scheduling arguments are limited to 2 hours and 10000 ticks", "[MidiKit][CrossEngine]") {
+	FOR_EACH_LANG;
+	const int64_t limit = int64_t(7200.0 * Test::sampleRate());   // 2 hours of frames
+	REQUIRE(limit == 317520000);
+
+	SECTION("sendAfterMs") {
+		Kit<> kit;
+		kit.loadRaw(schedulingScript(lang, "midiOut.sendAfterMs", "1e300"));
+		std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+		REQUIRE(sent.size() == 1);
+		REQUIRE(sent[0].frame == limit);
+	}
+	SECTION("sendAfterMs just inside the limit is not changed") {
+		Kit<> kit;
+		kit.loadRaw(schedulingScript(lang, "midiOut.sendAfterMs", "7200000"));
+		std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+		REQUIRE(sent.size() == 1);
+		REQUIRE(sent[0].frame == limit);
+	}
+	SECTION("sendAtFrame") {
+		Kit<> kit;
+		kit.loadRaw(schedulingScript(lang, "midiOut.sendAtFrame", "1e300"));
+		std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+		REQUIRE(sent.size() == 1);
+		REQUIRE(sent[0].frame == limit);
+	}
+	SECTION("sendAfterTrigger") {
+		Kit<> kit;
+		kit.loadRaw(schedulingScript(lang, "midiOut.sendAfterTrigger", "1000000000"));
+		std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+		REQUIRE(sent.size() == 1);
+		REQUIRE(sent[0].ticks == 10000);
+	}
+}
+
+
 // midiOut.sendAfterMs
 
 static const char* JS_SEND_AFTER_MS = R"(/**

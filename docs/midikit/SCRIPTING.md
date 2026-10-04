@@ -15,6 +15,7 @@ Both engines offer the *same* API: `midi`, `midiOut`, `input`, `trig`, `param`, 
 | [Part 2 — Examples](#part-2--examples) | worked scripts from basic pass-through to context menus, assembled NRPN input and messages between modules |
 | [Part 3 — API reference](#part-3--api-reference) | every `rack.*`, `input.*`, `trig.*`, `param.*`, `midi.*`, `midiOut.*` and `number.*` function, persistence, messages between modules, sample-accurate timing |
 | [Part 4 — Gotchas](#part-4--gotchas) | the mistakes that cost the most time |
+| [Part 5 — Technical limits](#part-5--technical-limits) | every size, time and count limit in one table |
 
 ## Part 1 — Writing a script
 
@@ -1810,3 +1811,25 @@ Realtime messages are encoded as status `0xf` with a "channel" nibble of `0x8`, 
 
 - Lua's sandboxed standard library excludes `io`, `os`, `package` and `debug`: no file access and no OS calls, by design.
 - A script is only run by the engine its `@engine` tag names. Loading a QuickJs script into a module that expects `@engine minilua@v1` (or the reverse) fails with an explicit "not compatible" log message instead of being silently misinterpreted.
+
+
+## Part 5 — Technical limits
+
+Every limit a script can run into, with what happens at the limit. Anything not listed here is not limited by MIDI-KIT itself.
+
+| Area | Limit | At the limit |
+| --- | --- | --- |
+| Run time of one callback (or the script's top level) | about 100 million VM instructions, in both engines | the script is aborted with "exceeded execution budget" (Lua) or "interrupted" (QuickJs). At top level the load fails; in a callback the next callback runs normally |
+| Memory | 1 MiB per script, in both engines | the script is stopped, its state torn down, and "memory limit and was stopped" is logged. Loading a script again starts afresh |
+| Message handles per callback | 32 by default; `@requires messages=N` raises it to at most 512. A received NRPN/RPN handle takes 4 slots, a 14-bit CC 2 | `midi.create()` and the other constructors raise "message store full". A header value above 512 refuses the script |
+| `midiOut.sendAfterMs()`, `midiOut.sendAtFrame()` | at most 2 hours ahead of the frame the call is relative to | a larger finite value is clamped to 2 hours. `NaN` and `Infinity` raise "must be a finite number" and send nothing |
+| `midiOut.sendAfterTrigger()` | at most 10000 trigger ticks ahead | a larger count is clamped to 10000. A negative count is treated as 0 |
+| Output queue | 2048 messages per module, handed to the output 128 at a time, one batch every 8 samples | the message is dropped and logged |
+| Delayed messages by time | 256 per output (`sendAfterMs()`, `sendAtFrame()`) | the message is sent at once, logged once per script |
+| Delayed messages by trigger | 32 per trigger input channel (`sendAfterTrigger()`) | the message is sent at once, logged once per script |
+| SysEx created by a script | 256 payload bytes, 7-bit bytes only (`midi.setSysEx()`) | the call raises a script error |
+| Tipsy payload and MIME type | 256 bytes each (a MIME type of at most 255 characters) | nothing is sent; "Tipsy: invalid parameters" or "Tipsy: mime type too long" is logged. A received stream that is too long is reported as malformed |
+| File read by a context-menu file item | 2048 bytes | the user gets a message and `onChange` is not called |
+| Sending an empty or unset handle | not a size limit, but a message without a status byte cannot be sent | every `midiOut.send*()` call raises "message has no status byte" |
+
+The scheduling limits count from the same base as the delay itself: the latest frame the module has processed, or with `midiOut.enableTiming()` the frame of the event being handled. A delay of exactly `7200000` ms is not changed; for `sendAtFrame()` the limit is `7200` seconds of frames past that base.

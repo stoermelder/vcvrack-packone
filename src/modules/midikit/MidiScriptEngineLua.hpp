@@ -2266,6 +2266,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// midiOut.sendAfterMs(msg, ms)
 		auto* e = getEngine(L);
 		double ms = luaL_checknumber(L, 2);
+		if (!std::isfinite(ms)) luaL_argerror(L, 2, "ms must be a finite number");
 
 		size_t idx = checkHandle(L, 1);
 		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
@@ -2277,11 +2278,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	static int lua_midiOut_sendAtFrame(lua_State* L) {
 		auto* e = getEngine(L);
 		double frame = luaL_checknumber(L, 2);
+		if (!std::isfinite(frame)) luaL_argerror(L, 2, "frame must be a finite number");
 
 		size_t idx = checkHandle(L, 1);
 		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		// A negative frame means "now": a plain send, which cancel() leaves alone.
-		int64_t f = frameAtFrame(frame);
+		int64_t f = e->frameAtFrame(frame);
 		e->sendEntry(e->msgStore[idx], e->selectedPort, f, 0, 0, 0, f >= 0);
 		return 0;
 	}
@@ -2330,12 +2332,13 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		auto* e = getEngine(L);
 		int n = lua_gettop(L);
 
-		int ticks = static_cast<int>(luaL_checkinteger(L, 2));
+		lua_Integer rawTicks = luaL_checkinteger(L, 2);
+		int ticks = static_cast<int>(std::max<lua_Integer>(0, std::min<lua_Integer>(rawTicks, MAX_SCHEDULE_TICKS)));
 		int trigPort = 1;
 		int channel = 1;
 
-		if (n >= 3) trigPort = static_cast<int>(luaL_checkinteger(L, 3));
-		if (n >= 4) channel = static_cast<int>(luaL_checkinteger(L, 4));
+		if (n >= 3) trigPort = static_cast<int>(std::max<lua_Integer>(-1, std::min<lua_Integer>(luaL_checkinteger(L, 3), 1024)));
+		if (n >= 4) channel = static_cast<int>(std::max<lua_Integer>(-1, std::min<lua_Integer>(luaL_checkinteger(L, 4), 1024)));
 
 		if (trigPort < 1 || trigPort > e->inputTrigCount) {
 			luaL_error(L, "midiOut.sendAfterTrigger: invalid trig port index");

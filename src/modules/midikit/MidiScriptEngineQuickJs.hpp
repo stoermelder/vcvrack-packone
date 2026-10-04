@@ -2275,6 +2275,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_midiOut_sendAfterMs(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAfterMs: bad args");
+		if (!std::isfinite(argNum(ctx, argv[1]))) return jsThrow(ctx, "midiOut.sendAfterMs: ms must be a finite number");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
 		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.sendAfterMs: message has no status byte");
 		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(argNum(ctx, argv[1])), 0, 0, 0, true);
@@ -2285,10 +2286,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_midiOut_sendAtFrame(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAtFrame: bad args");
+		if (!std::isfinite(argNum(ctx, argv[1]))) return jsThrow(ctx, "midiOut.sendAtFrame: frame must be a finite number");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
 		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.sendAtFrame: message has no status byte");
 		// A negative frame means "now": a plain send, which cancel() leaves alone.
-		int64_t f = frameAtFrame(argNum(ctx, argv[1]));
+		int64_t f = e->frameAtFrame(argNum(ctx, argv[1]));
 		e->sendEntry(e->msgStore[idx], e->selectedPort, f, 0, 0, 0, f >= 0);
 		return JS_UNDEFINED;
 	}
@@ -2341,21 +2343,22 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2])) {
 				return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
 			}
-			trigPort = static_cast<int>(argNum(ctx, argv[2]));
+			trigPort = clampInt<int>(argNum(ctx, argv[2]), -1, 1024);
 		}
 		else if (argc == 4) {
 			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3])) {
 				return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
 			}
-			trigPort = static_cast<int>(argNum(ctx, argv[2]));
-			channel = static_cast<int>(argNum(ctx, argv[3]));
+			trigPort = clampInt<int>(argNum(ctx, argv[2]), -1, 1024);
+			channel = clampInt<int>(argNum(ctx, argv[3]), -1, 1024);
 		}
 		else {
 			return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
 		}
 		if (trigPort < 1 || trigPort > getEngine(ctx)->inputTrigCount) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad trigInput index");
 		if (channel < 1 || channel > PORT_MAX_CHANNELS) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad channel");
-		int ticks = static_cast<int>(argNum(ctx, argv[1]));
+		if (!std::isfinite(argNum(ctx, argv[1]))) return jsThrow(ctx, "midiOut.sendAfterTrigger: ticks must be a finite number");
+		int ticks = clampInt<int>(argNum(ctx, argv[1]), 0, MAX_SCHEDULE_TICKS);
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
 		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.sendAfterTrigger: message has no status byte");
 		// Read now, so the schedule is relative to the tick count at the call.
