@@ -758,7 +758,7 @@ TEST_CASE("Log display context menu copies the whole log to the clipboard and cl
 
 	// More lines than the display can show: the copy still has all of them, oldest first.
 	m->loadScript(QUICKJS_EMPTY);   // pushes a RESET, clearing older entries
-	for (int i = 0; i < 40; i++) m->writeLog("line" + std::to_string(i), false);
+	for (int i = 0; i < 40; i++) m->writeLog("line" + std::to_string(i));
 	mw->step();
 	menu = new rack::ui::Menu;
 	mw->logDisplay->appendContextMenu(menu);
@@ -843,7 +843,7 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	// The log is drained into the widget, which keeps only the newest five
 	// lines for the context menu; stepping must not touch the missing display.
 	m->loadScript(QUICKJS_EMPTY);   // pushes a RESET, clearing older entries
-	for (int i = 0; i < 8; i++) m->writeLog("line" + std::to_string(i), false);
+	for (int i = 0; i < 8; i++) m->writeLog("line" + std::to_string(i));
 	mw->step();
 	ScriptLog::Entry t;
 	REQUIRE_FALSE(m->log.tryPop(t));
@@ -864,7 +864,7 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	Test::mock::Guard<StoermelderPackOne::vcv::UiAccess> uiGuard{StoermelderPackOne::vcv::uiAccess, &measureFallback};
 	std::string longText;
 	for (int i = 0; i < 60; i++) longText += "word ";
-	m->writeLog(longText, false);
+	m->writeLog(longText);
 	mw->step();
 	rack::ui::Menu* longMenu = new rack::ui::Menu;
 	mw->appendContextMenu(longMenu);

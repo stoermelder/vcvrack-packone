@@ -8,9 +8,13 @@ namespace MidiScript {
 // triggers) and UI (log, overlay). Keeps the engine free of module knowledge.
 struct MidiScriptEngineHandler {
 	virtual void writeLog(const std::string& s, bool useTimestamp = true) = 0;
+	// The outcome of a script load: the script loaded, or it did not (and why).
+	// Log lines like writeLog(), but typed, so the editor can tell.
+	virtual void writeLoad(const std::string& s) = 0;
+	virtual void writeError(const std::string& s) = 0;
 	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
-	virtual void enableInput(int i) = 0;
 
+	virtual void enableInput(int i) = 0;
 	// Enable the first `count` MIDI ports (count >= 1); never shrinks. Only port 1
 	// is on by default. Input beyond the count never reaches the script, output is
 	// discarded. Forgotten on load/reset. Worker thread.

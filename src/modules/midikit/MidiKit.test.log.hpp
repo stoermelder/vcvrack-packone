@@ -67,14 +67,14 @@ TEST_CASE("LogDispatcher: no listeners drops entries without trouble", "[MidiKit
 // ── Log time display ─────────────────────────────────────────────────────────
 
 TEST_CASE("A timestamped log line shows seconds, the engine frame, or nothing", "[MidiKit][Log][LogTime]") {
-	ScriptLog::Entry e(LOG_FORMAT::TIMESTAMP, 1.5f, "hello", 123456);
+	ScriptLog::Entry e(LOG_FORMAT::TEXT, 1.5f, "hello", 123456);
 	REQUIRE(formatLogEntry(e) == "[   1.5000] hello");
 	REQUIRE(formatLogEntry(e, LOG_TIME::TIMESTAMP) == "[   1.5000] hello");
 	REQUIRE(formatLogEntry(e, LOG_TIME::FRAME) == "[   123456] hello");
 	REQUIRE(formatLogEntry(e, LOG_TIME::OFF) == "hello");
 
 	// Untimed lines are unaffected.
-	ScriptLog::Entry text(LOG_FORMAT::TEXT, 0.f, "plain", 0);
+	ScriptLog::Entry text(LOG_FORMAT::TEXT_WO_TS, 0.f, "plain", 0);
 	for (LOG_TIME t : {LOG_TIME::TIMESTAMP, LOG_TIME::FRAME, LOG_TIME::OFF}) {
 		REQUIRE(formatLogEntry(text, t) == "plain");
 	}
@@ -118,7 +118,7 @@ TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
 	drainLogEntries(m);  // discard construction-time entries
 
 	for (int i = 0; i < 10; i++) {
-		m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("line") + std::to_string(i), 0));
+		m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT_WO_TS, 0.f, std::string("line") + std::to_string(i), 0));
 	}
 
 	auto entries = drainLogEntries(m);
@@ -129,26 +129,35 @@ TEST_CASE("Log queue preserves FIFO order", "[MidiKit][Log]") {
 }
 
 
+TEST_CASE("Load outcomes are displayed as plain text", "[MidiKit][Log][LogTime]") {
+	ScriptLog::Entry load(LOG_FORMAT::LOAD, 1.5f, "Script loaded", 123456);
+	ScriptLog::Entry error(LOG_FORMAT::ERROR, 1.5f, "boom", 123456);
+	for (LOG_TIME t : {LOG_TIME::TIMESTAMP, LOG_TIME::FRAME, LOG_TIME::OFF}) {
+		REQUIRE(formatLogEntry(load, t) == "Script loaded");
+		REQUIRE(formatLogEntry(error, t) == "boom");
+	}
+}
+
 TEST_CASE("Log accepts entries from multiple producers", "[MidiKit][Log]") {
 	Kit<> kit;
 	MidiKitModule* m = kit.m;
 	drainLogEntries(m);  // discard construction-time entries
 
 	// Producer A: the module's handler writeLog (the worker-thread path).
-	m->writeLog("from-engine", true);
+	m->writeLog("from-engine");
 	// Producer B: a direct push (the loadScript/onReset path).
-	m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("from-direct"), 0));
+	m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT_WO_TS, 0.f, std::string("from-direct"), 0));
 	// Producer A again.
-	m->writeLog("from-engine-2", false);
+	m->writeLog("from-engine-2");
 
 	auto entries = drainLogEntries(m);
 	REQUIRE(entries.size() == 3);
 	REQUIRE(std::get<1>(entries[0]) == "from-engine");
 	REQUIRE(std::get<1>(entries[1]) == "from-direct");
 	REQUIRE(std::get<1>(entries[2]) == "from-engine-2");
-	// writeLog(useTimestamp=true) -> TIMESTAMP, writeLog(useTimestamp=false) -> TEXT.
-	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::TIMESTAMP);
-	REQUIRE(std::get<0>(entries[1]) == LOG_FORMAT::TEXT);
+	// The worker's lines carry the script time, a direct push has none.
+	REQUIRE(std::get<0>(entries[0]) == LOG_FORMAT::TEXT);
+	REQUIRE(std::get<0>(entries[1]) == LOG_FORMAT::TEXT_WO_TS);
 	REQUIRE(std::get<0>(entries[2]) == LOG_FORMAT::TEXT);
 }
 
@@ -177,7 +186,7 @@ TEST_CASE("Log queue drops entries when full", "[MidiKit][Log]") {
 	// returns false) rather than block.
 	int pushed = 0;
 	for (int i = 0; i < 1000; i++) {
-		if (m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT, 0.f, std::string("x"), 0))) {
+		if (m->log.midiLogMessages.try_push(ScriptLog::Entry(LOG_FORMAT::TEXT_WO_TS, 0.f, std::string("x"), 0))) {
 			pushed++;
 		}
 	}
@@ -317,7 +326,7 @@ TEST_CASE("A callback that fails on every message logs its error three times, th
 	REQUIRE(log.find("… repeated 47×") != std::string::npos);
 
 	// The log still takes other lines during the flood.
-	kit.m->writeLog("something else", false);
+	kit.m->writeLog("something else");
 	REQUIRE(kit.log().find("something else") != std::string::npos);
 }
 

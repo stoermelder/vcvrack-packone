@@ -118,7 +118,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			memoryLimitExceeded = true;
 			// After the close, which resets the log.
 			unloadScriptOnWorker();
-			handler->writeLog(string::f("Script exceeded the %d KB memory limit and was stopped", (int)(memoryLimit / 1024)));
+			handler->writeError(string::f("Script exceeded the %d KB memory limit and was stopped", (int)(memoryLimit / 1024)));
 		}
 	}
 
@@ -236,7 +236,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		if (topics.find("engine") == topics.end() || topics["engine"] != "minilua@v1") {
-			handler->writeLog("Script is not compatible with this engine (expected @engine minilua@v1)", false);
+			handler->writeError("Script is not compatible with this engine (expected @engine minilua@v1)");
 			return;
 		}
 
@@ -256,7 +256,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// panic handler is replicated via lua_atpanic.
 		L = lua_newstate(&memoryLimitedAlloc, this, luaL_makeseed(NULL));
 		if (!L) {
-			handler->writeLog("Error creating Lua state", false);
+			handler->writeError("Error creating Lua state");
 			return;
 		}
 		lua_atpanic(L, &luaPanic);
@@ -310,11 +310,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_pop(L, 1);
 			// Logged after the close, which resets the log.
 			unloadScriptOnWorker();
-			handler->writeLog(message, false);
+			handler->writeError(message);
 			return;
 		}
 
-		handler->writeLog("Script loaded", false);
+		handler->writeLoad("Script loaded");
 
 		// Cache the lifecycle hooks once (see declarations): onLoad/onUnload
 		// from rack; onMessage from midi; onTrigger/onTipsyMessage from trig.
@@ -417,7 +417,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onLoad error: %s", err ? err : "(unknown)"));
+			handler->writeError(string::f("onLoad error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 	}
@@ -438,7 +438,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onUnload error: %s", err ? err : "(unknown)"));
+			handler->writeError(string::f("onUnload error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 			return;
 		}
@@ -720,7 +720,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 					}
 					else {
 						const char* err = lua_tostring(L, -1);
-						handler->writeLog(string::f("Context menu error: %s", err ? err : "(unknown)"));
+						handler->writeError(string::f("Context menu error: %s", err ? err : "(unknown)"));
 						lua_pop(L, 1); // pop error message
 					}
 				}
@@ -765,7 +765,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			inCallback = false;
 			if (status != LUA_OK) {
 				const char* err = lua_tostring(L, -1);
-				handler->writeLog(string::f("Context menu callback error: %s", err ? err : "(unknown)"));
+				handler->writeError(string::f("Context menu callback error: %s", err ? err : "(unknown)"));
 				lua_pop(L, 1); // pop error message
 			}
 			checkMemoryLimit();
@@ -805,7 +805,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onMessage error: %s", err ? err : "(unknown)"));
+			handler->writeError(string::f("onMessage error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 
@@ -828,7 +828,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onTrigger error: %s", err ? err : "(unknown)"));
+			handler->writeError(string::f("onTrigger error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 
@@ -855,7 +855,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("%s error: %s", name, err ? err : "(unknown)"));
+			handler->writeError(string::f("%s error: %s", name, err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 
@@ -883,7 +883,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onBroadcastRef);
 		if (!pushJsonAsLua(L, msg.value.get())) {
 			lua_pop(L, 1); // pop the function
-			handler->writeLog("onBroadcast: value could not be converted (ignored)");
+			handler->writeError("onBroadcast: value could not be converted (ignored)");
 			return;
 		}
 		if (msg.hasTopic) lua_pushlstring(L, msg.topic.data(), msg.topic.size());
@@ -895,7 +895,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onBroadcast error: %s", err ? err : "(unknown)"));
+			handler->writeError(string::f("onBroadcast error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 
@@ -916,7 +916,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
-			handler->writeLog(string::f("onTipsyMessage error: %s", err ? err : "(unknown)"));
+			handler->writeError(string::f("onTipsyMessage error: %s", err ? err : "(unknown)"));
 			lua_pop(L, 1); // pop error message
 		}
 
@@ -1020,7 +1020,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// a pattern; empty fields are kept ("a,,b" gives three); an empty sep gives
 		// the single bytes; no sep gives the whole string. Also callable as s:split(sep).
 		if (luaL_dostring(L, LUA_STRING_SPLIT_SOURCE) != LUA_OK) {
-			handler->writeLog("Error loading string.split", false);
+			handler->writeError("Error loading string.split");
 			lua_pop(L, 1);
 		}
 
@@ -1031,7 +1031,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			lua_setglobal(L, "json");
 		}
 		else {
-			handler->writeLog("Error loading json library", false);
+			handler->writeError("Error loading json library");
 			lua_pop(L, 1);
 		}
 
@@ -1370,7 +1370,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		assert(e->onWorkerThread());
 		const char* key = (lua_type(L, 1) == LUA_TSTRING) ? lua_tostring(L, 1) : nullptr;
 		if (!MidiScriptEngine::isValidConfigKey(key)) {
-			e->handler->writeLog(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			e->handler->writeError(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
 			lua_pushnil(L);
 			return 1;
 		}
@@ -1400,7 +1400,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		assert(e->onWorkerThread());
 		const char* key = (lua_type(L, 1) == LUA_TSTRING) ? lua_tostring(L, 1) : nullptr;
 		if (!MidiScriptEngine::isValidConfigKey(key)) {
-			e->handler->writeLog(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			e->handler->writeError(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
 			return 0;
 		}
 		// nil deletes the key — luaValueToJson(nil) would otherwise yield
@@ -1411,7 +1411,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		json_t* val = luaValueToJson(L, 2);
 		if (!val) {
-			e->handler->writeLog(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
+			e->handler->writeError(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
 			return 0;
 		}
 		// Enforce the total-size cap by trial: build what the config WOULD be,
@@ -1425,7 +1425,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (dump) free(dump);
 		json_decref(trial);
 		if (size > MidiScriptEngine::configMaxBytes) {
-			e->handler->writeLog(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
+			e->handler->writeError(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
 			json_decref(val);
 			return 0;
 		}
@@ -1447,7 +1447,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		bool hasTopic = false;
 		if (!lua_isnoneornil(L, 2)) {
 			if (lua_type(L, 2) != LUA_TSTRING) {
-				e->handler->writeLog("sendBroadcast: topic must be a string (ignored)");
+				e->handler->writeError("sendBroadcast: topic must be a string (ignored)");
 				lua_pushinteger(L, 0);
 				return 1;
 			}
@@ -1458,7 +1458,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 		json_t* val = luaValueToJson(L, 1);
 		if (!val) {
-			e->handler->writeLog("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
+			e->handler->writeError("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
 			lua_pushinteger(L, 0);
 			return 1;
 		}

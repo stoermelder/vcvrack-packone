@@ -636,15 +636,15 @@ struct MidiScriptEngine {
 		Requires req;
 		std::string error;
 		if (!parseRequires(it->second, req, error)) {
-			handler->writeLog("Script not loaded: " + error, false);
+			handler->writeError("Script not loaded: " + error);
 			return false;
 		}
 		if (req.params > paramCount) {
-			handler->writeLog(string::f("Script not loaded: it requires %d params, this module has %d", req.params, paramCount), false);
+			handler->writeError(string::f("Script not loaded: it requires %d params, this module has %d", req.params, paramCount));
 			return false;
 		}
 		if (req.messages > msgStoreMax) {
-			handler->writeLog(string::f("Script not loaded: @requires messages=%d exceeds the maximum of %d", req.messages, msgStoreMax), false);
+			handler->writeError(string::f("Script not loaded: @requires messages=%d exceeds the maximum of %d", req.messages, msgStoreMax));
 			return false;
 		}
 		sizeStore(req.messages);
@@ -693,7 +693,7 @@ struct MidiScriptEngine {
 	virtual void onBroadcastDropped() {
 		if (broadcastOverflowLogged) return;
 		broadcastOverflowLogged = true;
-		if (handler) handler->writeLog("Broadcast input queue full, message(s) dropped");
+		if (handler) handler->writeError("Broadcast input queue full, message(s) dropped");
 	}
 	bool broadcastOverflowLogged = false;
 
@@ -705,14 +705,14 @@ struct MidiScriptEngine {
 	int sendBroadcast(json_t* owned, const std::string* topic = nullptr) {
 		std::shared_ptr<json_t> value = ownJson(owned);
 		if (topic && topic->size() > broadcastTopicMaxBytes) {
-			handler->writeLog(string::f("sendBroadcast: topic exceeds %d bytes (ignored)", (int)broadcastTopicMaxBytes));
+			handler->writeError(string::f("sendBroadcast: topic exceeds %d bytes (ignored)", (int)broadcastTopicMaxBytes));
 			return 0;
 		}
 		char* dump = json_dumps(value.get(), JSON_COMPACT);
 		size_t size = dump ? strlen(dump) : 0;
 		if (dump) free(dump);
 		if (size > broadcastMaxBytes) {
-			handler->writeLog(string::f("sendBroadcast: message exceeds the %d KB limit (ignored)", (int)(broadcastMaxBytes / 1024)));
+			handler->writeError(string::f("sendBroadcast: message exceeds the %d KB limit (ignored)", (int)(broadcastMaxBytes / 1024)));
 			return 0;
 		}
 		if (!domain) return 0;

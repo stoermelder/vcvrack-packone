@@ -8,8 +8,7 @@
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
-#include "../../ui/ScriptEditor.hpp"
-#include "MidiScriptApiDoc.hpp"
+#include "MidiKitEditorHost.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../vcv/fs.hpp"
 #include "../../vcv/engine.hpp"
@@ -1122,6 +1121,9 @@ static std::shared_ptr<WorkerDomain> defaultDomain() {
 // load() and unload() run on the UI thread. Both hand the whole swap to the
 // worker as one task; unload() waits for it.
 struct ScriptHost {
+	// The module's log, for the error of a script no engine takes.
+	ScriptLog* log;
+
 	// The engine running the loaded script, or null. Written only by
 	// load()/unload().
 	MidiScript::MidiScriptEngine* activeEngine = nullptr;
@@ -1142,8 +1144,9 @@ struct ScriptHost {
 	sequence from it. A new module gets a random one, so two modules differ. */
 	uint32_t randomSeed = rack::random::u32();
 
-	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, const PortCounts& c, std::shared_ptr<WorkerDomain> domain = nullptr)
-		: seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
+	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, ScriptLog* log, const PortCounts& c, std::shared_ptr<WorkerDomain> domain = nullptr)
+		: log(log),
+		  seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
 		  seQuickJs(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
 		  domain(domain ? std::move(domain) : defaultDomain()) {
 		// The member: the parameter is moved from.
@@ -1241,11 +1244,15 @@ struct ScriptHost {
 
 		MidiScript::MidiScriptEngine* outgoing = engineToUnload(prev);
 		uint32_t seed = randomSeed;
-		runOnWorker([outgoing, next, src, configJson, seed]() {
+		runOnWorker([this, outgoing, next, src, configJson, seed]() {
 			outgoing->unloadScriptOnWorker();
 			if (next) {
 				next->seedRandom(seed);
 				next->loadScriptOnWorker(src.c_str(), configJson);
+			}
+			else if (!src.empty()) {
+				// After the unload, which resets the log.
+				this->log->pushError(0.f, "Script has no known @engine header (QuickJs@v1 or minilua@v1)");
 			}
 		});
 		activeEngine = next;
@@ -1632,16 +1639,24 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void writeLog(const std::string& text, bool useTimestamp = true) override {
 		if (useTimestamp) {
-			float sr = sampleRate.load(std::memory_order_relaxed);
-			int64_t frames = getTimingCurrentFrame() - scriptStartFrame.load(std::memory_order_relaxed);
-			log.pushTimestamped(sr != 0.f ? float(frames) / sr : 0.f, text, getTimingCurrentFrame(), true);
+			log.pushTextTimestamped(scriptTime(), text, getTimingCurrentFrame(), true);
 		}
 		else {
-			log.pushText(text, 0.f, true);
+			log.pushText(text, getTimingCurrentFrame(), true);
 		}
 	}
-
-	// MidiScriptEngineHandler
+	void writeLoad(const std::string& text) override {
+		log.pushLoad(scriptTime(), text, getTimingCurrentFrame());
+	}
+	void writeError(const std::string& text) override {
+		log.pushError(scriptTime(), text, getTimingCurrentFrame());
+	}
+	// Seconds since the script was loaded.
+	float scriptTime() {
+		float sr = sampleRate.load(std::memory_order_relaxed);
+		int64_t frames = getTimingCurrentFrame() - scriptStartFrame.load(std::memory_order_relaxed);
+		return sr != 0.f ? float(frames) / sr : 0.f;
+	}
 	void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) override {
 		log.pushOverlay(s1, s2, s3);
 	}
@@ -1848,23 +1863,23 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) override {
 		if (unloading) return true;
 		if (!mimeType || !data || dataBytes > MidiScript::tipsyMaxPayloadLength) {
-			writeLog("Tipsy: invalid parameters", false);
+			writeError("Tipsy: invalid parameters");
 			return false;
 		}
 		size_t mimeSize = strlen(mimeType);
 		// An empty mime type would be indistinguishable from a discard sentinel.
 		if (mimeSize == 0) {
-			writeLog("Tipsy: mime type must not be empty", false);
+			writeError("Tipsy: mime type must not be empty");
 			return false;
 		}
 		if (mimeSize + 1 > MidiScript::tipsyMaxMimeTypeSize) {
-			writeLog("Tipsy: mime type too long", false);
+			writeError("Tipsy: mime type too long");
 			return false;
 		}
 		// send() keeps the last slot free for the discard sentinel; a full queue
 		// is reported here so the drop is logged.
 		if (!tipsyOut.send(mimeType, data, dataBytes)) {
-			writeLog("Tipsy: pending queue full", false);
+			writeError("Tipsy: pending queue full");
 			return false;
 		}
 		return true;
@@ -1915,10 +1930,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				triggerOuts.applyVoltage(0, channel, f);
 				return true;
 			case TipsyOutput::Output::INIT_ERROR:
-				writeLog("Tipsy encoder error: " + std::to_string(tipsyOut.lastInitErrorCode), false);
+				writeError("Tipsy encoder error: " + std::to_string(tipsyOut.lastInitErrorCode));
 				return false;
 			case TipsyOutput::Output::ENCODE_ERROR:
-				writeLog("Tipsy encoding error", false);
+				writeError("Tipsy encoding error");
 				return false;
 			default: // IDLE
 				return false;
@@ -1962,7 +1977,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// `domain`: injected by tests; null runs scripts on the shared default domain
 	// (see ScriptHost).
 	explicit MidiKitModuleBase(std::shared_ptr<WorkerDomain> domain = nullptr)
-		: host(this, portCounts(), std::move(domain)) {
+		: host(this, &log, portCounts(), std::move(domain)) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// Wire the trigger ports into TriggerInputs/TriggerOutputs so they can
@@ -2533,63 +2548,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		BASE::onHoverKey(e);
 	}
 
-	// The script editor's view of this module: Apply loads the buffer like "Paste from
-	// clipboard" does, and the editor never touches `filename`. Owned by the editor
-	// dialog, which ~MidiKitWidgetBase() dismisses before the module can go away.
-	struct EditorHost : ui::editor::ScriptEditorHost {
-		MODULE* m;
-		// Weak: the editor can outlive the widget by the one frame its deletion takes.
-		WeakPtr<MidiKitWidgetBase> widget;
-		int logListenerId = -1;
-
-		EditorHost(MidiKitWidgetBase* w) : m(w->module), widget(w) {}
-		~EditorHost() {
-			detachLog();
-		}
-		void detachLog() {
-			if (widget && logListenerId >= 0) widget->logs.remove(logListenerId);
-			logListenerId = -1;
-		}
-		void attachLog(std::function<void(const std::string&)> append, std::function<void()> clear) override {
-			if (!widget) return;
-			// What the log display shows so far, oldest first (its buffer keeps the newest first).
-			for (auto it = widget->buffer.rbegin(); it != widget->buffer.rend(); ++it) {
-				append(formatLogEntry(*it, widget->logTimeMode()));
-			}
-			logListenerId = widget->logs.add([this, append, clear](const ScriptLog::Entry& s) {
-				if (std::get<0>(s) == LOG_FORMAT::RESET) clear();
-				else append(formatLogEntry(s, widget->logTimeMode()));
-			});
-		}
-		void onEditorClosed() override {
-			detachLog();
-		}
-		void apply(const std::string& text) override {
-			m->loadScriptKeepingConfig(text);
-		}
-		std::string runningScript() override {
-			return m->host.script;
-		}
-		std::string headerSuffix() override {
-			if (m->host.isQuickJsEngine()) return "QuickJs";
-			if (m->host.isLuaEngine()) return "Lua";
-			return "";
-		}
-		std::vector<ui::editor::scripttext::ApiGroup> apiReference() override {
-			return MidiScript::apiReference();
-		}
-		std::vector<ui::editor::scripttext::ScriptTemplate> templates() override {
-			return MidiScript::scriptTemplates();
-		}
-		// JavaScript for QuickJs, Lua otherwise.
-		ui::editor::scripttext::ScriptSyntax syntax() override {
-			if (m->host.isQuickJsEngine()) return ui::editor::scripttext::ScriptSyntax("//", ";");
-			return ui::editor::scripttext::ScriptSyntax("--", "");
-		}
-	};
-
 	// Opens the script editor on the applied script.
 	void openEditor() {
+		using EditorHost = MidiKitEditorHost<MidiKitWidgetBase>;
 		if (!module || editorOverlay) return;
 		editorOverlay = ui::editor::openScriptEditor(
 			module->host.script, std::unique_ptr<ui::editor::ScriptEditorHost>(new EditorHost(this)));

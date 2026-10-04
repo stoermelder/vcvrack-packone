@@ -910,7 +910,11 @@ struct ScriptEditorHost {
 	virtual ~ScriptEditorHost() {}
 
 	// Apply the buffer: make the owner run this text. Called for Apply and Apply & Close.
-	virtual void apply(const std::string& text) = 0;
+	// The owner loads asynchronously and calls `done(ok)` (when given) once the script has
+	// loaded (true) or failed to (false), from the UI thread. It never calls it for an
+	// apply that a later apply superseded. Apply & Close closes the editor on true only; on
+	// a failure the editor stays open, with the error in the log area.
+	virtual void apply(const std::string& text, std::function<void(bool)> done) = 0;
 
 	// The text the owner is running right now. Revert reloads the buffer from it.
 	virtual std::string runningScript() = 0;
@@ -1510,8 +1514,19 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 	}
 
 	void apply() {
+		applyText(nullptr);
+	}
+
+	// Closes once the script has loaded; a script that fails to load keeps the editor open.
+	void applyAndClose() {
+		applyText([this](bool ok) {
+			if (ok) close();
+		});
+	}
+
+	void applyText(std::function<void(bool)> done) {
 		std::string text = field->text;
-		if (host) host->apply(text);
+		if (host) host->apply(text, std::move(done));
 		baseline = text;
 		updateDirty();
 		focusField();
@@ -1526,11 +1541,6 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		field->lastCursor = -1;
 		updateDirty();
 		focusField();
-	}
-
-	void applyAndClose() {
-		apply();
-		close();
 	}
 
 	// Close through here from every user path: it asks before discarding edits.

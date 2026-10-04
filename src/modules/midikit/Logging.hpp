@@ -15,8 +15,10 @@ namespace MidiKit {
 
 enum class LOG_FORMAT {
 	RESET,
-	TIMESTAMP,
-	TEXT
+	TEXT,
+	TEXT_WO_TS,
+	LOAD,    // the script loaded
+	ERROR    // the script failed to load; the editor listens for LOAD and ERROR
 };
 
 // What the log display puts in front of a timestamped line.
@@ -185,22 +187,27 @@ struct ScriptLog {
 		return midiLogMessages.try_pop(entry);
 	}
 
-	// Plain text line. The timestamp is not displayed.
+	// Plain text line from a producer without a script clock; displayed without
+	// a timestamp.
 	void pushText(const std::string& text, float timestamp = 0.f, bool collapseRepeats = false) {
-		push(LOG_FORMAT::TEXT, timestamp, text, 0, collapseRepeats);
+		push(LOG_FORMAT::TEXT_WO_TS, timestamp, text, 0, collapseRepeats);
 	}
-
-	// The "… repeated N×" line, if n > 0.
-	void pushRepeats(int n) {
-		if (n > 0) midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, string::f("… repeated %d×", n), int64_t(0)));
-	}
-
 	// Line prefixed with the timestamp (seconds since the script loaded) or the
 	// engine frame, as the display is set to.
-	void pushTimestamped(float timestamp, const std::string& text, int64_t frame = 0, bool collapseRepeats = false) {
-		push(LOG_FORMAT::TIMESTAMP, timestamp, text, frame, collapseRepeats);
+	void pushTextTimestamped(float timestamp, const std::string& text, int64_t frame = 0, bool collapseRepeats = false) {
+		push(LOG_FORMAT::TEXT, timestamp, text, frame, collapseRepeats);
 	}
-
+	// The "… repeated N×" line, if n > 0.
+	void pushRepeats(int n) {
+		if (n > 0) midiLogMessages.try_push(std::make_tuple(LOG_FORMAT::TEXT_WO_TS, 0.f, string::f("… repeated %d×", n), int64_t(0)));
+	}
+	// Worker: the outcome of a script load, which the editor waits for.
+	void pushLoad(float timestamp, const std::string& text, int64_t frame = 0) {
+		push(LOG_FORMAT::LOAD, timestamp, text, frame, true);
+	}
+	void pushError(float timestamp, const std::string& text, int64_t frame = 0) {
+		push(LOG_FORMAT::ERROR, timestamp, text, frame, true);
+	}
 	// Marks a script load/reset; the widget clears its display on it.
 	void pushReset() {
 		push(LOG_FORMAT::RESET, 0.f, std::string(""));
@@ -220,13 +227,15 @@ struct ScriptLog {
 static std::string formatLogEntry(const ScriptLog::Entry& s, LOG_TIME time = LOG_TIME::TIMESTAMP) {
 	const std::string& text = std::get<2>(s);
 	switch (std::get<0>(s)) {
-		case LOG_FORMAT::TIMESTAMP:
+		case LOG_FORMAT::TEXT:
 			switch (time) {
 				case LOG_TIME::FRAME: return string::f("[%9" PRId64 "] %s", std::get<3>(s), text.c_str());
 				case LOG_TIME::OFF: return text;
 				default: return string::f("[%9.4f] %s", std::get<1>(s), text.c_str());
 			}
-		case LOG_FORMAT::TEXT:
+		case LOG_FORMAT::LOAD:
+		case LOG_FORMAT::ERROR:
+		case LOG_FORMAT::TEXT_WO_TS:
 			return text;
 		default:
 			return "";

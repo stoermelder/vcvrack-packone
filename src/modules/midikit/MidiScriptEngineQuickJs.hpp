@@ -209,7 +209,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 
 		if (topics.find("engine") == topics.end() || topics["engine"] != "QuickJs@v1") {
-			handler->writeLog("Script is not compatible with MIDI-KIT", false);
+			handler->writeError("Script is not compatible with MIDI-KIT");
 			return;
 		}
 
@@ -241,11 +241,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, exc);
 			// Logged after the close, which resets the log.
 			unloadScriptOnWorker();
-			handler->writeLog(string::f("Error loading script: %s", message.c_str()), false);
+			handler->writeError(string::f("Error loading script: %s", message.c_str()));
 		}
 		else {
 			JS_FreeValue(ctx, r);
-			handler->writeLog("Script loaded", false);
+			handler->writeLoad("Script loaded");
 
 			// Callbacks live on the predefined objects, not the global scope.
 			// rack holds onLoad/onUnload; the midi object holds onMessage (the
@@ -385,7 +385,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onLoad error: %s", formatError(exc).c_str()));
+			handler->writeError(string::f("onLoad error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -410,7 +410,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onUnload error: %s", formatError(exc).c_str()));
+			handler->writeError(string::f("onUnload error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 			return JS_UNDEFINED;
 		}
@@ -448,7 +448,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onMessage error: %s", formatError(exc).c_str()));
+					handler->writeError(string::f("onMessage error: %s", formatError(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -481,7 +481,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("%s error: %s", name, formatError(exc).c_str()));
+			handler->writeError(string::f("%s error: %s", name, formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -513,7 +513,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
 				JSValue exc = JS_GetException(ctx);
-				handler->writeLog(string::f("onTrigger error: %s", formatError(exc).c_str()));
+				handler->writeError(string::f("onTrigger error: %s", formatError(exc).c_str()));
 				JS_FreeValue(ctx, exc);
 			}
 			else {
@@ -544,7 +544,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onBroadcast error: %s", formatError(exc).c_str()));
+			handler->writeError(string::f("onBroadcast error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -571,7 +571,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onTipsyMessage error: %s", formatError(exc).c_str()));
+					handler->writeError(string::f("onTipsyMessage error: %s", formatError(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -675,7 +675,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					if (JS_IsException(r)) {
 						JS_FreeValue(ctx, r);
 						JSValue exc = JS_GetException(ctx);
-						handler->writeLog(string::f("Context menu error: %s", formatError(exc).c_str()));
+						handler->writeError(string::f("Context menu error: %s", formatError(exc).c_str()));
 						JS_FreeValue(ctx, exc);
 					}
 					else {
@@ -742,7 +742,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
 				JSValue exc = JS_GetException(ctx);
-				handler->writeLog(string::f("Context menu callback error: %s", formatError(exc).c_str()));
+				handler->writeError(string::f("Context menu callback error: %s", formatError(exc).c_str()));
 				JS_FreeValue(ctx, exc);
 			}
 			else {
@@ -1268,7 +1268,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			key = keyStr.c_str();
 		}
 		if (!MidiScriptEngine::isValidConfigKey(key)) {
-			e->handler->writeLog(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			e->handler->writeError(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
 			return JS_UNDEFINED;
 		}
 		json_t* val = e->getConfigValue(key);
@@ -1295,7 +1295,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			key = keyStr.c_str();
 		}
 		if (!MidiScriptEngine::isValidConfigKey(key)) {
-			e->handler->writeLog(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			e->handler->writeError(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
 			return JS_UNDEFINED;
 		}
 		// undefined deletes the key — jsValueToJson(undefined) would otherwise
@@ -1307,7 +1307,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		json_t* val = jsValueToJson(ctx, argv[1]);
 		if (!val) {
-			e->handler->writeLog(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
+			e->handler->writeError(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
 			return JS_UNDEFINED;
 		}
 		// Enforce the total-size cap by trial: build what the config WOULD be,
@@ -1321,7 +1321,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (dump) free(dump);
 		json_decref(trial);
 		if (size > MidiScriptEngine::configMaxBytes) {
-			e->handler->writeLog(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
+			e->handler->writeError(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
 			json_decref(val);
 			return JS_UNDEFINED;
 		}
@@ -1342,7 +1342,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		bool hasTopic = false;
 		if (argc >= 2 && !JS_IsUndefined(argv[1])) {
 			if (!JS_IsString(argv[1])) {
-				e->handler->writeLog("sendBroadcast: topic must be a string (ignored)");
+				e->handler->writeError("sendBroadcast: topic must be a string (ignored)");
 				return JS_NewInt32(ctx, 0);
 			}
 			topic = e->jsToStdString(argv[1]);
@@ -1350,7 +1350,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		json_t* val = jsValueToJson(ctx, argv[0]);
 		if (!val) {
-			e->handler->writeLog("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
+			e->handler->writeError("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
 			return JS_NewInt32(ctx, 0);
 		}
 		return JS_NewInt32(ctx, e->sendBroadcast(val, hasTopic ? &topic : nullptr)); // takes ownership of val

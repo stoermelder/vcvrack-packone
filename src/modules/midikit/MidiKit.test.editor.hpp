@@ -159,17 +159,61 @@ TEST_CASE("Editor: Ctrl+Enter applies the buffer and keeps the editor open", "[M
 }
 
 TEST_CASE("Editor: Ctrl+Shift+Enter applies and closes without asking", "[MidiKit][Editor]") {
-	EditorRig h;
+	EditorRig h(EditorRig::SyncWorker);
 	MidiKitModule* m = h.m;
 	MidiKitWidget* mw = h.mw;
 	EditorMock mock;
 
 	OpenEditor e = openEditorOn(h, mw);
-	h.events().type("log(2);");
+	const std::string script = "/**\n * @engine QuickJs@v1\n */\nrack.log(\"2\");\n";
+	e.field->setText(script);
 	REQUIRE(h.events().keyPress(GLFW_KEY_ENTER, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
-	REQUIRE(m->host.script == "log(2);");
+	REQUIRE(m->host.script == script);
+	// It closes once the script has loaded, which the widget learns from the log.
+	h.dspStep();
+	h.uiFrames(2);
 	REQUIRE(e.overlay->requestedDelete);
 	REQUIRE(mock.ui.messages.empty());
+}
+
+TEST_CASE("Editor: Apply & Close keeps the editor open when the script fails to load", "[MidiKit][Editor]") {
+	EditorRig h(EditorRig::SyncWorker);
+	MidiKitModule* m = h.m;
+	OpenEditor e = openEditorOn(h, h.mw);
+
+	SECTION("a script error") {
+		e.field->setText("/**\n * @engine QuickJs@v1\n */\nthis is not javascript(\n");
+	}
+	SECTION("a script no engine takes") {
+		e.field->setText("rack.log(\"no header\");\n");
+	}
+	SECTION("a Lua error") {
+		e.field->setText("/**\n * @engine minilua@v1\n */\nthis is not lua(\n");
+	}
+	e.dialog->applyAndClose();
+	h.dspStep();
+	h.uiFrames(2);
+	REQUIRE_FALSE(e.overlay->requestedDelete);
+	REQUIRE(m->host.script == e.field->text);   // still the module's script
+	REQUIRE_FALSE(e.dialog->logPanel->view->lines.empty());
+
+	// Fixed and applied again: it closes.
+	e.field->setText("/**\n * @engine QuickJs@v1\n */\nrack.log(\"ok\");\n");
+	e.dialog->applyAndClose();
+	h.dspStep();
+	h.uiFrames(2);
+	REQUIRE(e.overlay->requestedDelete);
+}
+
+TEST_CASE("Editor: Apply & Close of an empty script closes", "[MidiKit][Editor]") {
+	EditorRig h(EditorRig::SyncWorker);
+	OpenEditor e = openEditorOn(h, h.mw);
+
+	e.field->setText("");
+	e.dialog->applyAndClose();
+	h.dspStep();
+	h.uiFrames(2);
+	REQUIRE(e.overlay->requestedDelete);
 }
 
 TEST_CASE("Editor: closing with unapplied changes asks, and 'no' keeps the text", "[MidiKit][Editor]") {
