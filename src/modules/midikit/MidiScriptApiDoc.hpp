@@ -150,8 +150,8 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("setValue", kSetters, {{"msg", MSG}, {"value", "data byte 0-127, on an NRPN, RPN or 14-bit CC handle the combined value 0-16383"}}),
 
 		ApiFunction("enablePorts", "", {{"n", "deliver MIDI inputs 1-n, n is 1-4"}}),
-		ApiFunction("enableNrpnIn", kExtended, {{"midiPort", PORT}, {"channel", CHANNEL_OPT, true}}),
-		ApiFunction("enableRpnIn", kExtended, {{"midiPort", PORT}, {"channel", CHANNEL_OPT, true}}),
+		ApiFunction("enableNrpnIn", kExtended, {{"midiPort", PORT}, {"channel", CHANNEL_OPT, true}, {"dataEntry", "\"lsb\" (default) fires on CC 38, \"msb\" also on CC 6 for 7-bit devices", true}}),
+		ApiFunction("enableRpnIn", kExtended, {{"midiPort", PORT}, {"channel", CHANNEL_OPT, true}, {"dataEntry", "\"lsb\" (default) fires on CC 38, \"msb\" also on CC 6 for 7-bit devices", true}}),
 		ApiFunction("enableCc14bitIn", kExtended, {{"midiPort", PORT}, {"cc", "MSB controller 0-31, default all", true}, {"channel", CHANNEL_OPT, true}}),
 	}));
 

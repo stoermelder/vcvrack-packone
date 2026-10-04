@@ -30,8 +30,19 @@ local config = {
     },
 
     -- Optional: CC channel (1-16, default: 1)
-    ccChannel = rack.getConfig("ccChannel", 1)
+    ccChannel = rack.getConfig("ccChannel", 1),
+
+    -- Optional: the device sends 7-bit NRPN (99, 98, 6 without CC 38)
+    sevenBit = rack.getConfig("sevenBit", false)
 }
+
+-- Assemble NRPN parameter changes on MIDI input port 1 into midi.onNrpn. In
+-- "msb" mode a change also fires on CC 6, for devices that never send CC 38. A
+-- device that sends both then fires twice per change (coarse value, then the
+-- real one). Calling it again switches the mode, for all channels.
+local function enableInput()
+    midi.enableNrpnIn(1, nil, config.sevenBit and "msb" or "lsb")
+end
 
 -- Context menu choices
 local CHANNEL_LABELS = {}
@@ -67,8 +78,21 @@ rack.onLoad = function()
         end
     })
 
-    -- Assemble NRPN parameter changes on MIDI input port 1 into midi.onNrpn.
-    midi.enableNrpnIn(1)
+    rack.registerContextMenu({
+        type = "boolean",
+        label = "Device sends 7-bit NRPN",
+        onGetValue = function()
+            return config.sevenBit
+        end,
+        onChange = function(checked)
+            config.sevenBit = checked
+            rack.setConfig("sevenBit", checked)
+            enableInput()
+            rack.log("7-bit NRPN: ", checked)
+        end
+    })
+
+    enableInput()
 
     rack.log("NRPN to CC converter initialized")
     rack.log("Mapped NRPN numbers: ", #config.map)

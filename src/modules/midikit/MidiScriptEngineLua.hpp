@@ -2345,9 +2345,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// Shared by midi.enableNrpnIn() and midi.enableRpnIn(): both take the same
 	// arguments and differ only in which kind they arm.
 	static int luaEnableParamIn(lua_State* L, int kind, const char* name) {
-		// midi.enableNrpnIn(midiPort [, channel]) / midi.enableRpnIn(...)
-		//   midiPort: 1-based; channel: 1-based MIDI channel, omitted = all.
+		// midi.enableNrpnIn(midiPort [, channel] [, dataEntry]) / midi.enableRpnIn(...)
+		//   midiPort: 1-based; channel: 1-based MIDI channel, omitted/nil = all;
+		//   dataEntry: "lsb" (default, fire on CC 38) or "msb" (also fire on CC 6).
+		// Every check comes before the handler call (luaL_error longjmps).
 		auto* e = getEngine(L);
+		if (lua_gettop(L) > 3) return luaL_error(L, "%s: bad args", name);
 		int midiPort = static_cast<int>(luaL_checkinteger(L, 1));
 		if (midiPort < 1 || midiPort > e->midiInputCount) {
 			return luaL_error(L, "%s: midiPort out of range", name);
@@ -2360,7 +2363,15 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			}
 			channel -= 1;
 		}
-		e->handler->enableNrpnIn(midiPort - 1, kind, channel);
+		bool msbDataEntry = false;
+		if (lua_gettop(L) >= 3 && !lua_isnil(L, 3)) {
+			std::string mode = luaL_checkstring(L, 3);
+			if (mode != "lsb" && mode != "msb") {
+				return luaL_error(L, "%s: dataEntry must be \"lsb\" or \"msb\"", name);
+			}
+			msbDataEntry = mode == "msb";
+		}
+		e->handler->enableNrpnIn(midiPort - 1, kind, channel, msbDataEntry);
 		return 0;
 	}
 

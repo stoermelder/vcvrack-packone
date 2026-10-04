@@ -51,8 +51,11 @@ struct MidiScriptEngineHandler {
 	// Assembles NRPN (kind 0) or RPN (kind 1) on midiPort into midi.onNrpn/onRpn.
 	// channel is 0-based, -1 for all. While enabled, the component CCs
 	// (98-101, and 6/38 while a parameter is armed) no longer reach midi.onMessage.
-	// Worker thread.
-	virtual void enableNrpnIn(int midiPort, int kind, int channel) = 0;
+	// msbDataEntry: the device sends 7-bit data entry, so CC 6 fires an event of
+	// its own (with the coarse value) instead of only CC 38. It is set for the
+	// channels named, so the last call for a channel decides its mode; false is
+	// the default, "fire on CC 38". Worker thread.
+	virtual void enableNrpnIn(int midiPort, int kind, int channel, bool msbDataEntry = false) = 0;
 
 	// Assembles 14-bit CC on midiPort for MSB controller `cc` (0-31, LSB is
 	// cc + 32), or all of them when cc < 0. channel is 0-based, -1 for all. Both

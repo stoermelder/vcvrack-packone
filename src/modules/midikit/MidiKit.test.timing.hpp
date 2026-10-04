@@ -2362,3 +2362,104 @@ midi.onNrpn = function(port, msg) midiOut.cancel(msg) end
 		}
 	}
 }
+
+
+// ── Round trip: what a script creates, a second MIDI-KIT receives ───────────
+// Addendum B made received and created groups the same shape; this feeds a
+// created group's wire bytes into a receiving module's decoder, so the two ends
+// have to agree on the numbers. Open cases carry [decoder-gap].
+
+struct RoundTrip {
+	const char* name;
+	const char* create;   // JS statements creating `h`; also valid Lua apart from `let`
+	const char* enable;   // the receiver's enable call
+	const char* hook;
+	std::string expected; // control:value the receiver logs
+};
+
+static std::vector<std::string> roundTripProbes(const std::string& sendScript, const RoundTrip& rt, bool lua) {
+	TimingRig sender(sendScript.c_str());
+	sender.inject(noteOn(0, 60, 100), 8);
+	sender.run(100);
+	REQUIRE_FALSE(sender.rec.sent.empty());
+
+	std::string recv = lua
+		? std::string("--[[\n@engine minilua@v1\n--]]\nmidi.") + rt.enable + "(1)\nmidi." + rt.hook + " = function(port, msg) rack.log('P:' .. midi.getControl(msg) .. ':' .. midi.getValue(msg)) end\n"
+		: std::string("/**\n * @engine QuickJs@v1\n */\nmidi.") + rt.enable + "(1);\nmidi." + rt.hook + " = function(port, msg) { rack.log('P:' + midi.getControl(msg) + ':' + midi.getValue(msg)); };\n";
+	TimingRig receiver(recv.c_str());
+	for (const TimingRecorder::Sent& s : sender.rec.sent) {
+		receiver.inject(Test::makeMidiMessage(s.status, s.channel, s.note, s.value), 8);
+	}
+	receiver.run(100);
+
+	std::vector<std::string> probes;
+	std::string log = drainLog(receiver.m);
+	size_t pos = 0;
+	while (pos < log.size()) {
+		size_t nl = log.find('\n', pos);
+		if (nl == std::string::npos) break;
+		if (log.compare(pos, 2, "P:") == 0) probes.push_back(log.substr(pos + 2, nl - pos - 2));
+		pos = nl + 1;
+	}
+	return probes;
+}
+
+TEST_CASE("Round trip: a created group is received as the same number and value", "[MidiKit][MidiProcessor][decoder-gap][timing]") {
+	std::vector<RoundTrip> cases = {
+		{ "NRPN", "const h = midi.createNRPN(); midi.setNRPN(h, 2, 300, 1000);", "enableNrpnIn", "onNrpn", "300:1000" },
+		{ "NRPN value 0", "const h = midi.createNRPN(); midi.setNRPN(h, 2, 300, 0);", "enableNrpnIn", "onNrpn", "300:0" },
+		{ "NRPN max", "const h = midi.createNRPN(); midi.setNRPN(h, 2, 16383, 16383);", "enableNrpnIn", "onNrpn", "16383:16383" },
+		{ "RPN", "const h = midi.createRPN(); midi.setRPN(h, 2, 300, 1000);", "enableRpnIn", "onRpn", "300:1000" },
+		{ "RPN 16383 (the null)", "const h = midi.createRPN(); midi.setRPN(h, 2, 16383, 1000);", "enableRpnIn", "onRpn", "16383:1000" },
+		{ "14-bit", "const h = midi.createCc14bit(); midi.setCc14bit(h, 2, 7, 1000);", "enableCc14bitIn", "onCc14bit", "7:1000" },
+		{ "14-bit below 128", "const h = midi.createCc14bit(); midi.setCc14bit(h, 2, 7, 100);", "enableCc14bitIn", "onCc14bit", "7:100" },
+		{ "14-bit zero", "const h = midi.createCc14bit(); midi.setCc14bit(h, 2, 7, 0);", "enableCc14bitIn", "onCc14bit", "7:0" },
+	};
+	for (const RoundTrip& rt : cases) {
+		for (bool lua : { false, true }) {
+			CATCH_INFO(std::string(rt.name) + (lua ? " lua" : " js"));
+			std::string create = rt.create;
+			if (lua) {
+				// The same statements in Lua.
+				size_t at;
+				while ((at = create.find("const ")) != std::string::npos) create.replace(at, 6, "local ");
+				while ((at = create.find(";")) != std::string::npos) create.replace(at, 1, "");
+			}
+			std::string script = lua
+				? std::string("--[[\n@engine minilua@v1\n--]]\nmidi.onMessage = function(port, msg)\n" + create + "\nmidiOut.send(h)\nend\n")
+				: std::string("/**\n * @engine QuickJs@v1\n */\nmidi.onMessage = function(port, msg) {\n" + create + "\nmidiOut.send(h);\n};\n");
+			REQUIRE(roundTripProbes(script, rt, lua) == std::vector<std::string>({ rt.expected }));
+		}
+	}
+}
+
+
+TEST_CASE("Received group: forwarding an MSB-only change sends the whole group with CC 38 = 0", "[MidiKit][cc][timing]") {
+	// A 7-bit device (99, 98, 6) in msb mode. The forward carries what B.2 rebuilds:
+	// a complete group, with the missing LSB as 0.
+	for (bool lua : { false, true }) {
+		for (const char* hook : { "onNrpn", "onRpn" }) {
+			bool rpn = std::string(hook) == "onRpn";
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + hook);
+			std::string enable = std::string(rpn ? "midi.enableRpnIn(1, null, \"msb\")" : "midi.enableNrpnIn(1, null, \"msb\")");
+			std::string script;
+			if (lua) {
+				size_t at = enable.find("null");
+				enable.replace(at, 4, "nil");
+				script = "--[[\n@engine minilua@v1\n--]]\n" + enable + "\nmidi." + hook + " = function(port, msg) midiOut.send(msg) end\n";
+			}
+			else {
+				script = "/**\n * @engine QuickJs@v1\n */\n" + enable + ";\nmidi." + hook + " = function(port, msg) { midiOut.send(msg); };\n";
+			}
+			TimingRig rig(script.c_str());
+			int sel = rpn ? 101 : 99;
+			rig.inject(Test::makeMidiMessage(0xb, 0, sel, 0), 8);
+			rig.inject(Test::makeMidiMessage(0xb, 0, sel - 1, 5), 8);
+			rig.inject(Test::makeMidiMessage(0xb, 0, 6, 64), 8);
+			rig.run(100);
+
+			REQUIRE(sentNotes(rig.rec) == std::vector<int>({ sel, sel - 1, 6, 38 }));
+			REQUIRE(sentValues(rig.rec) == std::vector<int>({ 0, 5, 64, 0 }));
+		}
+	}
+}

@@ -187,6 +187,19 @@ static std::vector<OutEvent> feedDecodedCollect(MidiKitModule* m, midi::Message 
 }
 
 
+// Feeds a raw message through the module's real input stage: the queue, the
+// per-port decoder with the script's enables and data entry mode (which
+// midiIns.process() copies into the decoder), and the dispatch to the script.
+// Unlike feedDecoded() this honours midi.enableNrpnIn()'s dataEntry argument.
+// Drains the out-queue.
+static std::vector<OutEvent> feedPumpedCollect(MidiKitModule* m, midi::Message msg) {
+	m->midiIns.ports[0].processor.getInput().onMessage(msg);
+	m->midiIns.process(0);
+	m->host.getActiveEngine()->process();
+	return drainOut(m);
+}
+
+
 // Preset metadata.
 //
 // PRESETS[] is the single table every behavioural preset is listed in: its
@@ -2707,6 +2720,80 @@ TEST_CASE("'NRPN to CC (assembled).js/.lua' converts a mapped NRPN to a 14-bit C
 	feedDecoded(m, cc(1, 6, 64));
 	auto ev = feedDecodedCollect(m, cc(1, 38, 0));
 	REQUIRE(ev == std::vector<OutEvent>{{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 0, 0}});
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("'NRPN to CC (assembled).js/.lua' switches the data entry mode from its menu", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(presetPaths("NRPN to CC (assembled)"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	auto& ext = m->midiIns.ports[0].extendedCc;
+
+	std::vector<ScriptMenuItem> specs;
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
+	REQUIRE(specs.size() == 2);
+	REQUIRE(specs[0].label == "CC channel");
+	REQUIRE(specs[1].label == "Device sends 7-bit NRPN");
+
+	// Off by default: NRPN is enabled in "lsb" mode, on every channel.
+	REQUIRE(m->midiIns.isNrpnEnabled(0, false));
+	REQUIRE(ext.msbDataEntryNrpnMask.load() == 0);
+
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 1);
+	drainLog(m);
+	REQUIRE(m->midiIns.isNrpnEnabled(0, false));
+	REQUIRE(ext.msbDataEntryNrpnMask.load() == 0xFFFF);
+
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 0);
+	drainLog(m);
+	REQUIRE(ext.msbDataEntryNrpnMask.load() == 0);
+
+	Test::destroyModule(m);
+}
+
+// End to end through the input stage, for both settings of the menu item. NRPN 1
+// (MSB 0, LSB 1) is mapped to CC 1; the value 8192 is CC 6 = 64, CC 38 = 0.
+TEST_CASE("'NRPN to CC (assembled).js/.lua' converts a 7-bit NRPN only with the menu item on", "[MidiKit][NRPN]") {
+	std::string path = GENERATE(presetPaths("NRPN to CC (assembled)"));
+	CATCH_INFO("preset: " << path);
+
+	MidiKitModule* m = loadPreset(path);
+	std::vector<ScriptMenuItem> specs;
+	m->host.getActiveEngine()->getContextMenus([&specs](const std::vector<ScriptMenuItem>& s) { specs = s; });
+	m->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
+	REQUIRE(specs.size() == 2);
+	std::vector<OutEvent> pair = {{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 0, 0}};
+
+	// Off (the default, "lsb"): 99, 98, 6 is not a complete change, CC 6 alone fires nothing.
+	REQUIRE(feedPumpedCollect(m, cc(1, 99, 0)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 98, 1)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 6, 64)).empty());
+	// A new select and a full data entry convert on CC 38 only.
+	REQUIRE(feedPumpedCollect(m, cc(1, 99, 0)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 98, 1)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 6, 64)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 38, 0)) == pair);
+
+	// On ("msb"): the same 7-bit write converts on CC 6.
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 1);
+	drainLog(m);
+	REQUIRE(feedPumpedCollect(m, cc(1, 99, 0)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 98, 1)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 6, 64)) == pair);
+	// The value changes with CC 6 alone, on the selected parameter.
+	REQUIRE(feedPumpedCollect(m, cc(1, 6, 65)) == (std::vector<OutEvent>{{0xb, 0, 1, 65, 0}, {0xb, 0, 33, 0, 0}}));
+	// A full write fires twice: the coarse value, then the real one.
+	REQUIRE(feedPumpedCollect(m, cc(1, 6, 64)) == pair);
+	REQUIRE(feedPumpedCollect(m, cc(1, 38, 3)) == (std::vector<OutEvent>{{0xb, 0, 1, 64, 0}, {0xb, 0, 33, 3, 0}}));
+
+	// Off again: CC 6 alone fires nothing.
+	m->host.getActiveEngine()->invokeContextMenuCallback(specs[1].callbackId, 0);
+	drainLog(m);
+	REQUIRE(feedPumpedCollect(m, cc(1, 6, 70)).empty());
+	REQUIRE(feedPumpedCollect(m, cc(1, 38, 0)) == (std::vector<OutEvent>{{0xb, 0, 1, 70, 0}, {0xb, 0, 33, 0, 0}}));
 
 	Test::destroyModule(m);
 }

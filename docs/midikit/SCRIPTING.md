@@ -645,7 +645,7 @@ rack.registerContextMenu({
 
 ### Assemble NRPN input
 
-This is the assembled-input alternative to the manual "Send NRPN message"-style examples: instead of constructing an NRPN from parts, the module reassembles a spec-compliant NRPN write (CC 99/98 = parameter select, then CC 6/38 = data entry) into a single parameter change and delivers it to `midi.onNrpn`. Enable it with `midi.enableNrpnIn(midiPort [, channel])`. While NRPN input is enabled, the component CCs it is assembled from no longer reach `midi.onMessage` — they are consumed by the assembler. The example reads the NRPN number with `midi.getControl(msg)` and the combined 14-bit value with `midi.getValue(msg)`, looks the number up in a small `config.map`, and forwards the change as an atomic 14-bit CC pair with `midi.createCc14bit()` + `midi.setCc14bit()` + `midiOut.send()`.
+This is the assembled-input alternative to the manual "Send NRPN message"-style examples: instead of constructing an NRPN from parts, the module reassembles a spec-compliant NRPN write (CC 99/98 = parameter select, then CC 6/38 = data entry) into a single parameter change and delivers it to `midi.onNrpn`. Enable it with `midi.enableNrpnIn(midiPort [, channel])` (a device that sends 7-bit NRPN needs the `"msb"` data entry mode, see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)). While NRPN input is enabled, the component CCs it is assembled from no longer reach `midi.onMessage` — they are consumed by the assembler. The example reads the NRPN number with `midi.getControl(msg)` and the combined 14-bit value with `midi.getValue(msg)`, looks the number up in a small `config.map`, and forwards the change as an atomic 14-bit CC pair with `midi.createCc14bit()` + `midi.setCc14bit()` + `midiOut.send()`.
 
 JavaScript:
 ```js
@@ -721,7 +721,7 @@ midi.onNrpn = function(midiPort, msg)
 end
 ```
 
-**Note:** The shipped preset `NRPN to CC (assembled)` is this script with a context-menu channel selector added — see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc) for the full rules.
+**Note:** The shipped preset `NRPN to CC (assembled)` is this script with a context-menu channel selector and a "Device sends 7-bit NRPN" toggle (it calls `midi.enableNrpnIn(1, null, on ? "msb" : "lsb")`) added — see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc) for the full rules.
 
 
 ### Broadcast a transport to other modules
@@ -1354,8 +1354,8 @@ can be passed straight on — see the `NRPN to CC` preset
 
 | Function | Effect |
 | --- | --- |
-| `midi.enableNrpnIn(midiPort [, channel])` | assemble NRPN (kind 0) parameter changes on `midiPort` into `midi.onNrpn` calls. `channel` is 1-based (default: all) |
-| `midi.enableRpnIn(midiPort [, channel])` | same, for RPN (kind 1) into `midi.onRpn` |
+| `midi.enableNrpnIn(midiPort [, channel] [, dataEntry])` | assemble NRPN (kind 0) parameter changes on `midiPort` into `midi.onNrpn` calls. `channel` is 1-based (default: all, or `nil` / `null` to give `dataEntry` for all channels). `dataEntry` is `"lsb"` (default) or `"msb"`, see Data entry MSB vs LSB below |
+| `midi.enableRpnIn(midiPort [, channel] [, dataEntry])` | same, for RPN (kind 1) into `midi.onRpn` |
 | `midi.enableCc14bitIn(midiPort [, cc] [, channel])` | assemble 14-bit CC pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every 14-bit CC |
 | `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` / `midi.onCc14bit(midiPort, msg)` | called once per completed, enabled parameter change, with `msg` a group handle (see [Group handles](#setters)) read through the usual accessors |
 | `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` | true for a received message of that kind, and for a handle created with `midi.createNRPN()`, `createRPN()` or `createCc14bit()`; useful when a handle is passed to a helper or inspected later — redundant inside the matching callback, but makes the handle self-describing |
@@ -1390,18 +1390,43 @@ Once a kind is enabled, the CCs it is built from stop reaching `midi.onMessage`.
   14-bit CC still sees CC 98/99 (NRPN parameter select) raw, because it did
   not enable NRPN.
 - **Parameter select fires nothing.** A parameter *select* (CC 99/98 or
-  101/100 without a following data entry) fires no callback; only the
-  completed change (data entry CC 6/38) does. The RPN 127/127 reset likewise.
+  101/100 without a following data entry) fires no callback; only a data
+  entry does: CC 38 by default, and also CC 6 in `"msb"` mode (see below).
+  The RPN 127/127 reset fires nothing either.
+- **Data entry MSB vs LSB.** `midi.enableNrpnIn()` and `midi.enableRpnIn()` take
+  a `dataEntry` argument that says when a change fires:
+  - `"lsb"` (the default): on CC 38, with `msb << 7 | lsb` (a CC 38 with no CC 6
+    before it gives just the LSB). A CC 6 only stores the MSB. This suits devices
+    that always send CC 38 last.
+  - `"msb"`: also on CC 6, with `msb << 7` (the LSB reads as 0, as after any new
+    MSB). This suits 7-bit devices (`99, 98, 6` with no CC 38) and devices that
+    change the coarse value with CC 6 alone. A device that sends the full `6, 38`
+    now fires twice per change, first the coarse value and then the real one, so
+    a script that forwards each event sends both groups.
+
+  The value is on the same 0-16383 scale in both modes, so a 7-bit script reads
+  `midi.getValue(msg) >> 7`. Each call sets the mode for the channels it names,
+  and an omitted `dataEntry` means `"lsb"`, so the last call for a channel
+  decides. Pass `nil` (Lua) or `null` (JS) as `channel` to give `dataEntry` for
+  all channels: `midi.enableNrpnIn(1, null, "msb")`. Any other value is an error.
+  A script may call it again later (from a context-menu item, say) to switch
+  modes; it applies from the next CC 6. Like the enables, the mode belongs to the
+  script: a reload or a module reset brings every port back to `"lsb"`. CC 6
+  stays withheld from `midi.onMessage` in both modes while a parameter is armed.
+  CC 38 sent before CC 6 and data increment/decrement (CC 96/97) are not
+  supported in either mode.
 - **CC 6/38 overlap.** CC 0-31 are simultaneously 14-bit MSBs and, for CC 6,
   Data Entry MSB — the spec's ranges overlap. So with blanket 14-bit CC *and*
   NRPN enabled, CC 6/38 are consumed as a 14-bit pair (they *are* one by the
   spec's numbering) and a data entry can fire both `onCc14bit` and `onNrpn`.
   This is accepted behaviour, not a bug; register per-CC with
   `midi.enableCc14bitIn(midiPort, cc)` if you want a specific 14-bit CC
-  enabled while leaving 6/38 alone.
-- **MSB of 0 needs a prior MSB.** An MSB of value 0 on a controller that was
-  never seen is ignored, so no spurious 14-bit event fires after a MIDI
-  reset; only a zero MSB on a controller that was already seen produces one.
+  enabled while leaving 6/38 alone. The same goes for every other controller 0-31: enabling all
+  14-bit CCs claims them, so a 7-bit controller there (a mod wheel on CC 1) is
+  withheld after its first message. Register the controllers you mean.
+- **An MSB of 0 counts.** A 14-bit value below 128 is MSB 0 plus an LSB, so a
+  zero MSB on a controller not seen before assembles with its LSB like any other.
+  As with every first MSB, that MSB itself reaches `midi.onMessage` raw.
 - **Sending a received group forwards the whole group**, rebuilt from its
   number and value: `midiOut.send(msg)` in `midi.onNrpn` sends CC 99, 98, 6, 38
   (101, 100, 6, 38 for an RPN, the MSB and LSB for a 14-bit CC), whatever the

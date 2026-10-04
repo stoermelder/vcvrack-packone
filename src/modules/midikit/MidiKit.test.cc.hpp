@@ -714,12 +714,11 @@ TEST_CASE("Only-14-bit script still receives raw CC 98", "[MidiKit][MidiProcesso
 	assertProbes(v, {makeCc(0, 99, 4), makeCc(0, 98, 5)}, {"onMessage:99", "onMessage:98"});
 }
 
-TEST_CASE("MSB of 0 on a never-seen CC produces no event", "[MidiKit][MidiProcessor][CrossEngine]") {
-	// MidiProcessor's deliberate deviation: an MSB of value 0 is ignored unless
-	// already seen, so CC 7=0 then CC 39 assembles nothing — both reach
-	// onMessage raw.
+TEST_CASE("MSB of 0 on a never-seen CC still assembles with its LSB", "[MidiKit][MidiProcessor][CrossEngine]") {
+	// A 14-bit value below 128 is MSB 0 plus an LSB. Like any first MSB it escapes
+	// raw (the decoder cannot know a pair is coming); the LSB completes the event.
 	EngineVariant v = GENERATE(engineVariants(JS_CC14, LUA_CC14));
-	assertProbes(v, {makeCc(0, 7, 0), makeCc(0, 39, 42)}, {"onMessage:7", "onMessage:39"});
+	assertProbes(v, {makeCc(0, 7, 0), makeCc(0, 39, 42)}, {"onMessage:7", "onCc14bit:7:42:1:7"});
 }
 
 
@@ -1122,4 +1121,259 @@ end
 	for (auto& m : nrpnQuad(0, 1, 2, 3, 4)) in.push_back(m);
 	EngineVariant v = GENERATE(engineVariants(js, lua));
 	assertProbes(v, in, {"g:true:517:2562", "m:false:7:false:0", "g:true:130:388"});
+}
+
+
+// ─── Decoder input that is not a complete quad or pair ──────────────────────
+// What real devices send (var/MidiKit_incoming_vs_created_review.md, T1): 7-bit
+// NRPN data entry, plain 7-bit controllers 0-31 next to a 14-bit enable,
+// running parameters, MSB-only 14-bit updates. Some of these fail today, which is
+// the point: each case states what a receiver should do, and carries the
+// [decoder-gap] tag so the open ones can be listed with
+// `./build/test/MidiKit.test "[decoder-gap]"`.
+
+// Enables one kind and logs the raw CCs (m:note:value) and the assembled events
+// (n:/r:/c: control:value) a script sees.
+// `args` is the enable call's argument list in JS spelling: null becomes nil in Lua.
+static std::string gapScript(bool lua, const char* enable, const char* hook, const char* tag, const char* args = "1") {
+	std::string t = tag;
+	std::string a = args;
+	if (lua) {
+		size_t at;
+		while ((at = a.find("null")) != std::string::npos) a.replace(at, 4, "nil");
+	}
+	if (lua) {
+		return std::string("--[[\n@engine minilua@v1\n--]]\nmidi.") + enable + "(" + a + ")\n"
+			"midi.onMessage = function(port, msg) rack.log('P:m:' .. midi.getNote(msg) .. ':' .. midi.getValue(msg)) end\n"
+			"midi." + hook + " = function(port, msg) rack.log('P:" + t + ":' .. midi.getControl(msg) .. ':' .. midi.getValue(msg)) end\n";
+	}
+	return std::string("/**\n * @engine QuickJs@v1\n */\nmidi.") + enable + "(" + a + ");\n"
+		"midi.onMessage = function(port, msg) { rack.log('P:m:' + midi.getNote(msg) + ':' + midi.getValue(msg)); };\n"
+		"midi." + hook + " = function(port, msg) { rack.log('P:" + t + ":' + midi.getControl(msg) + ':' + midi.getValue(msg)); };\n";
+}
+
+static void checkGap(const char* enable, const char* hook, const char* tag, const std::vector<midi::Message>& in, const std::vector<std::string>& expected, const char* args = "1") {
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		auto p = probesOf(gapScript(lua, enable, hook, tag, args), in);
+		REQUIRE(p == expected);
+	}
+}
+
+TEST_CASE("A 7-bit NRPN data entry (CC 6 alone) fires in msb mode, and repeats", "[MidiKit][MidiProcessor]") {
+	// CC 6 = 64 is the value 64 << 7 = 8192; CC 6 = 65 is 8320.
+	std::vector<midi::Message> in = { makeCc(0, 99, 0), makeCc(0, 98, 5), makeCc(0, 6, 64), makeCc(0, 6, 65) };
+	checkGap("enableNrpnIn", "onNrpn", "n", in, { "n:5:8192", "n:5:8320" }, "1, null, \"msb\"");
+	checkGap("enableNrpnIn", "onNrpn", "n", in, { "n:5:8192", "n:5:8320" }, "1, 1, \"msb\"");
+	// Default mode: CC 6 only stores the MSB, so nothing fires and nothing reaches onMessage.
+	checkGap("enableNrpnIn", "onNrpn", "n", in, {});
+	checkGap("enableNrpnIn", "onNrpn", "n", in, {}, "1, null, \"lsb\"");
+	// Enabled for channel 2 only: the CCs on channel 1 are not claimed, so they arrive raw.
+	checkGap("enableNrpnIn", "onNrpn", "n", in, { "m:99:0", "m:98:5", "m:6:64", "m:6:65" }, "1, 2, \"msb\"");
+}
+
+TEST_CASE("A coarse change after a full quad fires in msb mode", "[MidiKit][MidiProcessor]") {
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		auto in = nrpnQuad(0, 0, 5, 64, 0);
+		in.push_back(makeCc(0, 6, 70));
+		auto p = probesOf(gapScript(lua, "enableNrpnIn", "onNrpn", "n", "1, null, \"msb\""), in);
+		// The quad fires twice (coarse, then combined), the CC 6 = 70 change once.
+		REQUIRE(p == std::vector<std::string>({ "n:5:8192", "n:5:8192", "n:5:8960" }));
+	}
+}
+
+TEST_CASE("Decoder gap: a running parameter (data entry without a new select) fires again", "[MidiKit][MidiProcessor][decoder-gap]") {
+	auto in = nrpnQuad(0, 0, 5, 64, 0);
+	in.push_back(makeCc(0, 6, 65));
+	in.push_back(makeCc(0, 38, 1));
+	checkGap("enableNrpnIn", "onNrpn", "n", in, { "n:5:8192", "n:5:8321" });
+}
+
+TEST_CASE("Decoder gap: data increment and decrement are not part of the assembled message", "[MidiKit][MidiProcessor][decoder-gap]") {
+	// Pins what happens to CC 96/97 after an armed parameter: they are unsupported,
+	// so they reach onMessage like any other CC.
+	auto in = nrpnQuad(0, 0, 5, 64, 0);
+	in.push_back(makeCc(0, 97, 1));
+	checkGap("enableNrpnIn", "onNrpn", "n", in, { "n:5:8192", "m:97:1" });
+}
+
+TEST_CASE("Enabling every 14-bit CC claims controllers 0-31, a per-CC enable leaves the others alone", "[MidiKit][MidiProcessor]") {
+	// Intended: enableCc14bitIn(1) says every MSB 0-31 is a 14-bit controller, so a
+	// 7-bit mod wheel on CC 1 is withheld after its first message (the script
+	// should register the controllers it means). With enableCc14bitIn(1, 7) only
+	// CC 7/39 are claimed.
+	std::vector<midi::Message> in = { makeCc(0, 1, 10), makeCc(0, 1, 20), makeCc(0, 1, 30), makeCc(0, 1, 40) };
+	checkGap("enableCc14bitIn", "onCc14bit", "c", in, { "m:1:10" });
+	checkGap("enableCc14bitIn", "onCc14bit", "c", in, { "m:1:10", "m:1:20", "m:1:30", "m:1:40" }, "1, 7");
+}
+
+TEST_CASE("Decoder gap: a 14-bit controller whose LSB did not change still fires", "[MidiKit][MidiProcessor][decoder-gap]") {
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		// First a full pair, then a new MSB alone.
+		auto p = probesOf(gapScript(lua, "enableCc14bitIn", "onCc14bit", "c"), { makeCc(0, 7, 1), makeCc(0, 39, 2), makeCc(0, 7, 3) });
+		// The first MSB escapes raw (documented); the completed pair fires.
+		REQUIRE(std::find(p.begin(), p.end(), "c:7:130") != p.end());
+		// The new MSB must produce an event for controller 7 (the LSB is 0 or the old one).
+		REQUIRE(p.back().compare(0, 4, "c:7:") == 0);
+		REQUIRE(p.back() != "c:7:130");
+	}
+}
+
+TEST_CASE("A 14-bit value below 128 is decoded (MSB of 0 on a new controller)", "[MidiKit][MidiProcessor]") {
+	// What setCc14bit(h, 1, 7, 100) sends: CC 7 = 0, CC 39 = 100. The MSB escapes raw.
+	checkGap("enableCc14bitIn", "onCc14bit", "c", { makeCc(0, 7, 0), makeCc(0, 39, 100) }, { "m:7:0", "c:7:100" });
+}
+
+
+// ─── enableNrpnIn / enableRpnIn: the dataEntry argument ─────────────────────
+
+static std::string enableCall(bool lua, const std::string& call) {
+	std::string c = call;
+	if (lua) {
+		size_t at;
+		while ((at = c.find("null")) != std::string::npos) c.replace(at, 4, "nil");
+		while ((at = c.find("undefined")) != std::string::npos) c.replace(at, 9, "nil");
+	}
+	return c;
+}
+
+// Loads `call` as a script (JS spelling, null/undefined become nil in Lua) and returns the module.
+static MidiKitModule* loadEnable(bool lua, const std::string& call) {
+	MidiKitModule* m = createModule();
+	m->loadScript(enableScript(!lua, enableCall(lua, call)));
+	return m;
+}
+
+static uint16_t nrpnMsbMask(MidiKitModule* m) { return m->midiIns.ports[0].extendedCc.msbDataEntryNrpnMask.load(); }
+static uint16_t rpnMsbMask(MidiKitModule* m) { return m->midiIns.ports[0].extendedCc.msbDataEntryRpnMask.load(); }
+
+TEST_CASE("enableNrpnIn/enableRpnIn: a bad dataEntry is rejected and enables nothing", "[MidiKit][MidiProcessor]") {
+	struct Case { const char* call; const char* token; };
+	std::vector<Case> cases = {
+		{ "midi.enableNrpnIn(1, null, \"foo\")", "dataEntry" },
+		{ "midi.enableRpnIn(1, null, \"MSB\")", "dataEntry" },
+		{ "midi.enableNrpnIn(1, 1, \"\")", "dataEntry" },
+		// Not a string: the engines word it differently, both name the function.
+		{ "midi.enableNrpnIn(1, null, true)", "enableNrpnIn" },
+		{ "midi.enableRpnIn(1, null, {})", "enableRpnIn" },
+		// Too many arguments.
+		{ "midi.enableNrpnIn(1, 1, \"msb\", 1)", "bad args" },
+	};
+	for (bool lua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(lua ? "lua: " : "js: ") + c.call);
+			MidiKitModule* m = loadEnable(lua, c.call);
+			std::string log = drainLog(m);
+			CATCH_INFO("log:\n" << log);
+			REQUIRE(log.find(c.token) != std::string::npos);
+			REQUIRE(!m->midiIns.isNrpnEnabled(0, false));
+			REQUIRE(!m->midiIns.isNrpnEnabled(0, true));
+			REQUIRE(nrpnMsbMask(m) == 0);
+			REQUIRE(rpnMsbMask(m) == 0);
+			Test::destroyModule(m);
+		}
+	}
+}
+
+TEST_CASE("enableNrpnIn/enableRpnIn: null, undefined and nil channel mean all channels", "[MidiKit][MidiProcessor]") {
+	struct Case { const char* call; bool rpn; uint16_t mask; };
+	std::vector<Case> cases = {
+		{ "midi.enableNrpnIn(1, null, \"msb\")", false, 0xFFFF },
+		{ "midi.enableNrpnIn(1, undefined, \"msb\")", false, 0xFFFF },
+		{ "midi.enableRpnIn(1, null, \"msb\")", true, 0xFFFF },
+		{ "midi.enableNrpnIn(1, 3, \"msb\")", false, 1 << 2 },
+		{ "midi.enableNrpnIn(1, null, \"lsb\")", false, 0 },
+		{ "midi.enableNrpnIn(1, null)", false, 0 },
+		{ "midi.enableNrpnIn(1)", false, 0 },
+	};
+	for (bool lua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(lua ? "lua: " : "js: ") + c.call);
+			MidiKitModule* m = loadEnable(lua, c.call);
+			REQUIRE(drainLog(m).find("rror") == std::string::npos);
+			// The kind is enabled on every channel the call named, whatever its mode.
+			REQUIRE(m->midiIns.isNrpnEnabled(2, c.rpn));
+			REQUIRE((c.rpn ? rpnMsbMask(m) : nrpnMsbMask(m)) == c.mask);
+			REQUIRE((c.rpn ? nrpnMsbMask(m) : rpnMsbMask(m)) == 0);
+			Test::destroyModule(m);
+		}
+	}
+}
+
+TEST_CASE("enableNrpnIn: the last call for a channel decides its data entry mode", "[MidiKit][MidiProcessor]") {
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		// All channels "msb", then channel 5 again without a mode: back to "lsb".
+		MidiKitModule* m = loadEnable(lua, "midi.enableNrpnIn(1, null, \"msb\"); midi.enableNrpnIn(1, 5)");
+		REQUIRE(drainLog(m).find("rror") == std::string::npos);
+		REQUIRE(nrpnMsbMask(m) == uint16_t(0xFFFF & ~(1 << 4)));
+		// Enabling stayed additive: every channel is still enabled.
+		for (int ch = 0; ch < 16; ch++) REQUIRE(m->midiIns.isNrpnEnabled(ch, false));
+		Test::destroyModule(m);
+	}
+}
+
+TEST_CASE("enableNrpnIn: a reload brings the data entry mode back to the default", "[MidiKit][MidiProcessor]") {
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		MidiKitModule* m = loadEnable(lua, "midi.enableNrpnIn(1, null, \"msb\"); midi.enableRpnIn(1, null, \"msb\")");
+		REQUIRE(nrpnMsbMask(m) == 0xFFFF);
+		REQUIRE(rpnMsbMask(m) == 0xFFFF);
+
+		// Script B enables NRPN without a mode: it gets the default.
+		m->loadScript(enableScript(!lua, "midi.enableNrpnIn(1)"));
+		REQUIRE(nrpnMsbMask(m) == 0);
+		REQUIRE(rpnMsbMask(m) == 0);
+
+		// And a script that does not enable at all leaves nothing behind either.
+		m->loadScript(enableScript(!lua, "midi.enableNrpnIn(1, null, \"msb\")"));
+		REQUIRE(nrpnMsbMask(m) == 0xFFFF);
+		m->loadScript(enableScript(!lua, "rack.log('P:none')"));
+		REQUIRE(nrpnMsbMask(m) == 0);
+		REQUIRE(rpnMsbMask(m) == 0);
+		Test::destroyModule(m);
+	}
+}
+
+TEST_CASE("enableNrpnIn: switching the mode from a callback applies to the following CC 6", "[MidiKit][MidiProcessor]") {
+	// A note is the "menu item": it switches port 1 to msb mode.
+	static const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.enableNrpnIn(1);
+midi.onMessage = function(port, msg) {
+    if (midi.isNoteOn(msg)) midi.enableNrpnIn(1, null, "msb");
+};
+midi.onNrpn = function(port, msg) { rack.log("P:n:" + midi.getControl(msg) + ":" + midi.getValue(msg)); };
+)";
+	static const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midi.enableNrpnIn(1)
+midi.onMessage = function(port, msg)
+    if midi.isNoteOn(msg) then midi.enableNrpnIn(1, nil, "msb") end
+end
+midi.onNrpn = function(port, msg) rack.log("P:n:" .. midi.getControl(msg) .. ":" .. midi.getValue(msg)) end
+)";
+	for (bool isLua : { false, true }) {
+		CATCH_INFO(std::string(isLua ? "lua" : "js"));
+		MidiKitModule* m = createModule();
+		m->loadScript(isLua ? lua : js);
+		REQUIRE(drainLog(m).find("rror") == std::string::npos);
+
+		// Default mode: CC 6 alone fires nothing.
+		feedMidiPump(m, { makeCc(0, 99, 0), makeCc(0, 98, 5), makeCc(0, 6, 64) });
+		REQUIRE(extractProbes(drainLog(m)).empty());
+		REQUIRE(nrpnMsbMask(m) == 0);
+
+		feedMidiPump(m, { makeNote(0, 60, 100) });
+		drainLog(m);
+		REQUIRE(nrpnMsbMask(m) == 0xFFFF);
+
+		feedMidiPump(m, { makeCc(0, 6, 65) });
+		REQUIRE(extractProbes(drainLog(m)) == std::vector<std::string>({ "n:5:8320" }));
+		Test::destroyModule(m);
+	}
 }

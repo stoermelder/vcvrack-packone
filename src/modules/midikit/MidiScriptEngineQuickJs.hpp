@@ -876,8 +876,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "setRaw", JS_NewCFunction(ctx, js_midi_setRaw, "setRaw", 2));
 		JS_SetPropertyStr(ctx, _midi, "setSysEx", JS_NewCFunction(ctx, js_midi_setSysEx, "setSysEx", 2));
 		JS_SetPropertyStr(ctx, _midi, "setValue", JS_NewCFunction(ctx, js_midi_setValue, "setValue", 2));
-		JS_SetPropertyStr(ctx, _midi, "enableNrpnIn", JS_NewCFunction(ctx, js_midi_enableNrpnIn, "enableNrpnIn", 2));
-		JS_SetPropertyStr(ctx, _midi, "enableRpnIn", JS_NewCFunction(ctx, js_midi_enableRpnIn, "enableRpnIn", 2));
+		JS_SetPropertyStr(ctx, _midi, "enableNrpnIn", JS_NewCFunction(ctx, js_midi_enableNrpnIn, "enableNrpnIn", 3));
+		JS_SetPropertyStr(ctx, _midi, "enableRpnIn", JS_NewCFunction(ctx, js_midi_enableRpnIn, "enableRpnIn", 3));
 		JS_SetPropertyStr(ctx, _midi, "enablePorts", JS_NewCFunction(ctx, js_midi_enablePorts, "enablePorts", 1));
 		JS_SetPropertyStr(ctx, _midi, "enableCc14bitIn", JS_NewCFunction(ctx, js_midi_enableCc14bitIn, "enableCc14bitIn", 3));
 
@@ -1589,19 +1589,28 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Shared by midi.enableNrpnIn() and midi.enableRpnIn(): same arguments, they
 	// differ only in which kind they arm.
 	static JSValue jsEnableParamIn(JSContext* ctx, int argc, JSValueConst* argv, int kind, const char* name) {
-		// midi.enableNrpnIn(midiPort [, channel]) / midi.enableRpnIn(...)
-		//   midiPort: 1-based; channel: 1-based MIDI channel, omitted = all.
-		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))
+		// midi.enableNrpnIn(midiPort [, channel] [, dataEntry]) / midi.enableRpnIn(...)
+		//   midiPort: 1-based; channel: 1-based MIDI channel, omitted/null = all;
+		//   dataEntry: "lsb" (default, fire on CC 38) or "msb" (also fire on CC 6).
+		// Every check comes before the handler call, so a bad argument enables nothing.
+		auto isNone = [&](int i) { return JS_IsNull(argv[i]) || JS_IsUndefined(argv[i]); };
+		if (argc < 1 || argc > 3 || !argIsNumber(ctx, argv[0]) || (argc >= 2 && !isNone(1) && !argIsNumber(ctx, argv[1])))
 			return jsThrow(ctx, std::string(name) + ": bad args");
 		int port = static_cast<int>(argNum(ctx, argv[0]));
 		if (port < 1 || port > getEngine(ctx)->midiInputCount) return jsThrow(ctx, std::string(name) + ": bad midiPort");
 		int ch = -1;
-		if (argc == 2) {
+		if (argc >= 2 && !isNone(1)) {
 			ch = static_cast<int>(argNum(ctx, argv[1]));
 			if (ch < 1 || ch > 16) return jsThrow(ctx, std::string(name) + ": bad channel");
 			ch -= 1;
 		}
-		getEngine(ctx)->handler->enableNrpnIn(port - 1, kind, ch);
+		bool msbDataEntry = false;
+		if (argc == 3 && !isNone(2)) {
+			std::string mode = JS_IsString(argv[2]) ? getEngine(ctx)->jsToStdString(argv[2]) : std::string();
+			if (mode != "lsb" && mode != "msb") return jsThrow(ctx, std::string(name) + ": dataEntry must be \"lsb\" or \"msb\"");
+			msbDataEntry = mode == "msb";
+		}
+		getEngine(ctx)->handler->enableNrpnIn(port - 1, kind, ch, msbDataEntry);
 		return JS_UNDEFINED;
 	}
 

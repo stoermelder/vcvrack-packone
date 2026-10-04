@@ -306,6 +306,12 @@ struct MidiOutput : midi::Output {
 struct ExtendedCcEnables {
 	std::atomic<uint16_t> nrpnEnabledMask{0};
 	std::atomic<uint16_t> rpnEnabledMask{0};
+	// Channels whose device sends 7-bit data entry, per kind: CC 6 fires an event
+	// of its own there (MidiDecoder::setMsbDataEntry). The audio thread copies
+	// them into each port's decoder before decoding. Zero is the default mode,
+	// "lsb": fire on CC 38.
+	std::atomic<uint16_t> msbDataEntryNrpnMask{0};
+	std::atomic<uint16_t> msbDataEntryRpnMask{0};
 	// One mask per 14-bit MSB controller (0-31), since registration is per-CC:
 	// a script can take CC 7 as 14-bit while still seeing CC 39 raw.
 	std::atomic<uint16_t> cc14bitEnabledMask[32];
@@ -319,11 +325,16 @@ struct ExtendedCcEnables {
 	}
 
 	// Worker side — midi.enableNrpnIn()/enableRpnIn() binding. channel is
-	// 0-based, or -1 for all; kind 1 = RPN, otherwise NRPN.
-	void enableNrpn(int kind, int channel) {
+	// 0-based, or -1 for all; kind 1 = RPN, otherwise NRPN. Enabling is additive,
+	// but the data entry mode is overwritten for the channels named: msbDataEntry
+	// sets it, otherwise it is cleared, so the last call for a channel decides.
+	void enableNrpn(int kind, int channel, bool msbDataEntry = false) {
 		uint16_t bits = channelBits(channel);
 		if (bits == 0) return;
 		(kind == 1 ? rpnEnabledMask : nrpnEnabledMask).fetch_or(bits, std::memory_order_relaxed);
+		std::atomic<uint16_t>& mode = kind == 1 ? msbDataEntryRpnMask : msbDataEntryNrpnMask;
+		if (msbDataEntry) mode.fetch_or(bits, std::memory_order_relaxed);
+		else mode.fetch_and(static_cast<uint16_t>(~bits), std::memory_order_relaxed);
 	}
 
 	// Worker side — midi.enableCc14bitIn() binding. cc is the 0-31 MSB
@@ -387,6 +398,8 @@ struct ExtendedCcEnables {
 	void clear() {
 		nrpnEnabledMask.store(0, std::memory_order_relaxed);
 		rpnEnabledMask.store(0, std::memory_order_relaxed);
+		msbDataEntryNrpnMask.store(0, std::memory_order_relaxed);
+		msbDataEntryRpnMask.store(0, std::memory_order_relaxed);
 		for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].store(0, std::memory_order_relaxed);
 	}
 };
@@ -484,9 +497,9 @@ struct MidiInputs {
 	bool isEnabled(int port) const {
 		return port < count.load(std::memory_order_relaxed);
 	}
-	void enableNrpn(int port, int kind, int channel) {
+	void enableNrpn(int port, int kind, int channel, bool msbDataEntry = false) {
 		if (port < 0 || port >= NIN) return;
-		ports[port].extendedCc.enableNrpn(kind, channel);
+		ports[port].extendedCc.enableNrpn(kind, channel, msbDataEntry);
 	}
 	void enableCc14bit(int port, int cc, int channel) {
 		if (port < 0 || port >= NIN) return;
@@ -515,6 +528,9 @@ struct MidiInputs {
 	void process(int64_t frame) {
 		int n = count.load(std::memory_order_relaxed);
 		for (int i = 0; i < NIN; i++) {
+			// The script's data entry mode, onto the thread that owns the decoder.
+			const ExtendedCcEnables& ext = ports[i].extendedCc;
+			ports[i].processor.setMsbDataEntry(ext.msbDataEntryNrpnMask.load(std::memory_order_relaxed), ext.msbDataEntryRpnMask.load(std::memory_order_relaxed));
 			if (i < n) ports[i].processor.process(frame);
 			else ports[i].processor.processBypass(frame);
 			// Once per drain: a saturated queue must not flood the log.
@@ -1736,8 +1752,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler — midi.enableNrpnIn()/enableRpnIn() binding
 	// (worker thread).
-	void enableNrpnIn(int midiPort, int kind, int channel) override {
-		midiIns.enableNrpn(midiPort, kind, channel);
+	void enableNrpnIn(int midiPort, int kind, int channel, bool msbDataEntry = false) override {
+		midiIns.enableNrpn(midiPort, kind, channel, msbDataEntry);
 	}
 
 	// MidiScriptEngineHandler — midi.enableCc14bitIn() binding (worker thread).
