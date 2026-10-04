@@ -1278,7 +1278,8 @@ Messages are opaque **handles** into an internal message store. Create one with 
   same group handle `midi.onNrpn` receives, set with `midi.setNRPN` (and `midi.setChannel`); other setters raise an error.
 - `midi.createRPN()` → the same 4-handle chain for a *registered* parameter
   (CC 101/100 select it), set with `midi.setRPN` (and `midi.setChannel`); other
-  setters raise an error. Sending RPN 0 sets a synth's pitch-bend range.
+  setters raise an error. Sending RPN 0 sets a synth's pitch-bend range. A
+  handle set to RPN 16383 (the RPN null) is a group of only the 2 select messages.
 - `midi.createCc14bit()` → 2 chained handles (value MSB at CC `cc`, value LSB
   at CC `cc + 32`), set with `midi.setCc14bit` (and `midi.setChannel`); other
   setters raise an error. The pair is sent atomically — a receiver never sees
@@ -1357,7 +1358,7 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setNoteOn(msg, ch, note, vel)` | |
 | `setNoteOff(msg, ch, note [, vel])` | release velocity defaults to 0; read back with `getValue` |
 | `setNRPN(nrpnHandle, ch, number, value)` | `number`/`value` are 14-bit, 0-16383 |
-| `setRPN(rpnHandle, ch, number, value)` | like `setNRPN` but for a handle from `midi.createRPN()`; e.g. `setRPN(h, 1, 0, 12 << 7)` sets a 12-semitone bend range (RPN 0: MSB = semitones, LSB = cents) |
+| `setRPN(rpnHandle, ch, number, value)` | like `setNRPN` but for a handle from `midi.createRPN()`; e.g. `setRPN(h, 1, 0, 12 << 7)` sets a 12-semitone bend range (RPN 0: MSB = semitones, LSB = cents). `number` 16383 is the **RPN null** (127/127) of the MIDI specification, "no parameter selected": only the two select messages are sent, `value` is ignored and `getValue()` returns -1. A receiver ignores data entry after it, so a script uses it to deselect. NRPN has no null: `setNRPN(h, 1, 16383, v)` is an ordinary parameter |
 | `setPitchWheel(msg, ch, value)` | `value` is 14-bit, 0-16383; 8192 is the centre (no bend) |
 | `setProgramChange(msg, ch, program)` | |
 | `setSysEx(msg, hexString)` | payload only — `f0`/`f7` framing added automatically, so pass e.g. `"43104c0000"` rather than `"f043104c0000f7"`; capped at 256 bytes, every byte must be 7-bit (`00`-`7f`) |

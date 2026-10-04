@@ -2367,7 +2367,7 @@ midi.onNrpn = function(port, msg) midiOut.cancel(msg) end
 // ── Round trip: what a script creates, a second MIDI-KIT receives ───────────
 // Addendum B made received and created groups the same shape; this feeds a
 // created group's wire bytes into a receiving module's decoder, so the two ends
-// have to agree on the numbers. Open cases carry [decoder-gap].
+// have to agree on the numbers. An empty `expected` means the receiver fires nothing.
 
 struct RoundTrip {
 	const char* name;
@@ -2404,13 +2404,15 @@ static std::vector<std::string> roundTripProbes(const std::string& sendScript, c
 	return probes;
 }
 
-TEST_CASE("Round trip: a created group is received as the same number and value", "[MidiKit][MidiProcessor][decoder-gap][timing]") {
+TEST_CASE("Round trip: a created group is received as the same number and value", "[MidiKit][MidiProcessor][timing]") {
 	std::vector<RoundTrip> cases = {
 		{ "NRPN", "const h = midi.createNRPN(); midi.setNRPN(h, 2, 300, 1000);", "enableNrpnIn", "onNrpn", "300:1000" },
 		{ "NRPN value 0", "const h = midi.createNRPN(); midi.setNRPN(h, 2, 300, 0);", "enableNrpnIn", "onNrpn", "300:0" },
 		{ "NRPN max", "const h = midi.createNRPN(); midi.setNRPN(h, 2, 16383, 16383);", "enableNrpnIn", "onNrpn", "16383:16383" },
 		{ "RPN", "const h = midi.createRPN(); midi.setRPN(h, 2, 300, 1000);", "enableRpnIn", "onRpn", "300:1000" },
-		{ "RPN 16383 (the null)", "const h = midi.createRPN(); midi.setRPN(h, 2, 16383, 1000);", "enableRpnIn", "onRpn", "16383:1000" },
+		// The RPN null is the spec's "no parameter": only the select pair is sent and a
+		// receiver fires nothing. NRPN 16383 above is an ordinary parameter.
+		{ "RPN 16383 (the null)", "const h = midi.createRPN(); midi.setRPN(h, 2, 16383, 1000);", "enableRpnIn", "onRpn", "" },
 		{ "14-bit", "const h = midi.createCc14bit(); midi.setCc14bit(h, 2, 7, 1000);", "enableCc14bitIn", "onCc14bit", "7:1000" },
 		{ "14-bit below 128", "const h = midi.createCc14bit(); midi.setCc14bit(h, 2, 7, 100);", "enableCc14bitIn", "onCc14bit", "7:100" },
 		{ "14-bit zero", "const h = midi.createCc14bit(); midi.setCc14bit(h, 2, 7, 0);", "enableCc14bitIn", "onCc14bit", "7:0" },
@@ -2428,7 +2430,9 @@ TEST_CASE("Round trip: a created group is received as the same number and value"
 			std::string script = lua
 				? std::string("--[[\n@engine minilua@v1\n--]]\nmidi.onMessage = function(port, msg)\n" + create + "\nmidiOut.send(h)\nend\n")
 				: std::string("/**\n * @engine QuickJs@v1\n */\nmidi.onMessage = function(port, msg) {\n" + create + "\nmidiOut.send(h);\n};\n");
-			REQUIRE(roundTripProbes(script, rt, lua) == std::vector<std::string>({ rt.expected }));
+			std::vector<std::string> expected;
+			if (!rt.expected.empty()) expected.push_back(rt.expected);
+			REQUIRE(roundTripProbes(script, rt, lua) == expected);
 		}
 	}
 }

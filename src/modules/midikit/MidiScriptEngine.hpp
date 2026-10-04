@@ -98,10 +98,21 @@ struct MidiScriptEngine {
 		return slot < int64_t(msgCount) ? long(slot) : -1;
 	}
 
-	// Messages a handle sends as one group: 4 for an NRPN/RPN, 2 for a 14-bit CC
-	// pair, 1 for anything else. Only meaningful on the lead slot.
+	// The RPN null (parameter 127/127, `101 = 127, 100 = 127`): the MIDI spec's
+	// "no parameter selected". It has no data entry, and a receiver ignores one.
+	// The NRPN spec has no such parameter, so NRPN 16383 is an ordinary number.
+	static const int rpnNull = 16383;
+
+	// Whether a lead slot is an RPN set to the null parameter.
+	static bool isRpnNull(const ScriptMessage& s) {
+		return s.isNrpn && s.isRpn && s.in.paramNumber == rpnNull;
+	}
+
+	// Messages a handle sends as one group: 4 for an NRPN/RPN (just the 2 selects
+	// for the RPN null), 2 for a 14-bit CC pair, 1 for anything else. Only
+	// meaningful on the lead slot.
 	static size_t groupSize(const ScriptMessage& s) {
-		return s.isNrpn ? 4 : s.isCc14bit ? 2 : 1;
+		return s.isNrpn ? (isRpnNull(s) ? 2 : 4) : s.isCc14bit ? 2 : 1;
 	}
 
 	// The error tail for a single-message setter called on a group handle, or
@@ -159,7 +170,8 @@ struct MidiScriptEngine {
 		QueuedMessage& lead = msgStore[slot].in;
 		lead.type = kind == OutGroup::NRPN ? MessageEx::Type::NRPN : kind == OutGroup::RPN ? MessageEx::Type::RPN : MessageEx::Type::CC_14BIT;
 		lead.paramNumber = int16_t(number);
-		lead.extraValue = int16_t(value);
+		// The RPN null carries no value: only its select pair is sent (groupSize()).
+		lead.extraValue = kind == OutGroup::RPN && number == rpnNull ? int16_t(-1) : int16_t(value);
 	}
 
 	// Worker, start of a MIDI callback: puts the incoming message into slot 0 and

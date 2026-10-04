@@ -660,6 +660,61 @@ TEST_CASE("createRPN/setRPN send RPN select + data entry identically", "[MidiKit
 	}
 }
 
+// RPN 16383 (127/127) is the spec's "null": no parameter selected, so only the
+// select pair is sent, with no data entry, and the handle has no value. The NRPN
+// spec has no null, so NRPN 16383 is an ordinary parameter with all four CCs.
+TEST_CASE("setRPN with 16383 sends only the RPN null select, NRPN 16383 stays a full group", "[MidiKit][CrossEngine]") {
+	struct Case { const char* create; const char* set; std::vector<std::vector<uint8_t>> bytes; };
+	const Case cases[] = {
+		// The value is ignored for the null.
+		{ "createRPN", "setRPN", {{0xb1, 101, 127}, {0xb1, 100, 127}} },
+		{ "createNRPN", "setNRPN", {{0xb1, 99, 127}, {0xb1, 98, 127}, {0xb1, 6, 7}, {0xb1, 38, 9}} },
+	};
+	for (const Case& c : cases) {
+		CATCH_INFO(c.create);
+		std::string jsCall = std::string("let m = midi.") + c.create + "(); midi." + c.set + "(m, 2, 16383, 7 * 128 + 9); midiOut.send(m);";
+		std::string luaCall = std::string("local m = midi.") + c.create + "(); midi." + c.set + "(m, 2, 16383, 7 * 128 + 9); midiOut.send(m)";
+		EngineResult js = run(jsOnMessage(jsCall));
+		EngineResult lua = run(luaOnMessage(luaCall));
+		CATCH_INFO(js.log);
+		CATCH_INFO(lua.log);
+		REQUIRE(js.sent.size() == c.bytes.size());
+		REQUIRE(lua.sent.size() == c.bytes.size());
+		for (size_t i = 0; i < c.bytes.size(); i++) {
+			REQUIRE(js.sent[i].bytes == c.bytes[i]);
+			REQUIRE(lua.sent[i].bytes == c.bytes[i]);
+		}
+	}
+}
+
+TEST_CASE("The RPN null handle has a number but no value, and its setters and clone follow", "[MidiKit][CrossEngine]") {
+	// isRpn, control, value, channel; then the same after setChannel, setValue and a clone.
+	std::string js = "let g = midi.createRPN(); midi.setRPN(g, 2, 16383, 1000);"
+		"rack.log('A:' + [midi.isRpn(g), midi.getControl(g), midi.getValue(g), midi.getChannel(g)].join(' '));"
+		"midi.setChannel(g, 5); midi.setValue(g, 77);"
+		"let c = midi.clone(g);"
+		"rack.log('B:' + [midi.isRpn(c), midi.getControl(c), midi.getValue(c), midi.getChannel(c)].join(' '));"
+		"midiOut.send(c);";
+	std::string lua = "local g = midi.createRPN(); midi.setRPN(g, 2, 16383, 1000);"
+		"rack.log('A:' .. table.concat({tostring(midi.isRpn(g)), midi.getControl(g), midi.getValue(g), midi.getChannel(g)}, ' '));"
+		"midi.setChannel(g, 5); midi.setValue(g, 77);"
+		"local c = midi.clone(g);"
+		"rack.log('B:' .. table.concat({tostring(midi.isRpn(c)), midi.getControl(c), midi.getValue(c), midi.getChannel(c)}, ' '));"
+		"midiOut.send(c)";
+	EngineResult r1 = run(jsOnMessage(js));
+	EngineResult r2 = run(luaOnMessage(lua));
+	CATCH_INFO(r1.log);
+	CATCH_INFO(r2.log);
+	for (const EngineResult* r : { &r1, &r2 }) {
+		REQUIRE(r->log.find("A:true 16383 -1 2") != std::string::npos);
+		REQUIRE(r->log.find("B:true 16383 -1 5") != std::string::npos);
+		// The clone is the whole null group: just the two selects, on the new channel.
+		REQUIRE(r->sent.size() == 2);
+		REQUIRE(r->sent[0].bytes == std::vector<uint8_t>({0xb4, 101, 127}));
+		REQUIRE(r->sent[1].bytes == std::vector<uint8_t>({0xb4, 100, 127}));
+	}
+}
+
 TEST_CASE("setNRPN and setRPN reject each other's handles", "[MidiKit][CrossEngine]") {
 	struct Case { const char* create; const char* set; const char* error; };
 	const Case cases[] = {

@@ -1127,10 +1127,9 @@ end
 // ─── Decoder input that is not a complete quad or pair ──────────────────────
 // What real devices send (var/MidiKit_incoming_vs_created_review.md, T1): 7-bit
 // NRPN data entry, plain 7-bit controllers 0-31 next to a 14-bit enable,
-// running parameters, MSB-only 14-bit updates. Some of these fail today, which is
-// the point: each case states what a receiver should do, and carries the
-// [decoder-gap] tag so the open ones can be listed with
-// `./build/test/MidiKit.test "[decoder-gap]"`.
+// running parameters, MSB-only 14-bit updates. Each case states what a receiver
+// does with it. A case that is a known gap, failing on purpose until it is decided,
+// carries the [decoder-gap] tag (`./build/test/MidiKit.test "[decoder-gap]"`).
 
 // Enables one kind and logs the raw CCs (m:note:value) and the assembled events
 // (n:/r:/c: control:value) a script sees.

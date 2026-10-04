@@ -143,7 +143,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("setNoteOn", kSetters, {{"msg", MSG}, {"ch", CH}, {"note", "note number 0-127"}, {"vel", "velocity 0-127"}}),
 		ApiFunction("setNoteOff", kSetters, {{"msg", MSG}, {"ch", CH}, {"note", "note number 0-127"}, {"vel", "release velocity 0-127, default 0", true}}),
 		ApiFunction("setNRPN", kSetters, {{"nrpn", NRPN}, {"ch", CH}, {"number", "parameter number 0-16383"}, {"value", "value 0-16383"}}),
-		ApiFunction("setRPN", kSetters, {{"rpn", "handle from midi.createRPN()"}, {"ch", CH}, {"number", "parameter number 0-16383"}, {"value", "value 0-16383"}}),
+		ApiFunction("setRPN", kSetters, {{"rpn", "handle from midi.createRPN()"}, {"ch", CH}, {"number", "parameter number 0-16383, 16383 is the RPN null and sends only the select"}, {"value", "value 0-16383"}}),
 		ApiFunction("setPitchWheel", kSetters, {{"msg", MSG}, {"ch", CH}, {"value", "0-16383, 8192 is the centre"}}),
 		ApiFunction("setProgramChange", kSetters, {{"msg", MSG}, {"ch", CH}, {"program", "program number 0-127"}}),
 		ApiFunction("setSysEx", kSetters, {{"msg", MSG}, {"hexString", "payload as hex, without f0/f7 framing"}}),
