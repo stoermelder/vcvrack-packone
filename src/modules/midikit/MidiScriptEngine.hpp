@@ -17,8 +17,12 @@ namespace StoermelderPackOne {
 namespace MidiScript {
 
 struct MidiScriptEngine {
-	// Cap on setSysEx's payload (the handler's out-queue is fixed-size).
-	static const int sysExMaxPayloadLength = 256;
+	// Cap on a SysEx message's payload (framing excluded), for every way a script
+	// can get one: setSysEx/setRaw refuse a longer one, and the input stage drops a
+	// received message longer than this (+2 for the framing), so forwarding or
+	// cloning it cannot exceed it either. 8192 holds a 32-voice DX7 bulk dump
+	// (4104 bytes) and typical patch dumps; sending 8 KB takes about 2.6 s at DIN speed.
+	static const int sysExMaxPayloadLength = 8192;
 
 	// Live message handles per callback (slot 0 is the incoming message):
 	// msgStoreDefault, or more with "@requires messages=N" up to msgStoreMax.

@@ -568,6 +568,12 @@ struct MidiInputs {
 	// runs on the worker and must never be entered from here.
 	bool dispatch(int port, const MessageEx& m) {
 		if (!isEnabled(port) || !ports[port].accepts(m)) return false;
+		// A SysEx longer than a script can create is dropped whole, never cut, so a
+		// script can forward or clone every message it receives.
+		if (m.source->bytes.size() > size_t(MidiScript::MidiScriptEngine::sysExMaxPayloadLength) + 2) {
+			if (log) log->raise(ScriptLog::INPUT_TOO_LONG);
+			return false;
+		}
 		// Reused: a fresh QueuedMessage would allocate its byte vector every time.
 		MidiScript::QueuedMessage& q = scratch;
 		q.msg = *m.source;

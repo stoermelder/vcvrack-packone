@@ -1734,3 +1734,38 @@ TEST_CASE("Received group: a running parameter is forwarded with the select the 
 		REQUIRE(sentValues(rig.rec) == std::vector<int>({ 4, 5, 20, 2, 4, 5, 21, 3 }));
 	}
 }
+
+
+// A received SysEx longer than a script can create (8192 payload bytes) is
+// dropped whole at the input, with a notice in the log: a script that forwards or
+// clones what it receives can never exceed the cap that setSysEx enforces.
+static midi::Message sysExOf(size_t totalBytes) {
+	midi::Message m;
+	m.setSize(int(totalBytes));
+	m.bytes[0] = 0xf0;
+	for (size_t i = 1; i + 1 < totalBytes; i++) m.bytes[i] = uint8_t(i % 128);
+	m.bytes[totalBytes - 1] = 0xf7;
+	return m;
+}
+
+TEST_CASE("A received SysEx up to the payload cap is forwarded; a longer one is dropped with a notice", "[MidiKit][MidiProcessor][CrossEngine]") {
+	FOR_EACH_LANG;
+	const size_t maxTotal = size_t(StoermelderPackOne::MidiScript::MidiScriptEngine::sysExMaxPayloadLength) + 2;
+	REQUIRE(maxTotal == 8194);
+
+	Kit<> kit;
+	kit.load(onMessage(lang, "midiOut.send(msg);"));
+
+	std::vector<Out> sent = kit.dispatchPumped(sysExOf(maxTotal));
+	REQUIRE(sent.size() == 1);
+	REQUIRE(sent[0].bytes.size() == maxTotal);
+	REQUIRE(kit.log().find("longer than") == std::string::npos);
+
+	sent = kit.dispatchPumped(sysExOf(maxTotal + 1));
+	REQUIRE(sent.empty());
+	REQUIRE(kit.log().find("longer than") != std::string::npos);
+
+	// The input keeps working afterwards.
+	sent = kit.dispatchPumped(sysExOf(100));
+	REQUIRE(sent.size() == 1);
+}

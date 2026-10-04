@@ -64,6 +64,7 @@ struct ScriptLog {
 		TIPSY_INPUT_MALFORMED,
 		TIPSY_INPUT_QUEUE_FULL,
 		TIMING_LATE,
+		INPUT_TOO_LONG,
 		NOTICE_COUNT
 	};
 	struct NoticeSlot {
@@ -80,6 +81,7 @@ struct ScriptLog {
 		notices[TIPSY_INPUT_MALFORMED].text = "Tipsy input: malformed stream";
 		notices[TIPSY_INPUT_QUEUE_FULL].text = "Tipsy input queue full, message(s) dropped";
 		notices[TIMING_LATE].text = "Timing: message(s) reached the output too late";
+		notices[INPUT_TOO_LONG].text = "MIDI input: message(s) longer than 8194 bytes dropped";
 	}
 
 	// Any thread, allocation-free.
