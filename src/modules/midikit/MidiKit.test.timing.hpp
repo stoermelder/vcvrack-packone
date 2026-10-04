@@ -27,6 +27,7 @@ struct TimingRecorder : midi::OutputDevice {
 		int64_t frameField;   // Message::frame as the device sees it; -1 = "now"
 		int64_t releasedAt;   // the engine frame of the process() call that sent it
 		uint8_t status;
+		uint8_t channel;
 		uint8_t note;
 		uint8_t value;
 	};
@@ -38,6 +39,7 @@ struct TimingRecorder : midi::OutputDevice {
 		s.frameField = msg.frame;
 		s.releasedAt = now;
 		s.status = msg.getStatus();
+		s.channel = msg.getChannel();
 		s.note = msg.getNote();
 		s.value = msg.getValue();
 		sent.push_back(s);
@@ -2228,5 +2230,135 @@ end
 		REQUIRE(log.find("not enabled") == std::string::npos);
 		// Port 1's scheduled message is untouched.
 		REQUIRE(sentNotes(rig.rec) == std::vector<int>{60});
+	}
+}
+
+
+// ── Received NRPN / RPN / 14-bit CC as group handles ───────────────────────
+// A received group is rebuilt from its decoded number and value, so what a
+// script forwards, reschedules or cancels is the whole group on the wire.
+
+struct GroupInput {
+	const char* enable;   // the enable call for the input kind
+	const char* hook;     // the callback it reaches
+	std::vector<int> in;  // controller, value pairs, flattened, fed on one channel
+	std::vector<int> out; // the controllers a forward must produce
+};
+
+static std::string groupScript(bool lua, const GroupInput& g, const std::string& body) {
+	if (lua) {
+		return std::string("--[[\n@engine minilua@v1\n--]]\n") + "midi." + g.enable + "(1)\nmidi." + g.hook + " = function(port, msg)\n" + body + "\nend\n";
+	}
+	return std::string("/**\n * @engine QuickJs@v1\n */\nmidi.") + g.enable + "(1);\nmidi." + g.hook + " = function(port, msg) {\n" + body + "\n};\n";
+}
+
+static void injectGroup(TimingRig& rig, const GroupInput& g, int channel, int64_t frame) {
+	for (size_t i = 0; i + 1 < g.in.size(); i += 2) rig.inject(Test::makeMidiMessage(0xb, channel, g.in[i], g.in[i + 1]), frame);
+}
+
+static std::vector<GroupInput> groupInputs() {
+	return {
+		// NRPN 517 (4 * 128 + 5), value 2562 (20 * 128 + 2)
+		{ "enableNrpnIn", "onNrpn", { 99, 4, 98, 5, 6, 20, 38, 2 }, { 99, 98, 6, 38 } },
+		{ "enableRpnIn", "onRpn", { 101, 4, 100, 5, 6, 20, 38, 2 }, { 101, 100, 6, 38 } },
+		// 14-bit CC on MSB controller 7, value 130
+		{ "enableCc14bitIn", "onCc14bit", { 7, 1, 39, 2 }, { 7, 39 } },
+	};
+}
+
+static std::vector<int> sentValues(const TimingRecorder& rec) {
+	std::vector<int> v;
+	for (const TimingRecorder::Sent& s : rec.sent) v.push_back(s.value);
+	return v;
+}
+
+TEST_CASE("Received group: midiOut.send forwards the whole group, in wire order", "[MidiKit][cc][timing]") {
+	for (bool lua : { false, true }) {
+		for (const GroupInput& g : groupInputs()) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + g.hook);
+			TimingRig rig(groupScript(lua, g, lua ? "    midiOut.send(msg)" : "    midiOut.send(msg);").c_str());
+			injectGroup(rig, g, 2, 8);
+			rig.run(100);
+
+			REQUIRE(sentNotes(rig.rec) == g.out);
+			std::vector<int> values;
+			for (size_t i = 1; i < g.in.size(); i += 2) values.push_back(g.in[i]);
+			REQUIRE(sentValues(rig.rec) == values);
+			for (const TimingRecorder::Sent& s : rig.rec.sent) {
+				REQUIRE(s.status == 0xb);
+				REQUIRE(s.channel == 2);
+			}
+		}
+	}
+}
+
+TEST_CASE("Received group: an LSB-only data entry forwards with CC 6 = 0", "[MidiKit][cc][timing]") {
+	GroupInput g = { "enableNrpnIn", "onNrpn", { 99, 4, 98, 5, 38, 7 }, {} };
+	for (bool lua : { false, true }) {
+		CATCH_INFO(std::string(lua ? "lua" : "js"));
+		TimingRig rig(groupScript(lua, g, lua ? "    midiOut.send(msg)" : "    midiOut.send(msg);").c_str());
+		injectGroup(rig, g, 0, 8);
+		rig.run(100);
+
+		REQUIRE(sentNotes(rig.rec) == std::vector<int>({ 99, 98, 6, 38 }));
+		REQUIRE(sentValues(rig.rec) == std::vector<int>({ 4, 5, 0, 7 }));
+	}
+}
+
+TEST_CASE("Received group: setChannel moves every message of the group", "[MidiKit][cc][timing]") {
+	for (bool lua : { false, true }) {
+		for (const GroupInput& g : groupInputs()) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + g.hook);
+			TimingRig rig(groupScript(lua, g, lua ? "    midi.setChannel(msg, 5); midiOut.send(msg)" : "    midi.setChannel(msg, 5); midiOut.send(msg);").c_str());
+			injectGroup(rig, g, 0, 8);
+			rig.run(100);
+
+			REQUIRE(sentNotes(rig.rec) == g.out);
+			for (const TimingRecorder::Sent& s : rig.rec.sent) REQUIRE(s.channel == 4);
+		}
+	}
+}
+
+TEST_CASE("Received group: midiOut.cancel(msg) takes the scheduled group with that number", "[MidiKit][cancel][cc][timing]") {
+	// A note schedules NRPN 300 on channel 1 (a created group); the received NRPN
+	// then cancels by its own number: 300 removes it, 301 does not.
+	static const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.enableNrpnIn(1);
+midi.onMessage = function(port, msg) {
+    let n = midi.createNRPN();
+    midi.setNRPN(n, 1, 300, 1000);
+    midiOut.sendAfterMs(n, 10);
+};
+midi.onNrpn = function(port, msg) { midiOut.cancel(msg); };
+)";
+	static const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midi.enableNrpnIn(1)
+midi.onMessage = function(port, msg)
+    local n = midi.createNRPN()
+    midi.setNRPN(n, 1, 300, 1000)
+    midiOut.sendAfterMs(n, 10)
+end
+midi.onNrpn = function(port, msg) midiOut.cancel(msg) end
+)";
+	struct Case { int numberLsb; std::vector<int> controllers; };
+	// 300 = 2 * 128 + 44
+	std::vector<Case> cases = { { 44, { } }, { 45, { 99, 98, 6, 38 } } };
+	for (bool isLua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(isLua ? "lua" : "js") + " number LSB " + std::to_string(c.numberLsb));
+			TimingRig rig(isLua ? lua : js);
+			rig.inject(noteOn(0, 60, 100), 8);
+			rig.inject(Test::makeMidiMessage(0xb, 0, 99, 2), 16);
+			rig.inject(Test::makeMidiMessage(0xb, 0, 98, c.numberLsb), 16);
+			rig.inject(Test::makeMidiMessage(0xb, 0, 6, 1), 16);
+			rig.inject(Test::makeMidiMessage(0xb, 0, 38, 1), 16);
+			rig.run(cancelRunUntil());
+
+			REQUIRE(sentNotes(rig.rec) == c.controllers);
+		}
 	}
 }

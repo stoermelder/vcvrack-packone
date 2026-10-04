@@ -790,18 +790,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	void dispatchMidiMessage(int midiPort, Message& msg) override {
 		if (!L) return;
 
-		// Assigning the whole QueuedMessage (not just .msg) also resets the decode
-		// fields to their defaults, so a plain message cannot report the type or
-		// parameter of an assembled one that used slot 0 before it.
-		msgStore[0].in = QueuedMessage(msg);
-		// Slot 0 is reused for the incoming message, but it can have been a
-		// chain leader (NRPN/14-bit CC) in an onLoad/onUnload callback whose
-		// store started at 0 — clear the leader flags so a stale one can't
-		// make a send emit a chain from the incoming message.
-		msgStore[0].isNrpn = false;
-		msgStore[0].isRpn = false;
-		msgStore[0].isCc14bit = false;
-		beginStore(1);
+		storeIncoming(QueuedMessage(msg));
 
 		// Calls the cached onMessageRef. No-op if never defined (LUA_NOREF).
 		if (onMessageRef == LUA_NOREF) return;
@@ -853,15 +842,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (!L) return;
 		if (ref == LUA_NOREF) return;
 
-		// The whole QueuedMessage lands in the slot, so the decode result travels
-		// with the bytes and no field-by-field copy can drift.
-		msgStore[0].in = q;
-		// Slot 0 is reused across callbacks, so clear the outgoing chain flags for
-		// the same reason dispatchMidiMessage() does.
-		msgStore[0].isNrpn = false;
-		msgStore[0].isRpn = false;
-		msgStore[0].isCc14bit = false;
-		beginStore(1);
+		storeIncoming(q);
 
 		lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 		lua_pushinteger(L, midiPort + 1);

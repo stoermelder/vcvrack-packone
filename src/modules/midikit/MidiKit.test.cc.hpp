@@ -316,7 +316,7 @@ TEST_CASE("A plain message after an assembled one reads its own value", "[MidiKi
 
 
 // getControl/getValue/getNote return three
-// different things for the same assembled message.
+// different things for the same assembled message (getNote: the lead CC).
 static const char* JS_THREE = R"(/**
  * @engine QuickJs@v1
  */
@@ -338,9 +338,9 @@ end
 )";
 
 TEST_CASE("getNote/getControl/getValue differ on the same assembled handle", "[MidiKit][MidiProcessor][CrossEngine]") {
-	// Completing CC 38, parameter 517, combined 14-bit value 2562.
+	// Parameter 517, combined 14-bit value 2562; getNote is the group's lead (CC 99).
 	EngineVariant v = GENERATE(engineVariants(JS_THREE, LUA_THREE));
-	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"three:517:2562:38"});
+	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"three:517:2562:99"});
 }
 
 
@@ -509,7 +509,7 @@ TEST_CASE("Blanket 14-bit + NRPN consumes CC 6/38 — option (1)", "[MidiKit][Mi
 	// option (2) (NRPN precedence, which would suppress the onCc14bit).
 	EngineVariant v = GENERATE(engineVariants(JS_BOTH, LUA_BOTH));
 	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2),
-		{"onNrpn:517:2562:1:38", "onCc14bit:6:2562:1:38"});
+		{"onNrpn:517:2562:1:99", "onCc14bit:6:2562:1:6"});
 }
 
 
@@ -602,7 +602,7 @@ TEST_CASE("Interleaved NRPN on two channels assemble independently", "[MidiKit][
 	assertProbes(v,
 		{makeCc(0, 99, 1), makeCc(1, 99, 2), makeCc(0, 98, 3), makeCc(1, 98, 4),
 		 makeCc(0, 6, 10), makeCc(0, 38, 5), makeCc(1, 6, 7), makeCc(1, 38, 2)},
-		{"onNrpn:131:1285:1:38", "onNrpn:260:898:2:38"});
+		{"onNrpn:131:1285:1:99", "onNrpn:260:898:2:99"});
 }
 
 TEST_CASE("Parameter select alone fires nothing; following data entry does", "[MidiKit][MidiProcessor][CrossEngine]") {
@@ -611,13 +611,13 @@ TEST_CASE("Parameter select alone fires nothing; following data entry does", "[M
 	EngineVariant v = GENERATE(engineVariants(JS_NRPN, LUA_NRPN));
 	assertProbes(v, {makeCc(0, 99, 4), makeCc(0, 98, 5)}, {});
 	// Data entry on an armed parameter assembles the one change.
-	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"onNrpn:517:2562:1:38"});
+	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"onNrpn:517:2562:1:99"});
 }
 
 TEST_CASE("NRPN quad assembles into one onNrpn with the decoded handle", "[MidiKit][MidiProcessor][CrossEngine]") {
 	// param 4*128+5 = 517, value 20*128+2 = 2562, channel 1, completing CC 38.
 	EngineVariant v = GENERATE(engineVariants(JS_NRPN, LUA_NRPN));
-	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"onNrpn:517:2562:1:38"});
+	assertProbes(v, nrpnQuad(0, 4, 5, 20, 2), {"onNrpn:517:2562:1:99"});
 }
 
 
@@ -660,7 +660,7 @@ TEST_CASE("RPN and NRPN data entry attributes to the type last selected", "[Midi
 	assertProbes(v,
 		{makeCc(0, 101, 1), makeCc(0, 100, 2), makeCc(0, 6, 20), makeCc(0, 38, 2),
 		 makeCc(0, 99, 3), makeCc(0, 98, 4), makeCc(0, 6, 10), makeCc(0, 38, 7)},
-		{"onRpn:130:2562:1:38", "onNrpn:388:1287:1:38"});
+		{"onRpn:130:2562:1:101", "onNrpn:388:1287:1:99"});
 }
 
 
@@ -703,7 +703,7 @@ TEST_CASE("A 14-bit value of 0 still fires", "[MidiKit][MidiProcessor][CrossEngi
 	// coming), the rest are consumed.
 	EngineVariant v = GENERATE(engineVariants(JS_CC14, LUA_CC14));
 	assertProbes(v, {makeCc(0, 7, 1), makeCc(0, 7, 0), makeCc(0, 39, 0)},
-		{"onMessage:7", "onCc14bit:7:0:1:39"});
+		{"onMessage:7", "onCc14bit:7:0:1:7"});
 }
 
 TEST_CASE("Only-14-bit script still receives raw CC 98", "[MidiKit][MidiProcessor][CrossEngine]") {
@@ -973,4 +973,153 @@ TEST_CASE("enableRpnIn rejects a bad midiPort", "[MidiKit][MidiProcessor]") {
 	// "bad midiPort"), so assert the common token rather than the full text.
 	EngineVariant v = GENERATE(engineVariants(JS_ENABLE_RPN_BADPORT, LUA_ENABLE_RPN_BADPORT));
 	assertLoadRejected(v.script, "midiPort");
+}
+
+// ─── Received groups are group handles ──────────────────────────────────────
+// A received NRPN/RPN/14-bit CC has the same shape as a created and set one
+// (Addendum B of var/MidiKit_cancel_scheduled_draft.md): 4 or 2 slots, the lead's
+// bytes, and the decode fields every getter answers from.
+
+struct GroupKind {
+	const char* name;
+	const char* enable;
+	const char* hook;
+	const char* create;     // constructor
+	std::string set;        // setter call on `m`, given the received handle `msg`
+	std::vector<midi::Message> in;
+	int slots;
+};
+
+static std::vector<GroupKind> groupKinds() {
+	return {
+		{ "NRPN", "enableNrpnIn", "onNrpn", "createNRPN", "setNRPN", nrpnQuad(0, 4, 5, 20, 2), 4 },
+		{ "RPN", "enableRpnIn", "onRpn", "createRPN", "setRPN", rpnQuad(0, 4, 5, 20, 2), 4 },
+		{ "CC14", "enableCc14bitIn", "onCc14bit", "createCc14bit", "setCc14bit", { makeCc(0, 7, 1), makeCc(0, 39, 2) }, 2 },
+	};
+}
+
+// A script for `kind` whose hook runs `body` (JS or Lua) with `msg` the received handle.
+static std::string kindScript(bool lua, const GroupKind& k, const std::string& body) {
+	if (lua) return std::string("--[[\n@engine minilua@v1\n--]]\nmidi.") + k.enable + "(1)\nmidi." + k.hook + " = function(port, msg)\n" + body + "\nend\n";
+	return std::string("/**\n * @engine QuickJs@v1\n */\nmidi.") + k.enable + "(1);\nmidi." + k.hook + " = function(port, msg) {\n" + body + "\n};\n";
+}
+
+// Logs every group accessor of handle `h` under `tag`.
+static std::string describe(bool lua, const char* tag, const char* h) {
+	std::string t = tag, m = h;
+	if (lua) {
+		return "rack.log('P:" + t + ":' .. tostring(midi.isNrpn(" + m + ")) .. ':' .. tostring(midi.isRpn(" + m + ")) .. ':' .. tostring(midi.isCc14bit(" + m + ")) .. ':' .. midi.getControl(" + m + ") .. ':' .. midi.getValue(" + m + ") .. ':' .. midi.getChannel(" + m + ") .. ':' .. midi.getNote(" + m + "))";
+	}
+	return "rack.log('P:" + t + ":' + midi.isNrpn(" + m + ") + ':' + midi.isRpn(" + m + ") + ':' + midi.isCc14bit(" + m + ") + ':' + midi.getControl(" + m + ") + ':' + midi.getValue(" + m + ") + ':' + midi.getChannel(" + m + ") + ':' + midi.getNote(" + m + "));";
+}
+
+// Runs `script` over `in` and returns its probe lines.
+static std::vector<std::string> probesOf(const std::string& script, const std::vector<midi::Message>& in) {
+	CATCH_INFO(script);
+	NrpnResult r = runIn(script, in);
+	return r.probes;
+}
+
+TEST_CASE("Received group: every accessor matches a created and set group", "[MidiKit][MidiProcessor][CrossEngine]") {
+	for (bool lua : { false, true }) {
+		for (const GroupKind& k : groupKinds()) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + k.name);
+			// The same channel, number and value, read back through the getters.
+			std::string make = std::string("local n = midi.") + k.create + "(); midi." + k.set + "(n, midi.getChannel(msg), midi.getControl(msg), midi.getValue(msg))";
+			if (!lua) make = std::string("let n = midi.") + k.create + "(); midi." + k.set + "(n, midi.getChannel(msg), midi.getControl(msg), midi.getValue(msg));";
+			std::string body = describe(lua, "R", "msg") + "\n" + make + "\n" + describe(lua, "C", "n");
+			auto p = probesOf(kindScript(lua, k, body), k.in);
+			REQUIRE(p.size() == 2);
+			REQUIRE(p[0].substr(1) == p[1].substr(1));
+			// And it really is the lead: CC 99 / 101, or the MSB controller.
+			REQUIRE(p[0].find("true") != std::string::npos);
+		}
+	}
+}
+
+TEST_CASE("Received group: getNote and getControl answer the lead and the number", "[MidiKit][MidiProcessor][CrossEngine]") {
+	struct Case { size_t kind; const char* expected; };
+	// isNrpn:isRpn:isCc14bit : control : value : channel : note
+	std::vector<Case> cases = {
+		{ 0, "R:true:false:false:517:2562:1:99" },
+		{ 1, "R:false:true:false:517:2562:1:101" },
+		{ 2, "R:false:false:true:7:130:1:7" },
+	};
+	auto kinds = groupKinds();
+	for (bool lua : { false, true }) {
+		for (const Case& c : cases) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + kinds[c.kind].name);
+			auto p = probesOf(kindScript(lua, kinds[c.kind], describe(lua, "R", "msg")), kinds[c.kind].in);
+			REQUIRE(p == std::vector<std::string>({ c.expected }));
+		}
+	}
+}
+
+TEST_CASE("Received group: setValue sets the combined value, other setters raise", "[MidiKit][MidiProcessor][CrossEngine]") {
+	auto kinds = groupKinds();
+	const char* tails[] = { "message is an NRPN; use midi.setNRPN()", "message is an RPN; use midi.setRPN()", "message is a 14-bit CC; use midi.setCc14bit()" };
+	for (bool lua : { false, true }) {
+		for (size_t i = 0; i < kinds.size(); i++) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + kinds[i].name);
+			std::string body = lua
+				? "midi.setValue(msg, 1000)\n" + describe(true, "V", "msg") + "\nlocal ok, err = pcall(midi.setNote, msg, 1)\nrack.log('P:E:' .. tostring(err))\n" + describe(true, "W", "msg")
+				: "midi.setValue(msg, 1000);\n" + describe(false, "V", "msg") + "\ntry { midi.setNote(msg, 1); } catch (e) { rack.log('P:E:' + e); }\n" + describe(false, "W", "msg");
+			auto p = probesOf(kindScript(lua, kinds[i], body), kinds[i].in);
+			REQUIRE(p.size() == 3);
+			// setValue took: the value is 1000 and the number is untouched.
+			REQUIRE(p[0].find(":1000:1:") != std::string::npos);
+			REQUIRE(p[1].find(tails[i]) != std::string::npos);
+			// The rejected setter left the handle unchanged.
+			REQUIRE(p[0].substr(1) == p[2].substr(1));
+		}
+	}
+}
+
+TEST_CASE("Received group: the store holds 4 (NRPN/RPN) or 2 (14-bit CC) slots of the default 32", "[MidiKit][MidiProcessor][CrossEngine]") {
+	auto kinds = groupKinds();
+	for (bool lua : { false, true }) {
+		for (const GroupKind& k : kinds) {
+			CATCH_INFO(std::string(lua ? "lua " : "js ") + k.name);
+			std::string body = lua
+				? "local ok = 0\nlocal good, err = pcall(function() for i = 1, 40 do midi.create(); ok = ok + 1 end end)\nrack.log('P:ok:' .. ok)\nrack.log('P:err:' .. tostring(err))"
+				: "let ok = 0;\ntry { for (let i = 0; i < 40; i++) { midi.create(); ok++; } } catch (e) { rack.log('P:err:' + e); }\nrack.log('P:ok:' + ok);";
+			auto p = probesOf(kindScript(lua, k, body), k.in);
+			REQUIRE(p.size() == 2);
+			std::string ok = "ok:" + std::to_string(32 - k.slots);
+			REQUIRE((p[0] == ok || p[1] == ok));
+			REQUIRE((p[0].find("message store full") != std::string::npos || p[1].find("message store full") != std::string::npos));
+		}
+	}
+}
+
+TEST_CASE("Received group: a following plain message and group start clean", "[MidiKit][MidiProcessor][CrossEngine]") {
+	static const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+midi.enableNrpnIn(1);
+midi.onNrpn = function(port, msg) {
+    rack.log("P:g:" + midi.isNrpn(msg) + ":" + midi.getControl(msg) + ":" + midi.getValue(msg));
+};
+midi.onMessage = function(port, msg) {
+    let h = midi.create();
+    rack.log("P:m:" + midi.isNrpn(msg) + ":" + midi.getControl(msg) + ":" + midi.isNrpn(h) + ":" + midi.getValue(h));
+};
+)";
+	static const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+midi.enableNrpnIn(1)
+midi.onNrpn = function(port, msg)
+    rack.log("P:g:" .. tostring(midi.isNrpn(msg)) .. ":" .. midi.getControl(msg) .. ":" .. midi.getValue(msg))
+end
+midi.onMessage = function(port, msg)
+    local h = midi.create()
+    rack.log("P:m:" .. tostring(midi.isNrpn(msg)) .. ":" .. midi.getControl(msg) .. ":" .. tostring(midi.isNrpn(h)) .. ":" .. midi.getValue(h))
+end
+)";
+	std::vector<midi::Message> in = nrpnQuad(0, 4, 5, 20, 2);
+	in.push_back(makeCc(0, 7, 64));
+	for (auto& m : nrpnQuad(0, 1, 2, 3, 4)) in.push_back(m);
+	EngineVariant v = GENERATE(engineVariants(js, lua));
+	assertProbes(v, in, {"g:true:517:2562", "m:false:7:false:0", "g:true:130:388"});
 }

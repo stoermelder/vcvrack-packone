@@ -427,18 +427,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	void dispatchMidiMessage(int midiPort, Message& msg) override {
 		if (ctx) {
-			// Assigning the whole QueuedMessage (not just .msg) also resets the
-			// decode fields to their defaults, so a plain message cannot report
-			// the type or parameter of an assembled one that used slot 0 before.
-			msgStore[0].in = QueuedMessage(msg);
-			// Slot 0 is reused for the incoming message, but it can have been a
-			// chain leader (NRPN/14-bit CC) in an onLoad/onUnload callback whose
-			// store started at 0 — clear the leader flags so a stale one can't
-			// make a send emit a chain from the incoming message.
-			msgStore[0].isNrpn = false;
-			msgStore[0].isRpn = false;
-			msgStore[0].isCc14bit = false;
-			beginStore(1);
+			storeIncoming(QueuedMessage(msg));
 
 			inCallback = true;
 			// Calls the cached onMessageFn with midiObj as thisVal — no by-name
@@ -476,15 +465,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	void dispatchAssembled(JSValue fn, const char* name, int midiPort, const QueuedMessage& q) {
 		if (!ctx || JS_IsUndefined(fn)) return;
 
-		// The whole QueuedMessage lands in the slot, so the decode result travels
-		// with the bytes and no field-by-field copy can drift.
-		msgStore[0].in = q;
-		// Slot 0 is reused across callbacks, so clear the outgoing chain flags for
-		// the same reason dispatchMidiMessage() does.
-		msgStore[0].isNrpn = false;
-		msgStore[0].isRpn = false;
-		msgStore[0].isCc14bit = false;
-		beginStore(1);
+		storeIncoming(q);
 
 		inCallback = true;
 		beginScriptExecution();

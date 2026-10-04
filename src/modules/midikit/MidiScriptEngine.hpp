@@ -162,6 +162,36 @@ struct MidiScriptEngine {
 		lead.extraValue = int16_t(value);
 	}
 
+	// Worker, start of a MIDI callback: puts the incoming message into slot 0 and
+	// starts the store behind it. A plain message takes 1 slot. An assembled
+	// NRPN/RPN/14-bit CC becomes a group handle, the same shape as a created and
+	// set one, and takes 4 or 2: it is rebuilt from its decoded channel, number and
+	// value, so a device that sent only CC 38 (or repeated only the data entry)
+	// still forwards as a complete group.
+	//
+	// Assigning whole slots resets the chain flags and decode fields of whatever
+	// the slot held before (a chain lead from onLoad/onUnload, or the previous
+	// callback's group), so nothing leaks into this message.
+	void storeIncoming(const QueuedMessage& q) {
+		bool nrpn = q.type == MessageEx::Type::NRPN;
+		bool rpn = q.type == MessageEx::Type::RPN;
+		bool cc14 = q.type == MessageEx::Type::CC_14BIT;
+		if (!(nrpn || rpn || cc14)) {
+			msgStore[0] = ScriptMessage();
+			msgStore[0].in = q;
+			beginStore(1);
+			return;
+		}
+		size_t n = cc14 ? 2 : 4;
+		for (size_t k = 0; k < n; k++) msgStore[k] = ScriptMessage();
+		msgStore[0].isNrpn = nrpn || rpn;
+		msgStore[0].isRpn = rpn;
+		msgStore[0].isCc14bit = cc14;
+		fillGroup(0, cc14 ? OutGroup::CC14 : rpn ? OutGroup::RPN : OutGroup::NRPN, q.msg.getChannel(), uint16_t(q.paramNumber), uint16_t(q.extraValue));
+		msgStore[0].in.frame = q.frame;
+		beginStore(n);
+	}
+
 	// midi.setValue() on a group handle: the combined 14-bit value, keeping the
 	// group's channel and number. False for a group whose setter has not run yet
 	// (no number to keep). `slot` from handleToSlot().
@@ -230,31 +260,23 @@ struct MidiScriptEngine {
 		handler->sendMidi(port, group, n, channel, tick, trigPort, tag);
 	}
 
-	// The group a chain handle sends as: channel and parameter number from the
-	// CC 99/98 (101/100) pair of an NRPN/RPN, channel and MSB controller of a
-	// 14-bit pair. NONE for a single message, or a chain whose setter never ran.
+	// The group a chain handle sends as: channel, kind and number from the lead's
+	// decode fields (channel from its bytes). NONE for a single message, or a
+	// chain whose setter never ran (paramNumber < 0).
 	static OutGroup groupOf(const ScriptMessage& first) {
 		OutGroup g;
-		if (!(first.isNrpn || first.isCc14bit) || !isCancelPattern(first)) return g;
-		const Message& lead = first.in.msg;
-		g.channel = lead.bytes[0] & 0x0F;
-		if (first.isNrpn) {
-			const Message& second = (&first)[1].in.msg;
-			if (lead.bytes.size() < 3 || second.bytes.size() < 3) return g;
-			g.kind = first.isRpn ? OutGroup::RPN : OutGroup::NRPN;
-			g.param = uint16_t(((lead.bytes[2] & 0x7f) << 7) | (second.bytes[2] & 0x7f));
-		}
-		else {
-			if (lead.bytes.size() < 2) return g;
-			g.kind = OutGroup::CC14;
-			g.param = lead.bytes[1];
-		}
+		if (!(first.isNrpn || first.isCc14bit) || first.in.paramNumber < 0) return g;
+		g.kind = groupKind(first);
+		g.channel = first.in.msg.bytes[0] & 0x0F;
+		g.param = uint16_t(first.in.paramNumber);
 		return g;
 	}
 
-	// Whether `first` can be a midiOut.cancel() pattern: it has a status byte (a
-	// chain: its setter ran). Checked by the bindings before cancelEntry().
+	// Whether `first` can be a midiOut.cancel() pattern: a group handle whose
+	// setter ran (paramNumber >= 0), or a plain message with a status byte.
+	// Checked by the bindings before cancelEntry().
 	static bool isCancelPattern(const ScriptMessage& first) {
+		if (first.isNrpn || first.isCc14bit) return first.in.paramNumber >= 0;
 		const Message& m = first.in.msg;
 		return !m.bytes.empty() && m.bytes[0] >= 0x80;
 	}
