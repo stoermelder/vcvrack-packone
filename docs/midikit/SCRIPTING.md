@@ -1811,7 +1811,7 @@ Every limit a script can run into, with what happens at the limit. Anything not 
 
 | Area | Limit | At the limit |
 | --- | --- | --- |
-| Run time of one callback (or the script's top level) | about 100 million VM instructions, in both engines | the script is aborted with "exceeded execution budget" (Lua) or "interrupted" (QuickJs). At top level the load fails; in a callback the next callback runs normally |
+| Run time of one callback (or the script's top level) | about 10 million VM instructions, in both engines | the script is aborted with "exceeded execution budget" (Lua) or "interrupted" (QuickJs). At top level the load fails; in a callback the next callback runs normally |
 | Memory | 1 MiB per script, in both engines | the script is stopped, its state torn down, and "memory limit and was stopped" is logged. Loading a script again starts afresh |
 | Message handles per callback | 32 by default; `@requires messages=N` raises it to at most 512. A received NRPN/RPN handle takes 4 slots, a 14-bit CC 2 | `midi.create()` and the other constructors raise "message store full". A header value above 512 refuses the script |
 | `midiOut.sendAfterMs()`, `midiOut.sendAtFrame()` | at most 2 hours ahead of the frame the call is relative to | a larger finite value is clamped to 2 hours. `NaN` and `Infinity` raise "must be a finite number" and send nothing |

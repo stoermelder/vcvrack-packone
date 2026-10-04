@@ -225,53 +225,53 @@ TEST_CASE("onUnload runs when replaced and sends its Note-Off in both engines", 
 }
 
 
-TEST_CASE("onRemove() sends onUnload's message to the device rather than leaving it queued", "[MidiKit][CrossEngine]") {
-	// Exercises onRemove() directly rather than through Test::destroyModule(),
-	// so the module survives the call and its state (not just the absence of a
-	// crash) can be asserted afterward: onUnload() ran and its message left the
-	// module's out-queue instead of sitting there to be freed with the module.
+TEST_CASE("Destroying the module runs onUnload and sends its message to the device", "[MidiKit][CrossEngine]") {
+	// The script is closed in the destructor (UI thread), not in onRemove() (under
+	// Rack's engine mutex). The device outlives the module, so what onUnload()
+	// sent is observable after the delete: the message left the out-queue for the
+	// device instead of being freed with the module.
 	auto check = [](const std::string& script) {
+		Device dev;
 		MidiKitModule* m = createModule();
+		m->midiOuts.ports[0].outputDevice = &dev;
+		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(script);
 		drainLog(m);
 		REQUIRE(m->host.getActiveEngine() != nullptr);
 
-		Module::RemoveEvent eRemove;
-		m->onRemove(eRemove);
-
-		std::string log = drainLog(m);
-		REQUIRE(log.find("onUnload ran") != std::string::npos);
-
-		int port, ticks;
-		midi::Message out;
-		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
-
 		delete m;
+
+		REQUIRE(dev.sent.size() == 1);
+		REQUIRE(dev.sent[0].status == 0x8);   // note off
+		REQUIRE(dev.sent[0].note == 60);
 	};
 	check(JS_ON_UNLOAD);
 	check(LUA_ON_UNLOAD);
 }
 
 
-TEST_CASE("onRemove() twice does not crash or re-run onUnload", "[MidiKit][CrossEngine]") {
-	// The null-then-check in onRemove() (capture activeEngine, null it, only
-	// then host.unload()) makes a second call a no-op: activeEngine is already
-	// null, so there is no engine left to close. Undo/redo can plausibly
-	// produce a repeat RemoveEvent dispatch, so this must be safe.
+TEST_CASE("onRemove() leaves the script running; the destructor closes it once", "[MidiKit][CrossEngine]") {
+	// onRemove() runs under Rack's engine mutex, so it must not wait for the
+	// worker: it only leaves the broadcast bus. Even a repeat RemoveEvent
+	// (undo/redo can plausibly produce one) does not run onUnload(); the
+	// destructor does, once.
 	auto check = [](const std::string& script) {
+		Device dev;
 		MidiKitModule* m = createModule();
+		m->midiOuts.ports[0].outputDevice = &dev;
+		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(script);
 		drainLog(m);
 
 		Module::RemoveEvent eRemove;
 		m->onRemove(eRemove);
-		drainLog(m);
-
 		m->onRemove(eRemove);
-		std::string log = drainLog(m);
-		REQUIRE(log.find("onUnload ran") == std::string::npos);
+		REQUIRE(drainLog(m).find("onUnload ran") == std::string::npos);
+		REQUIRE(m->host.getActiveEngine() != nullptr);
+		REQUIRE(dev.sent.empty());
 
 		delete m;
+		REQUIRE(dev.sent.size() == 1);
 	};
 	check(JS_ON_UNLOAD);
 	check(LUA_ON_UNLOAD);
@@ -375,31 +375,27 @@ end
 }
 
 
-TEST_CASE("onRemove() waits for onUnload before draining", "[MidiKit][CrossEngine][Async]") {
+TEST_CASE("The destructor waits for onUnload before draining", "[MidiKit][CrossEngine][Async]") {
 	// Teardown's ordering contract: host.unload() blocks, so by the time
-	// out.flush() runs the worker has finished producing. If the close were
-	// async, the drain would race it and run on an empty queue, leaving
-	// onUnload()'s message stranded — a hung note on module removal.
+	// the out-queue is flushed the worker has finished producing. If the close
+	// were async, the drain would race it and run on an empty queue, leaving
+	// onUnload()'s message stranded - a hung note on module removal - and the
+	// worker would run the task on a freed module.
 	auto check = [](const std::string& script) {
+		Device dev;
 		auto worker = asyncWorker();
 		MidiKitModule* m = createModule(worker);
+		m->midiOuts.ports[0].outputDevice = &dev;
+		m->midiOuts.ports[0].channel = -1;
 		m->loadScript(script);
 		barrier(worker);
 		drainLog(m);
 		REQUIRE(m->host.getActiveEngine() != nullptr);
 
-		Module::RemoveEvent eRemove;
-		m->onRemove(eRemove);        // no barrier: onRemove() must do the waiting
+		delete m;        // no barrier: the destructor must do the waiting
 
-		std::string log = drainLog(m);
-		REQUIRE(log.find("onUnload ran") != std::string::npos);
-
-		// Drained by out.flush(), not left queued.
-		int port, ticks;
-		midi::Message out;
-		REQUIRE_FALSE(processOutMessage(m, port, out, ticks));
-
-		delete m;
+		REQUIRE(dev.sent.size() == 1);
+		REQUIRE(dev.sent[0].status == 0x8);
 	};
 	check(JS_ON_UNLOAD);
 	check(LUA_ON_UNLOAD);

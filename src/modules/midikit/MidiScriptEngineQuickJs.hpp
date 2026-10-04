@@ -53,7 +53,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// interruptCountLimit it aborts the script with an UNCATCHABLE "interrupted"
 	// error, so a `while(true)` can't wedge the shared worker. Reset by
 	// beginScriptExecution() per callback (worker-thread only).
-	static const int interruptCountLimit = 10000;   // 10k polls * 10k instr = 100M
+	static const int interruptCountLimit = 1000;   // 1k polls * 10k instr = 10M
 	int interruptCount = 0;
 
 	// JS_SetInterruptHandler callback; opaque is `this`. Non-zero throws the

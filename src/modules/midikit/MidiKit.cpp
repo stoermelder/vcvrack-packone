@@ -1190,11 +1190,10 @@ struct ScriptHost {
 		return domain->worker->work(std::move(task), APP);
 	}
 
-	// Queues `task` and blocks until it has run. False if it never ran or did not
-	// finish in time. The wait is bounded for liveness, not latency:
-	// ~MpmcTaskWorker discards pending tasks, which breaks the promise (hence the
-	// catch), so the timeout only covers a wedged-but-alive worker. The
-	// shared_ptr keeps the promise alive for a worker still running past it.
+	// Queues `task` and blocks until it has run; false if it never ran
+	// (~MpmcTaskWorker discards pending tasks, which breaks the promise).
+	// No time limit: the task touches the module, so it must finish before the
+	// module goes (a callback is interrupted after at most 10M instructions).
 	bool runOnWorkerAndWait(std::function<void()> task) {
 		auto done = std::make_shared<std::promise<void>>();
 		std::future<void> future = done->get_future();
@@ -1205,8 +1204,9 @@ struct ScriptHost {
 
 		// Function-local: wait_for() takes its duration by reference, so a static
 		// constexpr member would be odr-used and need an out-of-line definition.
-		const std::chrono::milliseconds timeout{500};
-		if (future.wait_for(timeout) != std::future_status::ready) return false;
+		// const std::chrono::milliseconds timeout{500};
+		// if (future.wait_for(timeout) != std::future_status::ready) return false;
+		future.wait();
 		try {
 			future.get();
 		}
@@ -1253,12 +1253,11 @@ struct ScriptHost {
 	}
 
 	// Unloads the active script like load() without a new one, but BLOCKS until
-	// onUnload() has run and the script state is reset. Nulls the pointer. Rack
-	// holds the engine mutex across onRemove()/onReset(), so process() cannot run
-	// concurrently. FIFO, so a load() still in the queue completes first.
-	// A failed dispatch (timeout) is deliberately not retried inline: the worker
-	// may be wedged inside the interpreter, and unloading here would put two
-	// threads in it at once.
+	// onUnload() has run and the script state is reset. Nulls the pointer. Called
+	// from the module's destructor and from onReset() (engine mutex held), so
+	// process() cannot run concurrently. FIFO: a queued load() completes first.
+	// A failed dispatch is not retried inline: that could put two threads in the
+	// interpreter.
 	void unload() {
 		MidiScript::MidiScriptEngine* engine = activeEngine;
 		activeEngine = nullptr;
@@ -2005,14 +2004,17 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		log.pushText("No script");
 	}
 
-	// Closes the active engine and drains whatever its onUnload() queued. Rack
-	// dispatches this before the module leaves the engine and holds the engine
-	// mutex across it, so process() cannot run concurrently.
-	// unload() blocks, so the worker has stopped producing before the drain
-	// — preserve that order, it is what makes the drain safe.
+	// Under Rack's engine mutex, so nothing here may wait for the worker: the
+	// script is closed in the destructor (UI thread).
 	void onRemove(const RemoveEvent& e) override {
-		host.unload();        // closes + nulls the active engine (blocking)
 		host.leaveBus();
+	}
+
+	// Closes the active engine, then drains what its onUnload() queued. unload()
+	// blocks, so no worker task is left on the module and the drain is safe:
+	// keep that order.
+	~MidiKitModuleBase() {
+		host.unload();
 		flushMidiOut();
 	}
 

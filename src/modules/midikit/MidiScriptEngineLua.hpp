@@ -28,7 +28,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// luaL_error(), so a `while true do end` can't wedge the shared worker.
 	// Reset by beginScriptExecution() per callback (worker-thread only).
 	static const int interruptInterval = 10000;  // hook fires every 10k instructions
-	static const int interruptCountLimit = 10000;   // 10k counts * 10k instr = 100M
+	static const int interruptCountLimit = 1000;   // 1k counts * 10k instr = 10M
 	int interruptCount = 0;
 
 	// Whether the count hook should budget the running code. False during

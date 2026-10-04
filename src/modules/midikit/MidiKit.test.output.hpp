@@ -506,25 +506,26 @@ TEST_CASE("An NRPN group is queued whole and in order", "[MidiKit]") {
 }
 
 
-TEST_CASE("onRemove() flushes due output immediately and drops what is scheduled", "[MidiKit]") {
+TEST_CASE("Destroying the module flushes due output immediately and drops what is scheduled", "[MidiKit]") {
 	// out.flush() sets frame = -1 and calls out.ports[0].sendMessage() directly
 	// rather than out.ports[0].send(): the frame and tick queues are drained only
 	// by process(), which will never run again. A tick-scheduled message belongs
 	// to the script being removed and is dropped with it, not parked in a queue.
+	// The device outlives the module, so what reached it can be checked.
+	Device dev;
 	MidiKitModule* m = createModule();
-	midi::Message msg = noteOn(1, 60, 100);
+	m->midiOuts.ports[0].outputDevice = &dev;
+	m->midiOuts.ports[0].channel = -1;
+	midi::Message due = noteOn(1, 60, 100);
+	midi::Message scheduled = noteOn(1, 61, 100);
 
-	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));   // would be tick-scheduled via send()
-
-	Module::RemoveEvent eRemove;
-	m->onRemove(eRemove);
-
-	REQUIRE(m->midiOuts.queue.empty());
-	// Dropped instead of being parked in a queue nothing will drain.
-	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
-	REQUIRE(m->midiOuts.ports[0].frameQueue.size() == 0);
+	REQUIRE(m->sendMidi(0, &due, 1, 0, 0));
+	REQUIRE(m->sendMidi(0, &scheduled, 1, 0, 5));   // would be tick-scheduled via send()
 
 	delete m;
+
+	REQUIRE(dev.sent.size() == 1);
+	REQUIRE(dev.sent[0].note == 60);
 }
 
 

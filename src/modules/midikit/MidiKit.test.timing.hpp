@@ -420,7 +420,7 @@ TEST_CASE("Teardown flush is sent immediately in both modes", "[MidiKit][Timing]
 		rig.run(40);
 		REQUIRE(rig.rec.sent.empty());
 
-		// As onRemove() does.
+		// As the destructor does.
 		rig.m->host.unload();
 		rig.m->flushMidiOut();
 
