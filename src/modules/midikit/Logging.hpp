@@ -89,39 +89,42 @@ struct ScriptLog {
 		notices[n].pending.store(true, std::memory_order_release);
 	}
 
-	// Collapses a flood of identical lines (an error on every clock tick would
-	// push everything else out of the queue). After MAX_REPEATS in a row the
-	// rest are counted and reported as one "… repeated N×" line when a different
-	// line comes, on reset, or when the drain finds the flood quiet for quietMs.
+	// Collapses a flood of identical lines: more than MAX_REPEATS within windowMs.
+	// Slower repeats are all logged. The suppressed ones are reported as one
+	// "… repeated N×" line when the run ends (different line, new window, reset)
+	// or the drain finds it quiet for quietMs.
 	// isRepeat() is worker-only; the rest is atomic, so no lock.
 	struct RepeatFilter {
 		std::atomic<int> suppressed{0};        // repeats counted, not logged yet
 		std::atomic<uint32_t> resetGen{0};     // bumped by every RESET marker
 		std::atomic<int64_t> lastRepeatMs{0};  // steady-clock time of the last counted repeat
 		std::string lastText;                  // worker only from here
-		int lastCount = 0;                     // identical lines in a row, logged or counted
+		int lastCount = 0;                     // identical lines in the window, logged or counted
+		int64_t windowStartMs = 0;
 		uint32_t seenResetGen = 0;
 
 		static constexpr int MAX_REPEATS = 3;
-		int64_t quietMs = 2000;                // quiet time before a drain reports the count
+		int64_t windowMs = 1000;               // the span MAX_REPEATS lines are free in
+		int64_t quietMs = 1000;                // quiet time before a drain reports the count
 
 		static int64_t steadyMs() {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 		}
 
-		// Worker: true if `text` is one more of a run past MAX_REPEATS, which is
-		// counted instead of logged. Otherwise it starts or continues a run, and
-		// `finished` gets the count of the run it ends, for the caller to report.
+		// Worker: true if `text` is one more of a flood, which is counted instead
+		// of logged. Otherwise it starts or continues a window, and `finished` gets
+		// the count of the flood it ends, for the caller to report.
 		bool isRepeat(const std::string& text, int& finished) {
 			finished = 0;
+			int64_t now = steadyMs();
 			uint32_t gen = resetGen.load(std::memory_order_relaxed);
 			if (gen != seenResetGen) {
 				seenResetGen = gen;
 				lastCount = 0;
 			}
-			if (lastCount > 0 && text == lastText) {
+			if (lastCount > 0 && text == lastText && now - windowStartMs < windowMs) {
 				if (lastCount >= MAX_REPEATS) {
-					lastRepeatMs.store(steadyMs(), std::memory_order_relaxed);
+					lastRepeatMs.store(now, std::memory_order_relaxed);
 					suppressed.fetch_add(1, std::memory_order_relaxed);
 					return true;
 				}
@@ -131,6 +134,7 @@ struct ScriptLog {
 			finished = count();
 			lastText = text;
 			lastCount = 1;
+			windowStartMs = now;
 			return false;
 		}
 

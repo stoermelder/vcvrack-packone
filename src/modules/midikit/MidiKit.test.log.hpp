@@ -268,6 +268,31 @@ TEST_CASE("A flood stays collapsed while it goes on and is reported once it has 
 	REQUIRE(drain() == std::vector<std::string>{ "… repeated 1×" });
 }
 
+TEST_CASE("Identical lines slower than the flood window are all logged", "[MidiKit][Log]") {
+	ScriptLog log;
+	log.repeats.windowMs = 0;   // every line is outside the previous one's window
+	for (int i = 0; i < 10; i++) log.pushText("same", 0.f, true);
+
+	std::vector<std::string> lines;
+	ScriptLog::Entry t;
+	while (log.tryPop(t)) lines.push_back(std::get<2>(t));
+	REQUIRE(lines == std::vector<std::string>(10, "same"));
+}
+
+TEST_CASE("A flood that goes on is reported when its window ends", "[MidiKit][Log]") {
+	ScriptLog log;
+	log.repeats.quietMs = 60000;
+	log.repeats.windowMs = 60000;
+	for (int i = 0; i < 6; i++) log.pushText("tick", 0.f, true);
+	log.repeats.windowMs = 0;   // the window is over
+	log.pushText("tick", 0.f, true);
+
+	std::vector<std::string> lines;
+	ScriptLog::Entry t;
+	while (log.tryPop(t)) lines.push_back(std::get<2>(t));
+	REQUIRE(lines == std::vector<std::string>{ "tick", "tick", "tick", "… repeated 3×", "tick" });
+}
+
 TEST_CASE("A reset ends a run of repeats, and the same line is logged again after it", "[MidiKit][Log]") {
 	ScriptLog log;
 	for (int i = 0; i < 5; i++) log.pushText("err", 0.f, true);
