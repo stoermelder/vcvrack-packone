@@ -4059,3 +4059,32 @@ TEST_CASE("Timing-mode preset 'Clock multiplier': one pulse on each edge, the re
 	for (int k = 0; k < 24; k++) expected.push_back(580 + 10 * k);
 	REQUIRE(frames == expected);
 }
+
+
+// The basic delay demos delay the release with the note, in every encoding of it,
+// so a keyboard that sends Note-Offs does not leave notes hanging.
+TEST_CASE("The basic delay presets delay Note-Offs and velocity-0 releases with their notes", "[MidiKit][Release]") {
+	const char* name = GENERATE("Delay NoteOn Ch1 for two 1500ms", "Delay NoteOn Ch1 for two clock ticks");
+	std::string path = GENERATE_COPY(presetPaths(name));
+	bool byTicks = std::strstr(name, "ticks") != nullptr;
+	CATCH_INFO("preset: " << path);
+
+	std::vector<midi::Message> delayed = { noteOn(0, 60, 100), noteOff(0, 60), noteOn(0, 60, 0) };
+	for (const midi::Message& in : delayed) {
+		CATCH_INFO("status " << int(in.getStatus()) << " value " << int(in.getValue()));
+		Kit<> kit;
+		kit.loadPreset(path);
+		std::vector<Out> sent = kit.dispatch(in);
+		REQUIRE(sent.size() == 1);
+		REQUIRE(sent[0].note == 60);
+		// Held back, not sent at once.
+		if (byTicks) REQUIRE(sent[0].ticks == 2);
+		else REQUIRE(sent[0].frame == int64_t(1.5 * Test::sampleRate()));
+	}
+
+	// Other channels are not delayed and not passed through.
+	Kit<> kit;
+	kit.loadPreset(path);
+	REQUIRE(kit.dispatch(noteOn(1, 60, 100)).empty());
+	REQUIRE(kit.dispatch(noteOff(1, 60)).empty());
+}
