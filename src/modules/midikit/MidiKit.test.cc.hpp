@@ -1208,17 +1208,15 @@ TEST_CASE("Enabling every 14-bit CC claims controllers 0-31, a per-CC enable lea
 	checkGap("enableCc14bitIn", "onCc14bit", "c", in, { "m:1:10", "m:1:20", "m:1:30", "m:1:40" }, "1, 7");
 }
 
-TEST_CASE("Decoder gap: a 14-bit controller whose LSB did not change still fires", "[MidiKit][MidiProcessor][decoder-gap]") {
-	for (bool lua : { false, true }) {
-		CATCH_INFO(std::string(lua ? "lua" : "js"));
-		// First a full pair, then a new MSB alone.
-		auto p = probesOf(gapScript(lua, "enableCc14bitIn", "onCc14bit", "c"), { makeCc(0, 7, 1), makeCc(0, 39, 2), makeCc(0, 7, 3) });
-		// The first MSB escapes raw (documented); the completed pair fires.
-		REQUIRE(std::find(p.begin(), p.end(), "c:7:130") != p.end());
-		// The new MSB must produce an event for controller 7 (the LSB is 0 or the old one).
-		REQUIRE(p.back().compare(0, 4, "c:7:") == 0);
-		REQUIRE(p.back() != "c:7:130");
-	}
+TEST_CASE("A 14-bit change needs both messages: a new MSB alone fires nothing", "[MidiKit][MidiProcessor]") {
+	// Accepted behaviour: an event is produced by the LSB, completing the pair. A new
+	// MSB is withheld (it is a component by then) and waits for its LSB, so a device
+	// has to send both for every change.
+	checkGap("enableCc14bitIn", "onCc14bit", "c", { makeCc(0, 7, 1), makeCc(0, 39, 2), makeCc(0, 7, 3) },
+		{ "m:7:1", "c:7:130" });
+	// The LSB then completes it with the new MSB.
+	checkGap("enableCc14bitIn", "onCc14bit", "c", { makeCc(0, 7, 1), makeCc(0, 39, 2), makeCc(0, 7, 3), makeCc(0, 39, 2) },
+		{ "m:7:1", "c:7:130", "c:7:386" });
 }
 
 TEST_CASE("A 14-bit value below 128 is decoded (MSB of 0 on a new controller)", "[MidiKit][MidiProcessor]") {

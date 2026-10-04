@@ -1424,6 +1424,10 @@ Once a kind is enabled, the CCs it is built from stop reaching `midi.onMessage`.
   enabled while leaving 6/38 alone. The same goes for every other controller 0-31: enabling all
   14-bit CCs claims them, so a 7-bit controller there (a mod wheel on CC 1) is
   withheld after its first message. Register the controllers you mean.
+- **A 14-bit change needs both messages.** The event fires when the LSB (CC
+  `n + 32`) arrives, with the MSB seen last. An MSB alone fires nothing and is
+  withheld from `midi.onMessage`: the new value is only reported once its LSB
+  follows, so a device has to send the pair for every change.
 - **An MSB of 0 counts.** A 14-bit value below 128 is MSB 0 plus an LSB, so a
   zero MSB on a controller not seen before assembles with its LSB like any other.
   As with every first MSB, that MSB itself reaches `midi.onMessage` raw.
