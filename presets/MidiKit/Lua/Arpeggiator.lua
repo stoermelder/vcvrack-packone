@@ -57,12 +57,14 @@ local PLAYMODES = { "Up", "Down", "Up-Down" }
 -- tickCount: counts trigger ticks up to the current clockDivision.
 -- soundingNote/soundingChannel: the note+channel currently sustained by the
 -- arp, so it can be released before the next one starts or on unload.
+-- lengthTicks: the ticks after a step at which its note ends (the gate length).
 local state = {
     held = {},
     pattern = {},
     step = 1,
     tickCount = 0,
     soundingNote = -1,
+    lengthTicks = 1,
     soundingChannel = 1
 }
 
@@ -185,7 +187,7 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then return "Clock division" end
     if i == 2 then return "Octave range" end
     if i == 3 then return "Note length" end
@@ -193,7 +195,7 @@ param.getName = function(i)
     return ""
 end
 
-param.getValueFormat = function(i)
+param.onValueText = function(i)
     if i == 1 then return number.toString(DIVISIONS[divisionIndex()]) .. " ticks/step" end
     if i == 2 then return number.toString(octaveRange()) .. " oct" end
     if i == 3 then return string.format("%.0f", param.getValue(3, 0.5) * 100) .. " %" end
@@ -225,7 +227,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if (midi.isNoteOff(msg) or (midi.isNoteOn(msg) and midi.getValue(msg) == 0)) and matchesChannel(ch) then
+    if midi.isNoteRelease(msg) and matchesChannel(ch) then
         local note = midi.getNote(msg)
         local filtered = {}
         for i = 1, #state.held do
@@ -249,7 +251,13 @@ end
 trig.onTrigger = function(trigPort, channel)
     local division = DIVISIONS[divisionIndex()]
     state.tickCount = state.tickCount + 1
-    if state.tickCount < division then return end
+    if state.tickCount < division then
+        -- The note's gate is over: end it here, on the tick, instead of scheduling a
+        -- Note-Off ahead of time. The script then knows the note has ended, so the
+        -- next step does not send a second Note-Off for it.
+        if state.tickCount >= state.lengthTicks then releaseSounding() end
+        return
+    end
     state.tickCount = 0
 
     releaseSounding()
@@ -269,10 +277,7 @@ trig.onTrigger = function(trigPort, channel)
         lengthTicks = division > 1 and (division - 1) or 1
     end
 
-    local off = midi.create()
-    midi.setNoteOff(off, ch, note)
-    midiOut.sendAfterTrigger(off, lengthTicks)
-
+    state.lengthTicks = lengthTicks
     state.soundingNote = note
     state.soundingChannel = ch
 

@@ -112,14 +112,14 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) return "Gravity";
     if (i === 2) return "Bounciness";
     if (i === 3) return "Min velocity";
     return "";
 };
 
-param.getValueFormat = function(i) {
+param.onValueText = function(i) {
     if (i === 1) return number.toString(gravityParam());
     if (i === 2) return Math.round(bouncinessParam() * 100) + " %";
     if (i === 3) return number.toString(minVelocityParam());

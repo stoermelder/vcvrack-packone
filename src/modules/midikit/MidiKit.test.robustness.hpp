@@ -1,13 +1,13 @@
 // Store capacity limits, scripts that clobber predefined objects, and concurrent config access.
 //
-// Part of the cross-engine suite: included into the __engine namespace by
-// MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
+// Part of the cross-engine suite: the shared helpers (run, requireEquivalent, EngineRun, ...)
+// are in MidiKit.test.hpp.
 
 // Store cap (msgStoreDefault handles)
 // midi.create()/midi.clone()/midi.createNRPN() fail once the per-callback
 // store is full, aborting the rest of the callback. The error
 // wording is identical in both engines (unified: "midi.create: message store
-// full" etc.). Per A3, messages sent before the error have already gone out —
+// full" etc.). Messages sent before the error have already gone out —
 // a multi-message sequence can be emitted partially — while anything created
 // after the error is dropped.
 
@@ -71,8 +71,8 @@ end
 )";
 
 TEST_CASE("midi.create past the store cap errors and keeps the sends made before it", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(fillN(JS_STORE_FULL, STORE + 1));
-	EngineResult lua = run(fillN(LUA_STORE_FULL, STORE + 1));
+	EngineRun js = run(fillN(JS_STORE_FULL, STORE + 1));
+	EngineRun lua = run(fillN(LUA_STORE_FULL, STORE + 1));
 
 	// Identical error wording in both engines (unified wording).
 	CATCH_INFO("JS log:\n" << js.log);
@@ -80,7 +80,7 @@ TEST_CASE("midi.create past the store cap errors and keeps the sends made before
 	REQUIRE(js.log.find("midi.create: message store full") != std::string::npos);
 	REQUIRE(lua.log.find("midi.create: message store full") != std::string::npos);
 
-	// Partial output (A3): both pre-error messages went out, identically, with
+	// Partial output: both pre-error messages went out, identically, with
 	// the exact bytes the scripts requested. size == 2 also proves the
 	// message created after the error never went out.
 	REQUIRE(js.sent.size() == 2);
@@ -137,7 +137,7 @@ midi.onMessage = function(port, msg) {
         midi.create();
     }
     let cc14 = midi.createCc14bit();
-    midi.setCc14bit(cc14, 8, 1, 100.5);
+    midi.setCc14bit(cc14, 8, 1, 12864);
     midiOut.send(cc14);
 };
 )";
@@ -150,7 +150,7 @@ midi.onMessage = function(midiPort, msg)
         midi.create()
     end
     local cc14 = midi.createCc14bit()
-    midi.setCc14bit(cc14, 8, 1, 100.5)
+    midi.setCc14bit(cc14, 8, 1, 12864)
     midiOut.send(cc14)
 end
 )";
@@ -200,8 +200,8 @@ end
 )";
 
 TEST_CASE("createNRPN at the last valid store slot succeeds in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(fillN(JS_NRPN_AT_BOUNDARY, STORE - 5));
-	EngineResult lua = run(fillN(LUA_NRPN_AT_BOUNDARY, STORE - 5));
+	EngineRun js = run(fillN(JS_NRPN_AT_BOUNDARY, STORE - 5));
+	EngineRun lua = run(fillN(LUA_NRPN_AT_BOUNDARY, STORE - 5));
 	CATCH_INFO("JS log:\n" << js.log);
 	CATCH_INFO("Lua log:\n" << lua.log);
 	REQUIRE(js.log.find("message store full") == std::string::npos);
@@ -217,8 +217,8 @@ TEST_CASE("createNRPN at the last valid store slot succeeds in both engines", "[
 }
 
 TEST_CASE("createCc14bit at the last valid store slot succeeds in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(fillN(JS_CC14_AT_BOUNDARY, STORE - 3));
-	EngineResult lua = run(fillN(LUA_CC14_AT_BOUNDARY, STORE - 3));
+	EngineRun js = run(fillN(JS_CC14_AT_BOUNDARY, STORE - 3));
+	EngineRun lua = run(fillN(LUA_CC14_AT_BOUNDARY, STORE - 3));
 	REQUIRE(js.log.find("message store full") == std::string::npos);
 	REQUIRE(lua.log.find("message store full") == std::string::npos);
 	// ch 8, cc=1 value=100.5 -> CC1=100 (MSB), CC33=64 (LSB)
@@ -233,8 +233,8 @@ TEST_CASE("createCc14bit at the last valid store slot succeeds in both engines",
 }
 
 TEST_CASE("createNRPN one slot past the boundary errors in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(fillN(JS_NRPN_PAST_BOUNDARY, STORE - 4));
-	EngineResult lua = run(fillN(LUA_NRPN_PAST_BOUNDARY, STORE - 4));
+	EngineRun js = run(fillN(JS_NRPN_PAST_BOUNDARY, STORE - 4));
+	EngineRun lua = run(fillN(LUA_NRPN_PAST_BOUNDARY, STORE - 4));
 	REQUIRE(js.log.find("midi.createNRPN: message store full") != std::string::npos);
 	REQUIRE(lua.log.find("midi.createNRPN: message store full") != std::string::npos);
 	REQUIRE(js.sent.empty());
@@ -242,8 +242,8 @@ TEST_CASE("createNRPN one slot past the boundary errors in both engines", "[Midi
 }
 
 TEST_CASE("createCc14bit one slot past the boundary errors in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(fillN(JS_CC14_PAST_BOUNDARY, STORE - 2));
-	EngineResult lua = run(fillN(LUA_CC14_PAST_BOUNDARY, STORE - 2));
+	EngineRun js = run(fillN(JS_CC14_PAST_BOUNDARY, STORE - 2));
+	EngineRun lua = run(fillN(LUA_CC14_PAST_BOUNDARY, STORE - 2));
 	REQUIRE(js.log.find("midi.createCc14bit: message store full") != std::string::npos);
 	REQUIRE(lua.log.find("midi.createCc14bit: message store full") != std::string::npos);
 	REQUIRE(js.sent.empty());
@@ -271,22 +271,22 @@ struct TwoDispatchResult {
 };
 
 static TwoDispatchResult runTwoMidiDispatches(const std::string& script) {
-	MidiKitModule* m = createModule();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(script);
 	drainLog(m);
 
 	TwoDispatchResult r;
 	midi::Message in1 = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in1);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in1));
 	m->host.getActiveEngine()->process();
 	r.log1 = drainLog(m);
 
 	midi::Message in2 = noteOn(1, 61, 100);
-	m->host.getActiveEngine()->processInMessage(0, in2);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in2));
 	m->host.getActiveEngine()->process();
 	r.log2 = drainLog(m);
 
-	Test::destroyModule(m);
 	return r;
 }
 
@@ -391,7 +391,7 @@ TEST_CASE("Clobbering the global rack variable does not crash either engine", "[
 	// global was just overwritten with 42 on the first call. So the second
 	// call errors — inside the script's own code, not in the engine's
 	// dispatch mechanism — and neither engine crashes. Wording differs
-	// (see #13/D6) but both engines must be equally non-silent here.
+	// but both engines must be equally non-silent here.
 	auto checkClobber = [](const std::string& script) {
 		TwoDispatchResult r = runTwoMidiDispatches(script);
 		REQUIRE(r.log1.find("call") != std::string::npos);
@@ -465,9 +465,9 @@ end
 )";
 
 TEST_CASE("Defining midi.onMessage late (from onTrigger) never gets called, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto checkLateDefine = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string loadLog = drainLog(m);
 		// The load-time "no midi.onMessage" warning must fire in both engines:
@@ -481,12 +481,11 @@ TEST_CASE("Defining midi.onMessage late (from onTrigger) never gets called, in b
 		REQUIRE(triggerLog.find("onTrigger fired") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.find("late midi.onMessage called") == std::string::npos);
 
-		Test::destroyModule(m);
 	};
 	checkLateDefine(JS_LATE_DEFINE_ON_MIDI_MESSAGE);
 	checkLateDefine(LUA_LATE_DEFINE_ON_MIDI_MESSAGE);
@@ -526,9 +525,9 @@ midi = 42
 )";
 
 TEST_CASE("Clobbering midi with a number at top-level load time does not crash either engine", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto checkNumberClobber = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string loadLog = drainLog(m);
 		// midi is 42 (not an object) by the time hooks are resolved, so
@@ -537,7 +536,7 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 		midi::Message in = noteOn(1, 60, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 		std::string midiLog = drainLog(m);
 		REQUIRE(midiLog.empty());
@@ -550,12 +549,11 @@ TEST_CASE("Clobbering midi with a number at top-level load time does not crash e
 		bool isJs = script.find("QuickJs") != std::string::npos;
 		m->loadScript(isJs ? JS_REASSIGN_ON_MIDI_MESSAGE : LUA_REASSIGN_ON_MIDI_MESSAGE);
 		drainLog(m);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 		std::string reloadMidiLog = drainLog(m);
 		REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 	checkNumberClobber(JS_MIDI_NUMBER_AT_LOAD);
 	checkNumberClobber(LUA_MIDI_NUMBER_AT_LOAD);
@@ -584,8 +582,8 @@ midi = null;
 )";
 
 TEST_CASE("Clobbering midi with null during top-level load code does not leave a pending exception (QuickJS)", "[MidiKit][QuickJs]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_MIDI_NULL_AT_LOAD);
 	std::string loadLog = drainLog(m);
 	// midi is null by the time hooks are resolved (top-level code, including
@@ -595,7 +593,7 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	REQUIRE(loadLog.find("No midi.onMessage") != std::string::npos);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	std::string midiLog = drainLog(m);
 	REQUIRE(midiLog.empty());
@@ -607,7 +605,7 @@ TEST_CASE("Clobbering midi with null during top-level load code does not leave a
 	// running for the first time on that ctx.
 	m->loadScript(JS_REASSIGN_ON_MIDI_MESSAGE);
 	drainLog(m);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	std::string reloadMidiLog = drainLog(m);
 	REQUIRE(reloadMidiLog.find("call 1") != std::string::npos);
@@ -658,10 +656,10 @@ end
 )";
 
 TEST_CASE("dataToJson() concurrent with setConfig() on the worker thread always sees a complete, valid config, in both engines", "[MidiKit][CrossEngine][Async][TSan]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
 		auto worker = asyncWorker();
-		MidiKitModule* m = createModule(worker);
+		Kit<> kit(worker);
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		barrier(worker);
 		drainLog(m);
@@ -727,7 +725,6 @@ TEST_CASE("dataToJson() concurrent with setConfig() on the worker thread always 
 		stop.store(true, std::memory_order_relaxed);
 		producer.join();
 		barrier(worker);   // drain whatever the producer's last loop queued
-		Test::destroyModule(m);
 	};
 	check(JS_HAMMER_SETCONFIG);
 	check(LUA_HAMMER_SETCONFIG);
@@ -742,27 +739,27 @@ TEST_CASE("dataToJson() concurrent with setConfig() on the worker thread always 
 
 // Feeds `count` Note-Ons (notes 60, 61, ...) one callback at a time and returns
 // everything sent plus the log.
-static EngineResult runMessages(const std::string& script, int count) {
-	MidiKitModule* m = createModule();
+static EngineRun runMessages(const std::string& script, int count) {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(script);
 
-	EngineResult r;
+	EngineRun r;
 	r.loadLog = drainLog(m);
 	CATCH_INFO("load log:\n" << r.loadLog);
 	REQUIRE(r.loadLog.find("rror") == std::string::npos);
 
 	for (int i = 0; i < count; i++) {
 		midi::Message in = noteOn(1, 60 + i, 100);
-		m->host.getActiveEngine()->processInMessage(0, in);
+		m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 		m->host.getActiveEngine()->process();
 	}
 	int port, ticks;
 	midi::Message out;
 	while (processOutMessage(m, port, out, ticks)) {
-		r.sent.push_back(toSent(port, ticks, out));
+		r.sent.push_back(Out::of(out, port, ticks));
 	}
 	r.log = drainLog(m);
-	Test::destroyModule(m);
 	return r;
 }
 
@@ -789,8 +786,8 @@ end
 )";
 
 TEST_CASE("Sending the same handle twice sends two identical messages in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_SEND_TWICE);
-	EngineResult lua = run(LUA_SEND_TWICE);
+	EngineRun js = run(JS_SEND_TWICE);
+	EngineRun lua = run(LUA_SEND_TWICE);
 	REQUIRE(js.sent.size() == 2);
 	REQUIRE(js.sent[0].bytes == js.sent[1].bytes);
 	requireEquivalent(js, lua);
@@ -821,9 +818,9 @@ end
 )";
 
 TEST_CASE("A change after send() does not affect what was sent, in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_CHANGE_AFTER_SEND);
-	EngineResult lua = run(LUA_CHANGE_AFTER_SEND);
-	for (const EngineResult* r : { &js, &lua }) {
+	EngineRun js = run(JS_CHANGE_AFTER_SEND);
+	EngineRun lua = run(LUA_CHANGE_AFTER_SEND);
+	for (const EngineRun* r : { &js, &lua }) {
 		REQUIRE(r->sent.size() == 2);
 		REQUIRE(r->sent[0].bytes == std::vector<uint8_t>({0x90, 60, 100}));
 		REQUIRE(r->sent[1].bytes == std::vector<uint8_t>({0x90, 62, 100}));
@@ -853,8 +850,8 @@ end
 )";
 
 TEST_CASE("An NRPN leader sent twice sends two complete quads in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_NRPN_TWICE);
-	EngineResult lua = run(LUA_NRPN_TWICE);
+	EngineRun js = run(JS_NRPN_TWICE);
+	EngineRun lua = run(LUA_NRPN_TWICE);
 	REQUIRE(js.sent.size() == 8);
 	for (size_t i = 0; i < 4; i++) REQUIRE(js.sent[i].bytes == js.sent[i + 4].bytes);
 	requireEquivalent(js, lua);
@@ -883,9 +880,9 @@ end
 TEST_CASE("One handle can be sent past the store cap in both engines", "[MidiKit][CrossEngine]") {
 	// The cap limits distinct live messages, not messages sent. The out queue
 	// bounds the output instead: what doesn't fit is dropped and logged.
-	EngineResult js = run(JS_REUSE_HANDLE);
-	EngineResult lua = run(LUA_REUSE_HANDLE);
-	for (const EngineResult* r : { &js, &lua }) {
+	EngineRun js = run(JS_REUSE_HANDLE);
+	EngineRun lua = run(LUA_REUSE_HANDLE);
+	for (const EngineRun* r : { &js, &lua }) {
 		REQUIRE(r->log.find("store full") == std::string::npos);
 		REQUIRE(r->sent.size() >= 100);
 	}
@@ -933,15 +930,16 @@ end
 )";
 
 TEST_CASE("A handle from an earlier callback is an error, not an alias, in both engines", "[MidiKit][CrossEngine]") {
-	for (const char* script : { JS_STALE_HANDLE, LUA_STALE_HANDLE }) {
-		CATCH_INFO(script);
-		EngineResult r = runMessages(script, 2);
-		CATCH_INFO("log:\n" << r.log);
-		REQUIRE(r.log.find("onMessage error") != std::string::npos);
-		// Only the first callback's message went out.
-		REQUIRE(r.sent.size() == 1);
-		REQUIRE(r.sent[0].bytes == std::vector<uint8_t>({0x90, 60, 100}));
-	}
+	Pair scripts{JS_STALE_HANDLE, LUA_STALE_HANDLE};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	CATCH_INFO(script);
+	EngineRun r = runMessages(script, 2);
+	CATCH_INFO("log:\n" << r.log);
+	REQUIRE(r.log.find("onMessage error") != std::string::npos);
+	// Only the first callback's message went out.
+	REQUIRE(r.sent.size() == 1);
+	REQUIRE(r.sent[0].bytes == std::vector<uint8_t>({0x90, 60, 100}));
 }
 
 static const char* JS_ONLOAD_HANDLE = R"(/**
@@ -971,12 +969,13 @@ end
 )";
 
 TEST_CASE("A handle stored in onLoad can't be used in onMessage in either engine", "[MidiKit][CrossEngine]") {
-	for (const char* script : { JS_ONLOAD_HANDLE, LUA_ONLOAD_HANDLE }) {
-		CATCH_INFO(script);
-		EngineResult r = runMessages(script, 1);
-		REQUIRE(r.log.find("onMessage error") != std::string::npos);
-		REQUIRE(r.sent.empty());
-	}
+	Pair scripts{JS_ONLOAD_HANDLE, LUA_ONLOAD_HANDLE};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	CATCH_INFO(script);
+	EngineRun r = runMessages(script, 1);
+	REQUIRE(r.log.find("onMessage error") != std::string::npos);
+	REQUIRE(r.sent.empty());
 }
 
 static const char* JS_INCOMING_HANDLE = R"(/**
@@ -1000,18 +999,19 @@ end
 )";
 
 TEST_CASE("The incoming message handle of one onMessage is invalid in the next, in both engines", "[MidiKit][CrossEngine]") {
-	for (const char* script : { JS_INCOMING_HANDLE, LUA_INCOMING_HANDLE }) {
-		CATCH_INFO(script);
-		EngineResult r = runMessages(script, 2);
-		REQUIRE(r.log.find("onMessage error") != std::string::npos);
-		REQUIRE(r.sent.empty());
-	}
+	Pair scripts{JS_INCOMING_HANDLE, LUA_INCOMING_HANDLE};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	CATCH_INFO(script);
+	EngineRun r = runMessages(script, 2);
+	REQUIRE(r.log.find("onMessage error") != std::string::npos);
+	REQUIRE(r.sent.empty());
 }
 
 static const char* JS_GETNAME_CREATE = R"(/**
  * @engine QuickJs@v1
  */
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) {
         let m = midi.create();
         return "A";
@@ -1023,7 +1023,7 @@ param.getName = function(i) {
 static const char* LUA_GETNAME_CREATE = R"(--[[
 @engine minilua@v1
 --]]
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then
         local m = midi.create()
         return "A"
@@ -1032,14 +1032,222 @@ param.getName = function(i)
 end
 )";
 
-TEST_CASE("midi.create inside param.getName raises and the name falls back, in both engines", "[MidiKit][CrossEngine]") {
-	for (const char* script : { JS_GETNAME_CREATE, LUA_GETNAME_CREATE }) {
-		CATCH_INFO(script);
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-		REQUIRE(m->host.getActiveEngine()->getParamName(0) == "");
-		REQUIRE(m->host.getActiveEngine()->getParamName(1) == "B");
-		Test::destroyModule(m);
+TEST_CASE("midi.create inside param.onTooltip raises and the name falls back, in both engines", "[MidiKit][CrossEngine]") {
+	Pair scripts{JS_GETNAME_CREATE, LUA_GETNAME_CREATE};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	CATCH_INFO(script);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(script);
+	drainLog(m);
+	REQUIRE(m->host.getActiveEngine()->getParamName(0) == "");
+	REQUIRE(m->host.getActiveEngine()->getParamName(1) == "B");
+}
+
+template <typename MODULE>
+static std::string loadAndDrainLog(const std::string& script) {
+	Kit<MODULE> kit;
+	MODULE* m = kit.m;
+	m->loadScript(script);
+	std::string log;
+	ScriptLog::Entry t;
+	while (m->log.tryPop(t)) log += std::get<2>(t) + "\n";
+	return log;
+}
+
+TEST_CASE("@requires params refuses scripts the variant can't run", "[MidiKit][Micro]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+
+	// Micro has 2 params.
+	std::string ok = loadAndDrainLog<MidiKitMicroModule>(requiresScript(lua, "params=2"));
+	REQUIRE(ok.find("onload-ran") != std::string::npos);
+
+	std::string tooMany = loadAndDrainLog<MidiKitMicroModule>(requiresScript(lua, "params=4"));
+	REQUIRE(tooMany.find("onload-ran") == std::string::npos);
+	REQUIRE(tooMany.find("requires 4 params, this module has 2") != std::string::npos);
+
+	// The same script loads on the full module, which has at least 4.
+	std::string full = loadAndDrainLog<MidiKitModule>(requiresScript(lua, "params=4"));
+	REQUIRE(full.find("onload-ran") != std::string::npos);
+
+	// Unverifiable requirements refuse rather than assume.
+	std::string unknown = loadAndDrainLog<MidiKitModule>(requiresScript(lua, "api=2"));
+	REQUIRE(unknown.find("onload-ran") == std::string::npos);
+	REQUIRE(unknown.find("unknown @requires key") != std::string::npos);
+	std::string bad = loadAndDrainLog<MidiKitModule>(requiresScript(lua, "params=x"));
+	REQUIRE(bad.find("onload-ran") == std::string::npos);
+	REQUIRE(bad.find("invalid @requires value") != std::string::npos);
+}
+
+
+// @requires messages=N: the store holds max(N, default) handles, refused beyond
+// the maximum. onLoad starts with an empty store, so `count` creates there fill
+// exactly `count` slots.
+static std::string storeScript(bool lua, const std::string& tag, int count) {
+	std::string n = std::to_string(count);
+	std::string body = lua ? "rack.onLoad = function() for i = 1, " + n + " do midi.create() end rack.log('creates-ok') end"
+	                       : "rack.onLoad = function() { for (let i = 0; i < " + n + "; i++) midi.create(); rack.log('creates-ok'); };";
+	std::string requires = tag.empty() ? "" : (lua ? "@requires " + tag + "\n" : " * @requires " + tag + "\n");
+	if (lua) return "--[[\n@engine minilua@v1\n" + requires + "--]]\n" + body + "\n";
+	return "/**\n * @engine QuickJs@v1\n" + requires + " */\n" + body + "\n";
+}
+
+// Whether `count` creates fit in the store a script with `tag` gets.
+static bool storeFits(bool lua, const std::string& tag, int count) {
+	std::string log = loadAndDrainLog<MidiKitModule>(storeScript(lua, tag, count));
+	return log.find("creates-ok") != std::string::npos && log.find("message store full") == std::string::npos;
+}
+
+TEST_CASE("@requires messages sizes the message store", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+	using StoermelderPackOne::MidiScript::MidiScriptEngine;
+	const int def = MidiScriptEngine::msgStoreDefault;
+	const int max = MidiScriptEngine::msgStoreMax;
+
+	// No tag: the default.
+	REQUIRE(storeFits(lua, "", def));
+	REQUIRE(!storeFits(lua, "", def + 1));
+
+	// A minimum, not an exact size: smaller values keep the default.
+	REQUIRE(storeFits(lua, "messages=16", def));
+	REQUIRE(!storeFits(lua, "messages=16", def + 1));
+	REQUIRE(storeFits(lua, "messages=64", 64));
+	REQUIRE(!storeFits(lua, "messages=64", 65));
+	REQUIRE(storeFits(lua, "messages=512", 512));
+	REQUIRE(!storeFits(lua, "messages=512", 513));
+	REQUIRE(storeFits(lua, "messages=" + std::to_string(max), max));
+
+	// The store-full error names the fix.
+	std::string log = loadAndDrainLog<MidiKitModule>(storeScript(lua, "", def + 1));
+	REQUIRE(log.find("message store full (32 handles; reuse a handle or raise it with @requires messages=N)") != std::string::npos);
+}
+
+// The chain creators need 4 (NRPN/RPN) or 2 (14-bit CC) consecutive slots, so
+// their last valid position depends on the store size.
+TEST_CASE("Chain creators fit exactly at the end of a larger store", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+	const int size = 512;
+	auto fits = [&](const char* create, int before) {
+		std::string n = std::to_string(before);
+		std::string body = lua ? "rack.onLoad = function() for i = 1, " + n + " do midi.create() end midi." + create + "() rack.log('creates-ok') end"
+		                       : "rack.onLoad = function() { for (let i = 0; i < " + n + "; i++) midi.create(); midi." + create + "(); rack.log('creates-ok'); };";
+		std::string script = lua ? "--[[\n@engine minilua@v1\n@requires messages=512\n--]]\n" + body + "\n"
+		                         : "/**\n * @engine QuickJs@v1\n * @requires messages=512\n */\n" + body + "\n";
+		std::string log = loadAndDrainLog<MidiKitModule>(script);
+		return log.find("creates-ok") != std::string::npos && log.find("message store full") == std::string::npos;
+	};
+	REQUIRE(fits("createNRPN", size - 4));
+	REQUIRE(!fits("createNRPN", size - 3));
+	REQUIRE(fits("createRPN", size - 4));
+	REQUIRE(!fits("createRPN", size - 3));
+	REQUIRE(fits("createCc14bit", size - 2));
+	REQUIRE(!fits("createCc14bit", size - 1));
+}
+
+TEST_CASE("@requires messages refuses what it can't give", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+
+	std::string tooBig = loadAndDrainLog<MidiKitModule>(storeScript(lua, "messages=5000", 1));
+	REQUIRE(tooBig.find("Script not loaded: @requires messages=5000 exceeds the maximum of 512") != std::string::npos);
+	REQUIRE(tooBig.find("creates-ok") == std::string::npos);
+	REQUIRE(loadAndDrainLog<MidiKitModule>(storeScript(lua, "messages=4097", 1)).find("exceeds the maximum") != std::string::npos);
+
+	for (const char* bad : {"messages=-1", "messages=abc", "messages="}) {
+		CATCH_INFO(bad);
+		std::string log = loadAndDrainLog<MidiKitModule>(storeScript(lua, bad, 1));
+		REQUIRE(log.find("invalid @requires value") != std::string::npos);
+		REQUIRE(log.find("creates-ok") == std::string::npos);
 	}
+}
+
+TEST_CASE("@requires params and messages combine in one tag", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+
+	REQUIRE(storeFits(lua, "params=4 messages=512", 512));
+	REQUIRE(!storeFits(lua, "params=4 messages=512", 513));
+
+	// A 2-param variant still refuses the script for params.
+	std::string micro = loadAndDrainLog<MidiKitMicroModule>(storeScript(lua, "params=4 messages=512", 1));
+	REQUIRE(micro.find("requires 4 params, this module has 2") != std::string::npos);
+	REQUIRE(micro.find("creates-ok") == std::string::npos);
+}
+
+// The size lasts for the script's lifetime: every load sets it again.
+TEST_CASE("The message store goes back to its default on the next load", "[MidiKit][CrossEngine]") {
+	bool lua = GENERATE(true, false);
+	CATCH_INFO(std::string(lua ? "Lua" : "JS"));
+	using StoermelderPackOne::MidiScript::MidiScriptEngine;
+	const int def = MidiScriptEngine::msgStoreDefault;
+
+	for (const char* first : {"messages=512", "messages=5000"}) {   // loaded big, refused
+		CATCH_INFO(first);
+		Kit<MidiKitModule> kit;
+		MidiKitModule* m = kit.m;
+		m->loadScript(storeScript(lua, first, 1));
+		drainLog(m);
+		m->loadScript(storeScript(lua, "", def + 1));
+		std::string log = drainLog(m);
+		REQUIRE(log.find("message store full") != std::string::npos);
+		m->loadScript(storeScript(lua, "", def));
+		REQUIRE(drainLog(m).find("message store full") == std::string::npos);
+	}
+}
+
+// Handles advance past what the previous callback used, not by a fixed stride:
+// a callback that issued none must not let an older handle become valid again.
+TEST_CASE("A handle stays invalid across a callback that created nothing", "[MidiKit][CrossEngine]") {
+	const char* js = R"(/**
+ * @engine QuickJs@v1
+ */
+trig.enableIn(1, 1);
+let n = 0;
+let kept = -1;
+trig.onTrigger = function(trigPort, channel) {
+    n++;
+    if (n === 1) {
+        kept = midi.create();
+        midi.setNoteOn(kept, 1, 60, 100);
+    }
+    else if (n === 3) {
+        let fresh = midi.create();
+        midi.setNoteOn(fresh, 1, 99, 100);
+        midiOut.send(kept);
+    }
+};
+)";
+	const char* lua = R"(--[[
+@engine minilua@v1
+--]]
+trig.enableIn(1, 1)
+local n = 0
+local kept = -1
+trig.onTrigger = function(trigPort, channel)
+    n = n + 1
+    if n == 1 then
+        kept = midi.create()
+        midi.setNoteOn(kept, 1, 60, 100)
+    elseif n == 3 then
+        local fresh = midi.create()
+        midi.setNoteOn(fresh, 1, 99, 100)
+        midiOut.send(kept)
+    end
+end
+)";
+	Pair scripts{js, lua};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	CATCH_INFO(script);
+	Kit<> kit;
+	MidiKitModule* m = kit.load(script).m;
+	kit.dispatchTick(0, 0);
+	kit.dispatchTick(0, 0);
+	auto ev = kit.dispatchTick(0, 0);
+	REQUIRE(ev.empty());
+	REQUIRE(drainLog(m).find("onTrigger error") != std::string::npos);
 }

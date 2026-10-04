@@ -83,13 +83,13 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) return "Center";
     if (i === 2) return "Strength";
     return "";
 };
 
-param.getValueFormat = function(i) {
+param.onValueText = function(i) {
     if (i === 1) return centerParam() + " (" + noteName(centerParam()) + ")";
     if (i === 2) return number.toString(strengthParam());
     return number.toString(param.getValue(i));
@@ -113,7 +113,7 @@ midi.onMessage = function(midiPort, msg) {
     let vel = midi.isNoteOn(msg) ? midi.getValue(msg) : 0;
     let isOn = midi.isNoteOn(msg) && vel > 0;
     // Velocity 0 is the running-status spelling of a Note-Off.
-    let isOff = midi.isNoteOff(msg) || (midi.isNoteOn(msg) && vel === 0);
+    let isOff = midi.isNoteRelease(msg);
 
     if (isOn) {
         let note = midi.getNote(msg);

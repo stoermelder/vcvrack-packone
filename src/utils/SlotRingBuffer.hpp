@@ -19,7 +19,7 @@ namespace StoermelderPackOne {
  * T must be default-constructible and copy-assignable.
  */
 template <typename T, size_t N>
-struct SlotQueue {
+struct SlotRingBuffer {
 	// One slot more than the ring holds: shift() frees the ring entry before the
 	// consumer has copied the element out, and the producer may fill that ring
 	// space at once. Slots are written in FIFO order, so the one still being read
@@ -27,15 +27,15 @@ struct SlotQueue {
 	// has shifted again, which it does only once it is done with this one.
 	enum { SLOTS = N + 1 };
 	T slots[SLOTS];
-	dsp::RingBuffer<int, N> ring;
+	rack::dsp::RingBuffer<int, N> ring;
 	// Producer only.
 	int next = 0;
 
-	SlotQueue() {}
+	SlotRingBuffer() {}
 
 	/** Calls init(T&) on every slot once, e.g. to reserve their storage. */
 	template <typename F>
-	explicit SlotQueue(F init) {
+	explicit SlotRingBuffer(F init) {
 		for (auto& slot : slots) init(slot);
 	}
 
@@ -61,6 +61,11 @@ struct SlotQueue {
 		next = (next + 1) % SLOTS;
 		ring.push(i);
 		return true;
+	}
+
+	/** Consumer. The oldest element, still in its slot, valid until pop(). The queue must not be empty. */
+	const T& front() const {
+		return slots[ring.data[ring.start % N]];
 	}
 
 	/** Consumer. Drops the oldest element without copying it. The queue must not be empty. */

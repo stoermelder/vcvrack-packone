@@ -1,296 +1,3 @@
-// trig.onTrigger dispatch and the context-menu API.
-//
-// Part of the cross-engine suite: included into the __engine namespace by
-// MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
-
-static const char* JS_ON_TRIGGER = R"(/**
- * @engine QuickJs@v1
- */
-trig.enableIn(1);
-trig.onTrigger = function(trigPort) {
-    rack.log("onTrigger " + number.toString(trigPort));
-    let msg = midi.create();
-    midi.setCc(msg, 1, 10, trigPort);
-    midiOut.send(msg);
-};
-)";
-
-static const char* LUA_ON_TRIGGER = R"(--[[
-@engine minilua@v1
---]]
-trig.enableIn(1)
-function trig.onTrigger(trigPort)
-    rack.log("onTrigger " .. trigPort)
-    local msg = midi.create()
-    midi.setCc(msg, 1, 10, trigPort)
-    midiOut.send(msg)
-end
-)";
-
-TEST_CASE("onTrigger fires on a trigger input tick and sends an identical message in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	auto checkOnTrigger = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		m->host.getActiveEngine()->processInTick(0, 0);
-		m->host.getActiveEngine()->process();
-
-		std::string log = drainLog(m);
-		REQUIRE(log.find("onTrigger 1") != std::string::npos);
-
-		int port, ticks;
-		midi::Message out;
-		REQUIRE(processOutMessage(m, port, out, ticks));
-		auto sent = toSent(port, ticks, out);
-		Test::destroyModule(m);
-		return sent;
-	};
-
-	auto js = checkOnTrigger(JS_ON_TRIGGER);
-	auto lua = checkOnTrigger(LUA_ON_TRIGGER);
-	REQUIRE(js.port == lua.port);
-	REQUIRE(js.bytes == lua.bytes);
-}
-
-
-static const char* JS_ON_TRIGGER_CHANNEL = R"(/**
- * @engine QuickJs@v1
- */
-trig.enableIn(1, 1);
-trig.enableIn(1, 2);
-trig.onTrigger = function(trigPort, channel) {
-    rack.log("onTrigger " + number.toString(trigPort) + " " + number.toString(channel));
-};
-)";
-
-static const char* LUA_ON_TRIGGER_CHANNEL = R"(--[[
-@engine minilua@v1
---]]
-trig.enableIn(1, 1)
-trig.enableIn(1, 2)
-function trig.onTrigger(trigPort, channel)
-    rack.log("onTrigger " .. trigPort .. " " .. channel)
-end
-)";
-
-TEST_CASE("onTrigger receives the firing channel, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	auto logChannels = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		// Channels are 1-based in the callback: index 0 -> "1", index 1 -> "2".
-		m->host.getActiveEngine()->processInTick(0, 0);
-		m->host.getActiveEngine()->process();
-		m->host.getActiveEngine()->processInTick(0, 1);
-		m->host.getActiveEngine()->process();
-
-		std::string log = drainLog(m);
-		Test::destroyModule(m);
-		return log;
-	};
-
-	auto js = logChannels(JS_ON_TRIGGER_CHANNEL);
-	auto lua = logChannels(LUA_ON_TRIGGER_CHANNEL);
-	REQUIRE(js.find("onTrigger 1 1") != std::string::npos);
-	REQUIRE(js.find("onTrigger 1 2") != std::string::npos);
-	REQUIRE(lua.find("onTrigger 1 1") != std::string::npos);
-	REQUIRE(lua.find("onTrigger 1 2") != std::string::npos);
-}
-
-
-TEST_CASE("Script without onTrigger silently ignores trigger ticks, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	auto checkNoOnTrigger = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		m->host.getActiveEngine()->processInTick(0, 0);
-		m->host.getActiveEngine()->process();
-
-		std::string log = drainLog(m);
-		int port, ticks;
-		midi::Message out;
-		bool sentAnything = processOutMessage(m, port, out, ticks);
-		Test::destroyModule(m);
-		return std::make_pair(log, sentAnything);
-	};
-
-	auto js = checkNoOnTrigger(JS_NO_ON_LOAD);
-	auto lua = checkNoOnTrigger(LUA_NO_ON_LOAD);
-	REQUIRE(js.second == false);
-	REQUIRE(lua.second == false);
-}
-
-
-static const char* JS_ON_TRIGGER_NOT_ENABLED = R"(/**
- * @engine QuickJs@v1
- */
-trig.onTrigger = function(trigPort, channel) {
-    rack.log("onTrigger fired");
-};
-)";
-
-static const char* LUA_ON_TRIGGER_NOT_ENABLED = R"(--[[
-@engine minilua@v1
---]]
-trig.onTrigger = function(trigPort, channel)
-    rack.log("onTrigger fired")
-end
-)";
-
-TEST_CASE("trig.onTrigger is not called until trig.enableIn() is used, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	// trig.onTrigger is unused until the channel is enabled with trig.enableIn().
-	auto checkNotEnabled = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
-		// Without trig.enableIn(), a rising edge is not processed at all.
-		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f);
-		m->process(Test::makeProcessArgs(0));
-		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f);
-		m->process(Test::makeProcessArgs(1));
-		m->host.getActiveEngine()->process();
-
-		std::string log = drainLog(m);
-		Test::destroyModule(m);
-		return log;
-	};
-
-	REQUIRE(checkNotEnabled(JS_ON_TRIGGER_NOT_ENABLED).find("onTrigger") == std::string::npos);
-	REQUIRE(checkNotEnabled(LUA_ON_TRIGGER_NOT_ENABLED).find("onTrigger") == std::string::npos);
-}
-
-
-static const char* JS_ON_TRIGGER_ENABLE_CH1_ONLY = R"(/**
- * @engine QuickJs@v1
- */
-trig.enableIn(1, 1);
-trig.onTrigger = function(trigPort, channel) {
-    rack.log("onTrigger " + number.toString(channel));
-};
-)";
-
-static const char* LUA_ON_TRIGGER_ENABLE_CH1_ONLY = R"(--[[
-@engine minilua@v1
---]]
-trig.enableIn(1, 1)
-trig.onTrigger = function(trigPort, channel)
-    rack.log("onTrigger " .. channel)
-end
-)";
-
-TEST_CASE("trig.enableIn gates trig.onTrigger per channel, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
-	// Only channel 1 is enabled: a rising edge on channel 1 fires the callback,
-	// a rising edge on channel 2 (never enabled) is not processed at all.
-	auto checkPerChannel = [](const std::string& script) {
-		MidiKitModule* m = createModule();
-		m->loadScript(script);
-		drainLog(m);
-
-		m->inputs[MidiKitModule::INPUT_TRIG].channels = 2;
-		// Prime both SchmittTriggers LOW first (a fresh trigger starts
-		// uninitialized; the first low call locks it so a later rise is real).
-		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 0);
-		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(0.f, 1);
-		m->process(Test::makeProcessArgs(0));
-
-		// Rising edge on channel 1 (enabled) fires the callback.
-		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 0);
-		m->process(Test::makeProcessArgs(1));
-		m->host.getActiveEngine()->process();
-		std::string log1 = drainLog(m);
-
-		// Rising edge on channel 2 (never enabled) is ignored.
-		m->inputs[MidiKitModule::INPUT_TRIG].setVoltage(10.f, 1);
-		m->process(Test::makeProcessArgs(2));
-		m->host.getActiveEngine()->process();
-		std::string log2 = drainLog(m);
-
-		Test::destroyModule(m);
-		return std::make_pair(log1, log2);
-	};
-
-	auto js = checkPerChannel(JS_ON_TRIGGER_ENABLE_CH1_ONLY);
-	auto lua = checkPerChannel(LUA_ON_TRIGGER_ENABLE_CH1_ONLY);
-	REQUIRE(js.first.find("onTrigger 1") != std::string::npos);
-	REQUIRE(js.second.find("onTrigger") == std::string::npos);
-	REQUIRE(lua.first.find("onTrigger 1") != std::string::npos);
-	REQUIRE(lua.second.find("onTrigger") == std::string::npos);
-}
-
-
-// send() order, not handle-creation order
-// Regression test for the send-order bug: the engine used to push the
-// out-queue in msgStore index (handle-creation) order, so a script that
-// created several messages and then sent them in a different order had them
-// reordered on the wire. The receiver must observe send() order. This
-// creates A, B, C (handle order) but sends C, A, B, and asserts the wire
-// order is C, A, B in both engines.
-
-static const char* JS_SEND_ORDER = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) {
-    let a = midi.create();
-    midi.setNoteOn(a, 1, 60, 100);
-    let b = midi.create();
-    midi.setNoteOn(b, 1, 62, 100);
-    let c = midi.create();
-    midi.setNoteOn(c, 1, 64, 100);
-    midiOut.send(c);   // handle 2 sent first
-    midiOut.send(a);   // handle 0 sent second
-    midiOut.send(b);   // handle 1 sent last
-};
-)";
-
-static const char* LUA_SEND_ORDER = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(midiPort, msg)
-    local a = midi.create()
-    midi.setNoteOn(a, 1, 60, 100)
-    local b = midi.create()
-    midi.setNoteOn(b, 1, 62, 100)
-    local c = midi.create()
-    midi.setNoteOn(c, 1, 64, 100)
-    midiOut.send(c)
-    midiOut.send(a)
-    midiOut.send(b)
-end
-)";
-
-TEST_CASE("out-queue is in send() order, not handle-creation order, in both engines", "[MidiKit][CrossEngine]") {
-	EngineResult js = run(JS_SEND_ORDER);
-	EngineResult lua = run(LUA_SEND_ORDER);
-
-	// Handle order would be 60, 62, 64; send() order is 64, 60, 62. The
-	// script's channel argument is 1-based, so channel 1 = internal channel 0
-	// = status nibble 0x9 | 0 = 0x90.
-	std::vector<uint8_t> expectC = {0x90, 64, 100};
-	std::vector<uint8_t> expectA = {0x90, 60, 100};
-	std::vector<uint8_t> expectB = {0x90, 62, 100};
-
-	REQUIRE(js.sent.size() == 3);
-	REQUIRE(js.sent[0].bytes == expectC);
-	REQUIRE(js.sent[1].bytes == expectA);
-	REQUIRE(js.sent[2].bytes == expectB);
-
-	REQUIRE(lua.sent.size() == 3);
-	REQUIRE(lua.sent[0].bytes == expectC);
-	REQUIRE(lua.sent[1].bytes == expectA);
-	REQUIRE(lua.sent[2].bytes == expectB);
-}
-
-
 // rack.registerContextMenu()
 // Script-registered context-menu items (see SCRIPTING.md). Both engines
 // expose the identical rack.registerContextMenu() API; the observable result
@@ -310,7 +17,8 @@ struct MenuResult {
 };
 
 static MenuResult runMenu(const std::string& script, int clickId = -1, int clickValue = 0) {
-	MidiKitModule* m = createModule();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(script);
 
 	MenuResult r;
@@ -336,7 +44,6 @@ static MenuResult runMenu(const std::string& script, int clickId = -1, int click
 			queryMenus();
 		}
 	}
-	Test::destroyModule(m);
 	return r;
 }
 
@@ -685,9 +392,9 @@ rack.registerContextMenu({
 )";
 
 TEST_CASE("Context-menu onChange sends MIDI identically in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto click = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		drainLog(m);
 		m->host.getActiveEngine()->getContextMenus([](const std::vector<ScriptMenuItem>&) {});
@@ -700,8 +407,7 @@ TEST_CASE("Context-menu onChange sends MIDI identically in both engines", "[Midi
 		int port, ticks;
 		midi::Message out;
 		REQUIRE(processOutMessage(m, port, out, ticks));
-		auto sent = toSent(port, ticks, out);
-		Test::destroyModule(m);
+		auto sent = Out::of(out, port, ticks);
 		return sent;
 	};
 	auto js = click(JS_MENU_SEND);
@@ -841,4 +547,194 @@ TEST_CASE("onGetValue returning nothing defaults to false/0", "[MidiKit][CrossEn
 	REQUIRE(jsOpt.specs[0].type == ScriptMenuItem::Type::Options);
 	REQUIRE(jsOpt.specs[0].selected == 0);
 	REQUIRE(luaOpt.specs[0].selected == 0);
+}
+
+
+// rack.registerContextMenu() types "action" and "file"
+
+static const char* JS_ACTION_FILE_MENU = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({ type: "action", label: "Go", onGetValue: function() { return 1; }, onChange: function() { rack.log("go args=" + arguments.length); } });
+rack.registerContextMenu({ type: "fileopen", label: "Import", onChange: function(content, name) { rack.log("import " + content.length + " [" + content + "] " + name + " args=" + arguments.length); } });
+rack.registerContextMenu({ type: "boolean", label: "Flag", onChange: function(v) { rack.log("flag " + v); } });
+)";
+
+static const char* LUA_ACTION_FILE_MENU = R"(--[[
+@engine minilua@v1
+--]]
+rack.registerContextMenu({ type = "action", label = "Go", onGetValue = function() return 1 end, onChange = function(...) rack.log("go args=" .. select('#', ...)) end })
+rack.registerContextMenu({ type = "fileopen", label = "Import", onChange = function(content, name, ...) rack.log("import " .. #content .. " [" .. content .. "] " .. name .. " args=" .. (2 + select('#', ...))) end })
+rack.registerContextMenu({ type = "boolean", label = "Flag", onChange = function(v) rack.log("flag " .. tostring(v)) end })
+)";
+
+TEST_CASE("Action and file context menu items are listed, in both engines", "[MidiKit][CrossEngine][ContextMenu]") {
+	MenuResult js = runMenu(JS_ACTION_FILE_MENU);
+	MenuResult lua = runMenu(LUA_ACTION_FILE_MENU);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs.size() == 3);
+	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Action);
+	REQUIRE(js.specs[0].label == "Go");
+	REQUIRE(js.specs[1].type == ScriptMenuItem::Type::FileOpen);
+	REQUIRE(js.specs[1].label == "Import");
+	REQUIRE(js.specs[2].type == ScriptMenuItem::Type::Boolean);
+}
+
+TEST_CASE("An action item calls onChange without arguments on every click, in both engines", "[MidiKit][CrossEngine][ContextMenu]") {
+	Pair scripts{JS_ACTION_FILE_MENU, LUA_ACTION_FILE_MENU};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	MenuResult r = runMenu(script, 1);   // "Go" is registered first: id 1
+	REQUIRE(r.loaded);
+	REQUIRE(r.log.find("go args=0") != std::string::npos);
+
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(script);
+	drainLog(m);
+	for (int i = 0; i < 3; i++) m->host.getActiveEngine()->invokeContextMenuCallback(1, i);
+	std::string log = drainLog(m);
+	size_t n = 0;
+	for (size_t at = log.find("go args=0"); at != std::string::npos; at = log.find("go args=0", at + 1)) n++;
+	REQUIRE(n == 3);
+}
+
+TEST_CASE("A file item passes the file's text and name to onChange, in both engines", "[MidiKit][CrossEngine][ContextMenu]") {
+	Pair scripts{JS_ACTION_FILE_MENU, LUA_ACTION_FILE_MENU};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(script);
+	drainLog(m);
+	auto* e = m->host.getActiveEngine();
+
+	e->invokeContextMenuCallback(2, ScriptMenuClick::file("line1\nline2", "notes.txt"));
+	std::string log = drainLog(m);
+	CATCH_INFO(log);
+	REQUIRE(log.find("import 11 [line1\nline2] notes.txt args=2") != std::string::npos);
+
+	// An empty file is a call with an empty string.
+	e->invokeContextMenuCallback(2, ScriptMenuClick::file("", "empty.txt"));
+	REQUIRE(drainLog(m).find("import 0 [] empty.txt") != std::string::npos);
+}
+
+TEST_CASE("Context menu clicks of the wrong kind are ignored, in both engines", "[MidiKit][CrossEngine][ContextMenu]") {
+	Pair scripts{JS_ACTION_FILE_MENU, LUA_ACTION_FILE_MENU};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(script);
+	drainLog(m);
+	auto* e = m->host.getActiveEngine();
+
+	e->invokeContextMenuCallback(2, 0);               // a file item needs a file
+	e->invokeContextMenuCallback(1, ScriptMenuClick::file("x", "x.txt"));   // an action item takes none
+	e->invokeContextMenuCallback(3, ScriptMenuClick::file("x", "x.txt"));   // nor does a boolean
+	e->invokeContextMenuCallback(99, ScriptMenuClick::file("x", "x.txt"));  // unknown id
+	REQUIRE(drainLog(m).empty());
+}
+
+TEST_CASE("registerContextMenu names all four types when the type is wrong, in both engines", "[MidiKit][CrossEngine][ContextMenu]") {
+	MenuResult js = runMenu(R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({ type: "button", label: "X", onChange: function() {} });
+)");
+	MenuResult lua = runMenu(R"(--[[
+@engine minilua@v1
+--]]
+rack.registerContextMenu({ type = "button", label = "X", onChange = function() end })
+)");
+	REQUIRE(js.specs.empty());
+	REQUIRE(lua.specs.empty());
+	REQUIRE(js.loadLog.find("\"action\"") != std::string::npos);
+	REQUIRE(js.loadLog.find("\"fileopen\"") != std::string::npos);
+	REQUIRE(lua.loadLog.find("\"action\"") != std::string::npos);
+	REQUIRE(lua.loadLog.find("\"fileopen\"") != std::string::npos);
+}
+
+TEST_CASE("menuCallArgs maps a click to onChange's arguments, or refuses one that does not fit", "[MidiKit][ContextMenu]") {
+	std::vector<StoermelderPackOne::MidiScript::ScriptMenuArg> args;
+	using Kind = StoermelderPackOne::MidiScript::ScriptMenuArg::Kind;
+	using StoermelderPackOne::MidiScript::menuCallArgs;
+
+	ScriptMenuItem boolItem;
+	boolItem.type = ScriptMenuItem::Type::Boolean;
+	REQUIRE(menuCallArgs(boolItem, ScriptMenuClick(1), args));
+	REQUIRE(args.size() == 1);
+	REQUIRE(args[0].kind == Kind::Bool);
+	REQUIRE(args[0].b);
+	REQUIRE(menuCallArgs(boolItem, ScriptMenuClick(0), args));
+	REQUIRE_FALSE(args[0].b);
+
+	ScriptMenuItem optItem;
+	optItem.type = ScriptMenuItem::Type::Options;
+	optItem.options = { "a", "b" };
+	REQUIRE(menuCallArgs(optItem, ScriptMenuClick(1), args));
+	REQUIRE(args.size() == 2);
+	REQUIRE(args[0].kind == Kind::Int);
+	REQUIRE(args[0].i == 1);
+	REQUIRE(args[1].kind == Kind::String);
+	REQUIRE(args[1].s == "b");
+	REQUIRE_FALSE(menuCallArgs(optItem, ScriptMenuClick(2), args));
+	REQUIRE_FALSE(menuCallArgs(optItem, ScriptMenuClick(-1), args));
+
+	ScriptMenuItem actionItem;
+	actionItem.type = ScriptMenuItem::Type::Action;
+	REQUIRE(menuCallArgs(actionItem, ScriptMenuClick(), args));
+	REQUIRE(args.empty());
+
+	ScriptMenuItem fileItem;
+	fileItem.type = ScriptMenuItem::Type::FileOpen;
+	REQUIRE(menuCallArgs(fileItem, ScriptMenuClick::file("data", "f.txt"), args));
+	REQUIRE(args.size() == 2);
+	REQUIRE(args[0].s == "data");
+	REQUIRE(args[1].s == "f.txt");
+
+	// A file for any other item, or a plain click for a file item, does not fit.
+	REQUIRE_FALSE(menuCallArgs(fileItem, ScriptMenuClick(1), args));
+	REQUIRE_FALSE(menuCallArgs(boolItem, ScriptMenuClick::file("x", "x"), args));
+	REQUIRE_FALSE(menuCallArgs(optItem, ScriptMenuClick::file("x", "x"), args));
+	REQUIRE_FALSE(menuCallArgs(actionItem, ScriptMenuClick::file("x", "x"), args));
+}
+
+
+// Every check of registerContextMenu runs before anything is registered, so a
+// bad item raises, registers nothing and leaves the module usable. (The Lua
+// binding must not keep C++ values alive across its errors: luaL_error longjmps.)
+TEST_CASE("registerContextMenu rejects bad items in both engines and registers only the good one", "[MidiKit][ContextMenu][CrossEngine]") {
+	FOR_EACH_LANG;
+	const char* label = "A label long enough to need heap storage";
+	std::string js = std::string("function t(name, f) { try { f(); rack.log('ok ' + name); } catch (e) { rack.log('err ' + name); } }\n")
+		+ "const L = '" + label + "';\n"
+		+ "t('nonString', function() { rack.registerContextMenu({ type: 'options', label: L, options: ['one option long enough for the heap', 3], onChange: function() {} }); });\n"
+		+ "t('empty', function() { rack.registerContextMenu({ type: 'options', label: L, options: [], onChange: function() {} }); });\n"
+		+ "t('noOnChange', function() { rack.registerContextMenu({ type: 'boolean', label: L }); });\n"
+		+ "t('badType', function() { rack.registerContextMenu({ type: 'knob', label: L, onChange: function() {} }); });\n"
+		+ "t('good', function() { rack.registerContextMenu({ type: 'options', label: L, options: ['a', 'b'], onChange: function() {} }); });\n";
+	std::string lua = std::string("local function t(name, f) local ok = pcall(f) rack.log((ok and 'ok ' or 'err ') .. name) end\n")
+		+ "local L = '" + label + "'\n"
+		+ "t('nonString', function() rack.registerContextMenu({ type = 'options', label = L, options = { 'one option long enough for the heap', 3 }, onChange = function() end }) end)\n"
+		+ "t('empty', function() rack.registerContextMenu({ type = 'options', label = L, options = {}, onChange = function() end }) end)\n"
+		+ "t('noOnChange', function() rack.registerContextMenu({ type = 'boolean', label = L }) end)\n"
+		+ "t('badType', function() rack.registerContextMenu({ type = 'knob', label = L, onChange = function() end }) end)\n"
+		+ "t('good', function() rack.registerContextMenu({ type = 'options', label = L, options = { 'a', 'b' }, onChange = function() end }) end)\n";
+
+	MenuResult r = runMenu(script(lang, lang == Lang::Js ? js : lua));
+	REQUIRE(r.loaded);
+	const std::string& log = r.loadLog;
+	CATCH_INFO("log:\n" << log);
+	for (const char* bad : { "nonString", "empty", "noOnChange", "badType" }) {
+		CATCH_INFO(bad);
+		REQUIRE(log.find(std::string("err ") + bad) != std::string::npos);
+		REQUIRE(log.find(std::string("ok ") + bad) == std::string::npos);
+	}
+	REQUIRE(log.find("ok good") != std::string::npos);
+
+	REQUIRE(r.specs.size() == 1);
+	REQUIRE(r.specs[0].label == label);
 }

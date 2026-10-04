@@ -187,7 +187,7 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-param.getName = function(i) {
+param.onTooltip = function(i) {
     if (i === 1) return "Steps";
     if (i === 2) return "Fills";
     if (i === 3) return "Note";
@@ -195,7 +195,7 @@ param.getName = function(i) {
     return "";
 };
 
-param.getValueFormat = function(i) {
+param.onValueText = function(i) {
     if (i === 1) return stepsParam() + " steps";
     if (i === 2) return fillsParam() + " / " + stepsParam() + " hits";
     if (i === 3) return noteParam() + " (" + noteName(noteParam()) + ")";

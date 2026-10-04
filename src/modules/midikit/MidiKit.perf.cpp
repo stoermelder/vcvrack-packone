@@ -102,7 +102,7 @@ struct PassThroughScript : Script {
 		MidiScriptEngine* se = m->host.getActiveEngine();
 		return [se](int) {
 			midi::Message msg = noteOn(1, 60, 100);
-			se->processInMessage(0, msg);
+			se->processInMessage(0, QueuedMessage(msg));
 			se->process();
 		};
 	}
@@ -118,7 +118,7 @@ struct NoteLengthScript : Script {
 		return [se](int i) {
 			int note = (i % 2 == 0) ? 60 : 62;
 			midi::Message msg = noteOn(1, note, 100);
-			se->processInMessage(0, msg);
+			se->processInMessage(0, QueuedMessage(msg));
 			se->process();
 		};
 	}
@@ -142,8 +142,8 @@ struct ArpeggiatorScript : Script {
 			int add = 48 + (i % 12);          // disjoint from the seed notes
 			midi::Message off = noteOff(1, remove);
 			midi::Message on = noteOn(1, add, 100);
-			se->processInMessage(0, off);
-			se->processInMessage(0, on);
+			se->processInMessage(0, QueuedMessage(off));
+			se->processInMessage(0, QueuedMessage(on));
 			se->processInTick(0, 0);
 			se->process();
 			held[0] = add;
@@ -157,7 +157,7 @@ struct ArpeggiatorScript : Script {
 		MidiScriptEngine* se = m->host.getActiveEngine();
 		for (int note : {60, 64, 67}) {
 			midi::Message on = noteOn(1, note, 100);
-			se->processInMessage(0, on);
+			se->processInMessage(0, QueuedMessage(on));
 			se->process();
 		}
 		barrier(worker);
@@ -470,7 +470,7 @@ TEST_CASE("MidiKit N-engine contention on one TaskWorker", "[perf]") {
 // message out); these measure the two paths that still run when idle:
 //   1. MidiKitModule::process() on the audio thread, every sample, whether or
 //      not any message/tick is pending.
-//   2. MidiScriptEnginePortInfo::getName() / MidiScriptEngineParamQuantity::
+//   2. ScriptPortInfo::getName() / ScriptParamQuantity::
 //      getDisplayValueString(), which the Rack UI polls every frame for any
 //      hovered port/param tooltip (see ParamTooltip::step()/PortTooltip::
 //      step() in Rack's app/ParamWidget.cpp / PortWidget.cpp) -- each poll
@@ -588,8 +588,8 @@ TEST_CASE("MidiKit idle UI polling cost: getDisplayValueString/getName with scri
 	m->enableParam(0);
 
 	const int N = 1000; // simulate 1000 UI frames (~16s at 60Hz)
-	auto* pi = reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEnginePortInfo*>(m->inputInfos[0]);
-	auto* pq = reinterpret_cast<StoermelderPackOne::MidiScript::MidiScriptEngineParamQuantity*>(m->paramQuantities[0]);
+	auto* pi = reinterpret_cast<StoermelderPackOne::MidiScript::ScriptPortInfo*>(m->inputInfos[0]);
+	auto* pq = reinterpret_cast<StoermelderPackOne::MidiScript::ScriptParamQuantity*>(m->paramQuantities[0]);
 
 	auto start = Clock::now();
 	for (int i = 0; i < N; i++) {

@@ -52,7 +52,7 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-input.getName = function(port)
+input.onTooltip = function(port)
     if port == 1 then return "Program (V/Oct)" end
     return ""
 end

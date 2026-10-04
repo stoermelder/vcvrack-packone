@@ -1,9 +1,9 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "../../utils/SlotQueue.hpp"
 #include "../../utils/SpscLatestValue.hpp"
 #include "../../utils/TaskWorker.hpp"
-#include "../midi/MidiProcessor.hpp"
+#include "MidiScriptTypes.hpp"
+#include "MidiScriptEngineHandler.hpp"
 #include <atomic>
 #include <cmath>
 #include <jansson.h>
@@ -16,271 +16,43 @@
 namespace StoermelderPackOne {
 namespace MidiScript {
 
-using rack::midi::Message;
-using MessageEx = StoermelderPackOne::MessageEx;
-
-
-// Caps on Tipsy payloads: queue entries are fixed-size PODs so the audio
-// thread's shift() never heap-allocates (mime matches tipsy::kMaxMimeTypeSize).
-static constexpr size_t tipsyMaxMimeTypeSize = 256;
-static constexpr size_t tipsyMaxPayloadLength = 256;
-
-// One Tipsy message in transit, either direction. Fixed-size so the SPSC
-// RingBuffers copy it without heap allocation.
-//
-// Outbound (module's tipsyOutQueue), mimeSize == 0 marks a discard sentinel
-// rather than a real message: it carries no payload and exists only to mark
-// where a stale run of messages ends. sendTipsyOut() rejects an empty mime type
-// so the two can never be confused. (dataSize would not work as the marker — an
-// empty payload with a valid mime type is a legitimate message.) Inbound
-// (engine's tipsyInQueue) has no sentinels; every entry is a decoded message.
-struct TipsyMessage {
-	uint16_t mimeSize;                         // length without NUL
-	uint16_t dataSize;
-	char mime[tipsyMaxMimeTypeSize];
-	unsigned char data[tipsyMaxPayloadLength];
-	// Inbound only: the engine frame the final byte decoded on, -1 if unknown.
-	int64_t frame = -1;
-};
-
-
-// One inbound MIDI message on its way from the audio thread to the worker.
-//
-// Carries the decode result alongside the raw message because the assembled
-// forms cannot be expressed by rack::midi::Message alone: an NRPN/RPN parameter
-// number and a 14-bit value do not fit its 7-bit data bytes. Together these four
-// fields reconstruct a StoermelderPackOne::MessageEx exactly — it holds nothing
-// else — so the worker can rebuild one without the module keeping decoder state
-// of its own.
-//
-// A plain (unassembled) message uses type CC/NOTE_ON/… with both extras at -1,
-// which is what MessageEx itself defaults them to.
-struct QueuedMessage {
-	Message msg;
-	MessageEx::Type type = MessageEx::Type::RESET;
-	int16_t paramNumber = -1;
-	int16_t extraValue = -1;
-	// Whether this CC is part of an extended message (see MessageEx::isComponent).
-	// Set by the module on the audio thread; the worker uses it to decide whether
-	// the script should see the raw CC as well as the assembled event.
-	bool isComponent = false;
-	// The engine frame Rack assigned on arrival (the completing component's, for
-	// assembled events), -1 if unknown. Not msg.frame: that one is an outbound
-	// request that the send bindings stamp on the copy they send.
-	int64_t frame = -1;
-
-	QueuedMessage() {}
-	// Deliberately implicit: a bare Message IS an undecoded QueuedMessage, and
-	// callers that inject raw MIDI (tests, and any path with no decoder in front
-	// of it) should not have to spell out four defaulted fields to say so.
-	QueuedMessage(const Message& msg) : msg(msg) {}
-};
-
-
-// A message for the worker, with the input port it arrived on.
-struct InMessage {
-	int port = 0;
-	QueuedMessage msg;
-};
-
-// Audio thread -> worker queue of incoming messages. A SlotQueue because a
-// QueuedMessage owns a byte vector (see SlotQueue). Each slot reserves room for
-// ordinary SysEx; a longer message grows its slot once and the slot keeps that.
-struct MidiInQueue : SlotQueue<InMessage, 128> {
-	enum { SLOT_BYTES = 64 };
-
-	MidiInQueue() : SlotQueue<InMessage, 128>([](InMessage& m) { m.msg.msg.bytes.reserve(SLOT_BYTES); }) {}
-
-	bool tryPush(int port, const QueuedMessage& msg) {
-		return tryPushWith([&](InMessage& slot) {
-			slot.port = port;
-			slot.msg = msg;
-		});
-	}
-};
-
-// A context-menu item registered via rack.registerContextMenu(). Carries
-// presentation data only — the onChange/onGetValue callbacks live in the
-// engine's map keyed by callbackId, so a copied spec is safe on the UI thread.
-struct ScriptMenuItem {
-	enum class Type { Boolean, Options } type = Type::Boolean;
-	std::string label;
-	// Options variant: selectable labels and the current selection index.
-	std::vector<std::string> options;
-	// checked (Boolean) and selected (Options) share storage — only the one
-	// matching `type` is meaningful; selected(0) zeroes both.
-	union {
-		bool checked;
-		int selected;
-	};
-	// Opaque handle resolving to the script's onChange callback in the engine.
-	int callbackId = -1;
-
-	ScriptMenuItem() : selected(0) {}
-};
-
-
-// Host-module interface for everything that touches the module's hardware
-// (inputs/outputs/triggers) and UI (log/overlay), keeping the engine free of
-// module-specific knowledge.
-struct MidiScriptEngineHandler {
-	virtual void writeLog(const std::string& s, bool useTimestamp = true) = 0;
-	virtual void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) = 0;
-	virtual void enableInput(int i) = 0;
-
-	// Enables the first `count` MIDI inputs / outputs (count >= 1), from the
-	// script-facing midi.enablePorts() / midiOut.enablePorts() bindings (worker
-	// thread). Enabling never shrinks the count. Only a consecutive run starting
-	// at port 1 can be in use, and only port 1 is by default; ports beyond the
-	// count are dropped — incoming messages never reach the script, outgoing
-	// messages are discarded. The count belongs to the script and is forgotten
-	// on load/reset.
-	virtual void enableMidiIn(int count) = 0;
-	virtual void enableMidiOut(int count) = 0;
-
-	// Worker thread, from unloadScriptOnWorker() right before a running script's
-	// onUnload(); endUnload() follows. Until then only immediate MIDI
-	// messages are accepted, and they go out even though the script is gone (in
-	// timing mode behind everything Rack's output queue still holds, so a
-	// note-off cannot overtake its note-on). Whatever onUnload() schedules for
-	// later (sendAfterMs, sendAtFrame, sendAfterTrigger), trigger output writes
-	// and Tipsy messages are ignored.
-	virtual void beginUnload() = 0;
-
-	// Drops the module-side state that belongs to the outgoing script: what it
-	// enabled (MIDI ports, timing, trigger inputs, extended CC, Tipsy input), its
-	// queued Tipsy messages (a message already being encoded still completes) and
-	// whatever it scheduled for later; resets the log. Worker thread, at the end
-	// of every unloadScriptOnWorker(), so after onUnload(), which still runs with
-	// everything the script set up, and before any new script. Safe to call when
-	// nothing was running.
-	virtual void endUnload() = 0;
-
-	// The audio thread's latest process() frame, the engine's block size and the
-	// sample rate, published atomically for the worker, which must not read
-	// APP->engine.
-	virtual int64_t getTimingCurrentFrame() const = 0;
-	virtual int64_t getTimingBlockFrames() const = 0;
-	virtual float getSampleRate() const = 0;
-	virtual bool isTimingEnabled() const = 0;
-
-	// midiOut.enableTiming([reportLate]) binding (worker thread): outgoing
-	// messages keep their frame and Rack places them, at the cost of one block of
-	// latency. With reportLate the module logs messages that reached Rack too late
-	// to be placed. Forgotten on load/reset, like the port enables.
-	virtual void enableTiming(bool reportLate) = 0;
-
-	// Marks trigger input (port, channel) as enabled, from the script-facing
-	// trig.enableIn() binding (worker thread). Disabled channels get no tick
-	// processing (counting, sendAfterTrigger drains, or trig.onTrigger).
-	virtual void enableTrigger(int port, uint8_t channel) = 0;
-
-	// Routes trigger input i into the Tipsy decoder, or disables decoding when
-	// i < 0. Today i is always 0 — the script-facing trig.enableTipsyIn() exposes
-	// no port (Tipsy input is only supported on the first trigger input). While
-	// claimed, the trigger input stops counting ticks and firing trig.onTrigger,
-	// and channel 1 of trig.isHigh()/isLow() reads 0 (other channels are
-	// unaffected). Worker thread.
-	virtual void enableTipsyIn(int i) = 0;
-
-	// Enables assembly of NRPN (kind 0) or RPN (kind 1) on midiPort, delivering
-	// completed parameter changes to midi.onNrpn/onRpn. channel is 0-based, or
-	// -1 for every channel. Worker thread.
-	//
-	// While enabled the component CCs (98/99/100/101, and 6/38 while a parameter
-	// is armed) stop reaching midi.onMessage: a script that asked for assembled
-	// events should not also have to filter the parts they were built from.
-	virtual void enableNrpnIn(int midiPort, int kind, int channel) = 0;
-
-	// Enables 14-bit CC assembly on midiPort for MSB controller `cc` (0-31, its
-	// LSB is implicitly cc + 32), or every one of them when cc < 0. channel is
-	// 0-based, or -1 for every channel. Worker thread.
-	//
-	// Consumption matches enableNrpnIn(): both halves of an enabled pair stop
-	// reaching midi.onMessage. Registration is per-CC precisely so a script can
-	// take CC 7 as 14-bit while still seeing CC 39 raw.
-	virtual void enableCc14bitIn(int midiPort, int cc, int channel) = 0;
-
-	virtual float getInputVoltage(int i, uint8_t ch) = 0;
-	virtual float getTrigVoltage(int i, uint8_t ch) = 0;
-	virtual uint64_t getTrigTicks(int i, uint8_t ch) = 0;
-	virtual void enableParam(int i) = 0;
-	virtual float getParamValue(int i) = 0;
-	// `frame` >= 0 stamps the write: the module applies it on the audio thread
-	// when that frame comes up instead of right away (see frameForTrig()).
-	virtual void setTrig(int i, uint8_t ch, float duration = 1e-3f, int64_t frame = -1) = 0;
-	virtual void setTrigVoltage(int i, uint8_t ch, float voltage, int64_t frame = -1) = 0;
-
-	// Queues `count` MIDI messages for output, all sharing one tick and the same
-	// trigger-input channel (only meaningful for tick-scheduled messages from
-	// sendAfterTrigger(); immediate/frame messages pass channel 0). Called from
-	// the worker thread.
-	//
-	// All-or-nothing: returns false without queuing any of them if there is not
-	// room for the whole group. A group is a multi-message value — an NRPN (4
-	// messages) or a 14-bit CC pair (2 messages) — and a partial group is a
-	// malformed parameter change, worse than dropping it outright. A single
-	// message (count == 1) is just the degenerate case, so there is one entry
-	// point and one bounds check rather than two.
-	//
-	// Output saturation is expected, so callers treat false as normal, not an error.
-	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) = 0;
-
-	// Queues a Tipsy protocol message for output on the module's trigger CV.
-	// Called from the worker thread; the module encodes and emits it on the
-	// audio thread. Returns false if the payload was rejected or there was no
-	// room — like sendMidi(), saturation is normal rather than an error.
-	virtual bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) = 0;
-};
-
-
 struct MidiScriptEngine {
-	// Cap on setSysEx's payload, so a script can't build an unbounded message
-	// for the handler's fixed-size out-queue.
-	static const int sysExMaxPayloadLength = 256;
+	// Cap on a SysEx message's payload (framing excluded), for every way a script
+	// can get one: setSysEx/setRaw refuse a longer one, and the input stage drops a
+	// received message longer than this (+2 for the framing), so forwarding or
+	// cloning it cannot exceed it either. 8192 holds a 32-voice DX7 bulk dump
+	// (4104 bytes) and typical patch dumps; sending 8 KB takes about 2.6 s at DIN speed.
+	static const int sysExMaxPayloadLength = 8192;
 
-	// Message handles a script can hold live per callback (slot 0 is the
-	// incoming message): msgStoreDefault unless its header asks for more with
-	// "@requires messages=N", never more than msgStoreMax. Shared so both
-	// engines create the same number.
+	// Live message handles per callback (slot 0 is the incoming message):
+	// msgStoreDefault, or more with "@requires messages=N" up to msgStoreMax.
 	static const int msgStoreDefault = 32;
 	static const int msgStoreMax = 512;
 
 	// ── Message handles ──────────────────────────────────────────────────────
-	// A script message is a handle into the engine's store of msgStore.size()
-	// slots. The store and everything around it is here, once, for both engines.
+	// A script message is a handle into msgStore, shared by both engines.
 
-	// One slot of the store: a message a script holds a handle to, either the
-	// incoming one (slot 0 in a MIDI callback) or one it builds for output.
+	// One slot: the incoming message (slot 0 in a MIDI callback) or one the
+	// script builds for output.
 	struct ScriptMessage {
-		// The message itself, plus the decode result when it came in assembled
-		// (NRPN/RPN/14-bit CC). Reusing MidiScript::QueuedMessage rather than
-		// restating its fields: it already carries exactly what an incoming
-		// message needs, and sharing the type means midi.getControl()/getValue()
-		// read the same struct the module filled in — no field-by-field copy to
-		// drift.
-		//
-		// `in` also holds the message a script BUILDS for output; the decode
-		// fields simply stay at their defaults there.
+		// The message plus its decode result (NRPN/RPN/14-bit CC). The same struct
+		// the module filled in, so midi.getControl()/getValue() need no copy. For a
+		// built message the decode fields stay at their defaults.
 		QueuedMessage in;
-		// Outgoing chain markers, set by createNRPN()/createCc14bit(). Note these
-		// are about a message being built for SEND, unlike in.type which reports
-		// how a received message was decoded — same words, opposite direction.
+		// Chain markers of a message built for SEND (createNRPN()/createCc14bit()),
+		// unlike in.type, which says how a received message was decoded.
 		bool isNrpn = false;
 		bool isRpn = false;    // with isNrpn: the 4-message chain is an RPN (CC 101/100)
 		bool isCc14bit = false;
 	};
 
-	// The store behind the handles. Only the engines' binding code reads and
-	// writes it, on the worker thread. Sized by sizeStore() at load, before any
-	// script code runs, and never resized while bindings run, so no pointer into
-	// it outlives a resize.
+	// Worker thread only. Sized by sizeStore() at load and never resized while
+	// bindings run, so no pointer into it outlives a resize.
 	std::vector<ScriptMessage> msgStore = std::vector<ScriptMessage>(msgStoreDefault);
 
-	// Sets the store to max(requested, msgStoreDefault) empty slots. Worker, in
-	// an unloaded engine, before the script's top-level code (see
-	// loadScriptOnWorker()). Releases memory when the new size is smaller, so
-	// one big script doesn't pin it for the next.
+	// Sets the store to max(requested, msgStoreDefault) empty slots. Worker, in an
+	// unloaded engine, before the script's top-level code. Shrinks memory, so one
+	// big script doesn't pin it for the next.
 	void sizeStore(int requested) {
 		// By value: std::max would take the constants by reference, which needs
 		// an out-of-class definition in C++11.
@@ -292,39 +64,28 @@ struct MidiScriptEngine {
 		msgCount = 0;
 	}
 
-	// Writes "midi.create: message store full (32 handles; ...)" into `buf`: it
-	// names the fix, so it can be found from the log alone. A plain buffer, not a
-	// std::string, because the Lua bindings raise it with luaL_error, which
-	// longjmps past destructors.
+	// Writes the "message store full" error into `buf`, naming the fix. A plain
+	// buffer because the Lua bindings raise it with luaL_error, which longjmps
+	// past destructors.
 	void storeFullMessage(char* buf, size_t size, const char* fn) const {
 		snprintf(buf, size, "%s: message store full (%d handles; reuse a handle or raise it with @requires messages=N)", fn, int(msgStore.size()));
 	}
 
-	// Slots in use in the current callback. Must be initialised: top-level
-	// script code runs during loadScriptOnWorker(), before any callback starts
-	// the store, and it bounds every slot check.
+	// Slots in use in the current callback. Initialised because top-level script
+	// code runs before any callback starts the store.
 	size_t msgCount = 0;
-	// True only inside a script callback. A handle is only valid inside the
-	// callback that created it, so midi.create() and every use of a handle is
-	// an error outside one.
+	// True only inside a script callback: a handle is valid only in the callback
+	// that created it.
 	bool inCallback = false;
-	// Added to the slot index to make a handle. Advanced past the handles the
-	// previous callback issued at every callback start, so a handle is never
-	// issued twice and one kept from an earlier callback can't alias a new
-	// message at the same slot.
+	// Added to the slot index to make a handle. Advanced at every callback start,
+	// so a handle is never issued twice and a stale one can't alias a new message.
 	int64_t handleBase = 0;
-	// Sticky output port selected via midiOut.selectPort(), 0-based. Stays in
-	// effect across callbacks until changed again.
+	// Output port from midiOut.selectPort(), 0-based; sticky across callbacks.
 	int selectedPort = 0;
 
 	// Start of a callback: an empty store (or slot 0 taken by the incoming
-	// message, used = 1), and handle numbers no earlier callback has issued.
-	// Callbacks never nest (the worker runs them one at a time), so a single
-	// handleBase is enough.
+	// message, used = 1) and fresh handle numbers. Callbacks never nest.
 	void beginStore(size_t used) {
-		// Every handle the previous callback issued is below the new base. A
-		// callback that issued none leaves it where it was, which is as safe: the
-		// older handles are already below it.
 		handleBase += int64_t(msgCount);
 		msgCount = used;
 	}
@@ -334,82 +95,291 @@ struct MidiScriptEngine {
 		return handleBase + int64_t(slot);
 	}
 
-	// Handle -> store slot, or -1 for anything that is not a live handle of
-	// this callback: outside a callback, from an earlier one, out of range.
+	// Handle -> store slot, or -1 if it is not a live handle of this callback.
 	long handleToSlot(int64_t h) const {
 		if (!inCallback || h < handleBase) return -1;
 		int64_t slot = h - handleBase;
 		return slot < int64_t(msgCount) ? long(slot) : -1;
 	}
 
-	// Worker, from a midiOut.send*() binding: sends the message at `first` now,
-	// with the 3 entries after it when it leads an NRPN/RPN chain or the 1 after
-	// it when it leads a 14-bit CC pair, as one group, all of it on `frame`, to
-	// `port`. Works on copies, so the script's handle is left as it was and can
-	// be changed and sent again. `first` must be a slot returned by
-	// handleToSlot(): the chain flags are only ever set on a leader with its
-	// followers reserved below msgStore.size().
+	// The RPN null (parameter 127/127, `101 = 127, 100 = 127`): the MIDI spec's
+	// "no parameter selected". It has no data entry, and a receiver ignores one.
+	// The NRPN spec has no such parameter, so NRPN 16383 is an ordinary number.
+	static const int rpnNull = 16383;
+
+	// Whether a lead slot is an RPN set to the null parameter.
+	static bool isRpnNull(const ScriptMessage& s) {
+		return s.isNrpn && s.isRpn && s.in.paramNumber == rpnNull;
+	}
+
+	// Messages a handle sends as one group: 4 for an NRPN/RPN (just the 2 selects
+	// for the RPN null), 2 for a 14-bit CC pair, 1 for anything else. Only
+	// meaningful on the lead slot.
+	static size_t groupSize(const ScriptMessage& s) {
+		return s.isNrpn ? (isRpnNull(s) ? 2 : 4) : s.isCc14bit ? 2 : 1;
+	}
+
+	// The error tail for a single-message setter called on a group handle, or
+	// nullptr for a plain handle. Such a setter would write only the lead slot
+	// and leave a broken group, so the bindings raise this instead, before any
+	// write (the Lua ones longjmp, see sendEntry()).
+	static const char* groupSetterError(const ScriptMessage& s) {
+		if (s.isNrpn) return s.isRpn ? "message is an RPN; use midi.setRPN()" : "message is an NRPN; use midi.setNRPN()";
+		if (s.isCc14bit) return "message is a 14-bit CC; use midi.setCc14bit()";
+		return nullptr;
+	}
+
+	// The group handle's kind from its chain flags.
+	static OutGroup::Kind groupKind(const ScriptMessage& s) {
+		return s.isCc14bit ? OutGroup::CC14 : s.isRpn ? OutGroup::RPN : OutGroup::NRPN;
+	}
+
+	// Writes a group into msgStore[slot..]: the wire bytes of its messages and, on
+	// the lead, the decode fields (type, number, value) that midi.isNrpn(),
+	// getControl() and getValue() answer from. Bytes and decode fields are always
+	// written together, so every accessor agrees. The chain flags are set when the
+	// handle is created. kind NRPN/RPN: number and value 0-16383, 4 messages
+	// (spec order: parameter MSB, parameter LSB, data MSB, data LSB, as
+	// MidiProcessor's state machine requires). CC14: number is the MSB controller
+	// 0-31, value 0-16383, 2 messages (MSB at `number`, LSB at `number + 32`).
+	void fillGroup(size_t slot, OutGroup::Kind kind, uint8_t channel, uint16_t number, uint16_t value) {
+		bool cc14 = kind == OutGroup::CC14;
+		size_t n = cc14 ? 2 : 4;
+		uint8_t controller[4];
+		uint8_t data[4];
+		if (cc14) {
+			controller[0] = uint8_t(number);
+			controller[1] = uint8_t(number + 32);
+			data[0] = (value >> 7) & 0x7f;
+			data[1] = value & 0x7f;
+		}
+		else {
+			controller[0] = kind == OutGroup::RPN ? 101 : 99;
+			controller[1] = kind == OutGroup::RPN ? 100 : 98;
+			controller[2] = 6;
+			controller[3] = 38;
+			data[0] = (number >> 7) & 0x7f;
+			data[1] = number & 0x7f;
+			data[2] = (value >> 7) & 0x7f;
+			data[3] = value & 0x7f;
+		}
+		for (size_t k = 0; k < n; k++) {
+			Message& m = msgStore[slot + k].in.msg;
+			if (m.getSize() != 3) m.setSize(3);
+			m.setStatus(0xb);
+			m.setChannel(channel);
+			m.setNote(controller[k]);
+			m.setValue(data[k]);
+		}
+		QueuedMessage& lead = msgStore[slot].in;
+		lead.type = kind == OutGroup::NRPN ? MessageEx::Type::NRPN : kind == OutGroup::RPN ? MessageEx::Type::RPN : MessageEx::Type::CC_14BIT;
+		lead.paramNumber = int16_t(number);
+		// The RPN null carries no value: only its select pair is sent (groupSize()).
+		lead.extraValue = kind == OutGroup::RPN && number == rpnNull ? int16_t(-1) : int16_t(value);
+	}
+
+	// Worker, start of a MIDI callback: puts the incoming message into slot 0 and
+	// starts the store behind it. A plain message takes 1 slot. An assembled
+	// NRPN/RPN/14-bit CC becomes a group handle, the same shape as a created and
+	// set one, and takes 4 or 2: it is rebuilt from its decoded channel, number and
+	// value, so a device that sent only CC 38 (or repeated only the data entry)
+	// still forwards as a complete group.
 	//
-	// Never raises. The Lua bindings rely on that: luaL_error longjmps past C++
-	// destructors, so every check must come before this call.
-	void sendEntry(const ScriptMessage& first, int port, int64_t frame, uint8_t channel = 0, uint64_t tick = 0, int trigPort = 0) {
-		size_t n = first.isNrpn ? 4 : first.isCc14bit ? 2 : 1;
+	// Assigning whole slots resets the chain flags and decode fields of whatever
+	// the slot held before (a chain lead from onLoad/onUnload, or the previous
+	// callback's group), so nothing leaks into this message.
+	void storeIncoming(const QueuedMessage& q) {
+		bool nrpn = q.type == MessageEx::Type::NRPN;
+		bool rpn = q.type == MessageEx::Type::RPN;
+		bool cc14 = q.type == MessageEx::Type::CC_14BIT;
+		if (!(nrpn || rpn || cc14)) {
+			msgStore[0] = ScriptMessage();
+			msgStore[0].in = q;
+			beginStore(1);
+			return;
+		}
+		size_t n = cc14 ? 2 : 4;
+		for (size_t k = 0; k < n; k++) msgStore[k] = ScriptMessage();
+		msgStore[0].isNrpn = nrpn || rpn;
+		msgStore[0].isRpn = rpn;
+		msgStore[0].isCc14bit = cc14;
+		fillGroup(0, cc14 ? OutGroup::CC14 : rpn ? OutGroup::RPN : OutGroup::NRPN, q.msg.getChannel(), uint16_t(q.paramNumber), uint16_t(q.extraValue));
+		msgStore[0].in.frame = q.frame;
+		beginStore(n);
+	}
+
+	// midi.setValue() on a group handle: the combined 14-bit value, keeping the
+	// group's channel and number. False for a group whose setter has not run yet
+	// (no number to keep). `slot` from handleToSlot().
+	bool setGroupValue(size_t slot, uint16_t value) {
+		const ScriptMessage& lead = msgStore[slot];
+		if (lead.in.paramNumber < 0) return false;
+		fillGroup(slot, groupKind(lead), lead.in.msg.bytes[0] & 0x0F, uint16_t(lead.in.paramNumber), value);
+		return true;
+	}
+
+	// midi.clone(): appends a copy of the handle at slot `src` to the store, a whole
+	// group (with its chain flags and decode fields) for a group handle, and returns
+	// the new slot. For a plain message only the MIDI payload is copied: the clone
+	// starts unsent, and a received message's decode result is not carried over. The caller has checked that
+	// groupSize() slots are free.
+	size_t cloneGroup(size_t src) {
+		size_t n = groupSize(msgStore[src]);
+		size_t dst = msgCount;
+		for (size_t k = 0; k < n; k++) {
+			ScriptMessage copy;
+			copy.in.msg = msgStore[src + k].in.msg;
+			msgStore[dst + k] = copy;
+		}
+		msgStore[dst].isNrpn = msgStore[src].isNrpn;
+		msgStore[dst].isRpn = msgStore[src].isRpn;
+		msgStore[dst].isCc14bit = msgStore[src].isCc14bit;
+		// A group's decode fields are part of its state (they are what isNrpn(),
+		// getControl() and getValue() answer from), unlike a plain message's.
+		if (n > 1) {
+			msgStore[dst].in.type = msgStore[src].in.type;
+			msgStore[dst].in.paramNumber = msgStore[src].in.paramNumber;
+			msgStore[dst].in.extraValue = msgStore[src].in.extraValue;
+		}
+		msgCount += n;
+		return dst;
+	}
+
+	// midi.setChannel() on a handle: every message of its group, so the group
+	// stays on one channel. `slot` from handleToSlot().
+	void setGroupChannel(size_t slot, uint8_t channel) {
+		size_t n = groupSize(msgStore[slot]);
+		for (size_t k = 0; k < n; k++) msgStore[slot + k].in.msg.setChannel(channel);
+	}
+
+	// Worker, from a midiOut.send*() binding: sends `first` to `port` on `frame`,
+	// with the 3 entries after it for an NRPN/RPN chain or the 1 after it for a
+	// 14-bit CC pair, as one group. Works on copies, so the handle can be changed
+	// and sent again. `first` must come from handleToSlot().
+	//
+	// Never raises: the Lua bindings rely on that (luaL_error longjmps past C++
+	// destructors), so every check comes before this call.
+	//
+	// `scheduled`: sent by sendAfterMs/sendAtFrame/sendAfterTrigger, so
+	// midiOut.cancel() may drop it. A plain send() never is.
+	void sendEntry(const ScriptMessage& first, int port, int64_t frame, uint8_t channel = 0, uint64_t tick = 0, int trigPort = 0, bool scheduled = false) {
+		size_t n = groupSize(first);
 		Message group[4];
 		for (size_t k = 0; k < n; k++) {
 			group[k] = (&first)[k].in.msg;
 			group[k].frame = frame;
 		}
-		// Return value ignored: a drop is expected under output saturation, and
-		// the module already reports it once per episode.
-		handler->sendMidi(port, group, n, channel, tick, trigPort);
+		OutTag tag;
+		tag.scheduled = scheduled;
+		if (first.isNrpn || first.isCc14bit) tag.group = groupOf(first);
+		// A drop is expected under output saturation; the module reports it.
+		handler->sendMidi(port, group, n, channel, tick, trigPort, tag);
 	}
 
-	// The handler this engine runs inside, injected at construction. Every
-	// module-facing callback (log/overlay/input/trig/param) routes through it.
+	// The group a chain handle sends as: channel, kind and number from the lead's
+	// decode fields (channel from its bytes). NONE for a single message, or a
+	// chain whose setter never ran (paramNumber < 0).
+	static OutGroup groupOf(const ScriptMessage& first) {
+		OutGroup g;
+		if (!(first.isNrpn || first.isCc14bit) || first.in.paramNumber < 0) return g;
+		g.kind = groupKind(first);
+		g.channel = first.in.msg.bytes[0] & 0x0F;
+		g.param = uint16_t(first.in.paramNumber);
+		return g;
+	}
+
+	// Whether `first` holds a message: a group handle whose setter ran
+	// (paramNumber >= 0), or a plain message with a status byte. Checked by the
+	// bindings before sendEntry() and cancelEntry(), so an empty midi.create()
+	// handle or an unset group never reaches the wire as status-less bytes.
+	static bool hasContent(const ScriptMessage& first) {
+		if (first.isNrpn || first.isCc14bit) return first.in.paramNumber >= 0;
+		const Message& m = first.in.msg;
+		return !m.bytes.empty() && m.bytes[0] >= 0x80;
+	}
+
+	// Worker, from midiOut.cancel(): `first` null cancels everything on the
+	// selected port. Never raises (see sendEntry()).
+	void cancelEntry(const ScriptMessage* first) {
+		CancelMode mode = CancelMode::ALL;
+		Message pattern;
+		OutGroup group;
+		if (first != nullptr) {
+			if (first->isNrpn || first->isCc14bit) {
+				group = groupOf(*first);
+				// An unset chain would match every plain message as NONE.
+				if (group.kind == OutGroup::NONE) return;
+				mode = CancelMode::GROUP;
+			}
+			else {
+				pattern = first->in.msg;
+				mode = CancelMode::MESSAGE;
+			}
+		}
+		// A full queue is normal under saturation; the module reports it.
+		handler->cancelMidi(selectedPort, mode, pattern, group);
+	}
+
+	// The module this engine runs in, injected at construction.
 	MidiScriptEngineHandler* handler;
 
-	// rack.setConfig()/getConfig() limits — shared constants so the two
-	// engines can't drift on what they accept.
-	//
-	// Depth 1 is the value passed to setConfig() itself; the cap is also what
-	// makes cyclic Lua tables/JS objects terminate, since depth is the only
-	// defence the converters apply without tracking visited nodes.
+	// rack.random(): a generator of the engine's own, not Rack's global one, so a
+	// module's sequence depends only on its stored seed and the script. The host
+	// reseeds it at every load (worker thread), which makes a reload replay the
+	// same values.
+	void seedRandom(uint32_t seed) {
+		// A fixed second word: with (seed, 0) a seed of 0 would leave the all-zero state.
+		rng.seed(seed, 0x9E3779B97F4A7C15ull);
+		// Low-entropy seeds (small integers) need a few shifts to spread.
+		for (int i = 0; i < 4; i++) rng();
+	}
+
+	// rack.setRandomSeed(n): the script's own seed, taking effect at once. Any finite
+	// number is accepted: truncated, then wrapped into 32 bits (negative too), so a
+	// script can feed it a clock or a counter. False for NaN/infinity. Only the
+	// running generator changes, not the seed stored in the patch, which the next
+	// load restores: a script that wants its own seed calls this in onLoad.
+	bool setRandomSeedFromNumber(double n) {
+		if (!std::isfinite(n)) return false;
+		double wrapped = std::fmod(std::trunc(n), 4294967296.0);
+		if (wrapped < 0) wrapped += 4294967296.0;
+		seedRandom(static_cast<uint32_t>(wrapped));
+		return true;
+	}
+
+	// Uniform in [0, 1). Built from the raw 53 top bits instead of a std
+	// distribution, whose output differs between standard libraries: a patch
+	// must get the same values on every platform.
+	double nextRandom() {
+		return static_cast<double>(rng() >> 11) * (1.0 / 9007199254740992.0);
+	}
+
+	// rack.setConfig()/getConfig() limits, shared so the engines can't drift.
+	// Depth 1 is the value itself; the cap also ends cyclic tables/objects, as the
+	// converters track no visited nodes.
 	static const int configMaxDepth = 4;
-	// Total serialized size of the whole config, checked after conversion
-	// against the prospective new config (not the single value being written).
+	// Serialized size of the whole prospective config, not the single value.
 	static const size_t configMaxBytes = 65536;
 
-	// Wraps a json_t* (already owned/incref'd by the caller) in a shared_ptr
-	// whose deleter decrefs it.
+	// Wraps an owned json_t* in a shared_ptr that decrefs it.
 	static std::shared_ptr<json_t> ownJson(json_t* j) {
 		return std::shared_ptr<json_t>(j, [](json_t* p) { json_decref(p); });
 	}
 
-	// The engine-owned working copy of the script's config (a flat JSON
-	// object; values may nest). setConfig() mutates it, getConfig() reads it —
-	// both run on the script thread, so this needs no synchronization at all.
-	// Never null once constructed.
+	// The script's config (a flat object, values may nest). Script thread only,
+	// so no synchronization. Never null.
 	std::shared_ptr<json_t> workingConfig = ownJson(json_object());
 
-	// Published config, script thread -> UI thread.
-	//
-	// The published json_t is IMMUTABLE: setConfig() mutates the working copy,
-	// then publishes a fresh copy, so a reader holding a shared_ptr can walk
-	// its version safely while the script writes the next one. Mutating an
-	// already-published object instead would race dataToJson() inside
-	// json_dumps(): jansson's refcount is atomic but its containers are not.
-	//
-	// Single writer (the script thread), single reader (dataToJson()).
-	// getConfig() must NOT read through this — it reads the working copy
-	// directly, since SpscLatestValue permits only one reader.
+	// Config published to the UI thread. The published json_t is IMMUTABLE:
+	// setConfig() publishes a fresh copy, so a reader can walk its version while
+	// the script writes the next (jansson containers are not thread-safe).
+	// Single writer, single reader (dataToJson()); getConfig() reads the working
+	// copy instead, since SpscLatestValue allows one reader.
 	SpscLatestValue<std::shared_ptr<json_t>> publishedConfig{ownJson(json_object())};
 
-	// Script thread. Mutates the working copy, then publishes a copy of it.
-	// `value` is owned (may be null, meaning "delete key").
-	//
-	// json_copy() (shallow) suffices rather than json_deep_copy(): the copy
-	// shares child *values* with the working copy, and those are only ever
-	// replaced wholesale by json_object_set_new, never mutated in place.
+	// Script thread. Mutates the working copy, then publishes a copy. `value` is
+	// owned; null deletes the key. A shallow json_copy() suffices: child values are
+	// only ever replaced wholesale, never mutated.
 	void setConfigValue(const char* key, json_t* value /* owned, may be null */) {
 		assert(onWorkerThread());
 		if (!value) json_object_del(workingConfig.get(), key);
@@ -418,17 +388,15 @@ struct MidiScriptEngine {
 		publishedConfig.store(std::move(copy));
 	}
 
-	// Script thread. Returns a borrowed pointer (no incref) into workingConfig,
-	// or NULL if `key` is unset.
+	// Script thread. A borrowed pointer into workingConfig, NULL if `key` is unset.
 	json_t* getConfigValue(const char* key) const {
 		assert(onWorkerThread());
 		return json_object_get(workingConfig.get(), key);
 	}
 
-	// Replaces workingConfig wholesale (patch load, script switch, reset) and
-	// publishes it immediately, so dataToJson() never observes a stale config
-	// from the previous script/state. `initial` is owned (may be null, meaning
-	// "start empty").
+	// Replaces workingConfig (patch load, script switch, reset) and publishes it
+	// at once, so dataToJson() never sees a stale one. `initial` is owned; null
+	// starts empty.
 	void installConfig(json_t* initial /* owned, may be null */) {
 		assert(onWorkerThread());
 		workingConfig = ownJson(initial ? initial : json_object());
@@ -436,17 +404,14 @@ struct MidiScriptEngine {
 		publishedConfig.store(std::move(copy));
 	}
 
-	// UI thread. Returns a reference into the SpscLatestValue slot, not a
-	// copy: peek() returns const T&, stable until the next load()/peek()/
-	// load_if_new() call on this (the only) reader thread.
+	// UI thread. A reference into the slot, stable until the next call on this
+	// (the only) reader thread.
 	const std::shared_ptr<json_t>& peekConfig() {
 		return publishedConfig.peek();
 	}
 
-	// Validates a setConfig()/getConfig() key: [A-Za-z_][A-Za-z0-9_]{0,63}.
-	// Rejecting anything else (including '.') reserves '.' for a possible
-	// future path-addressing form instead of silently accepting a flat key
-	// that looks like a nested one.
+	// Validates a config key: [A-Za-z_][A-Za-z0-9_]{0,63}. '.' is rejected to keep
+	// it free for a future path form.
 	static bool isValidConfigKey(const char* key) {
 		if (!key || key[0] == '\0') return false;
 		size_t len = strlen(key);
@@ -468,38 +433,46 @@ struct MidiScriptEngine {
 	int midiInputCount;
 	int midiOutputCount;
 
+	rack::random::Xoroshiro128Plus rng;
+
 	MidiScriptEngine(MidiScriptEngineHandler* handler, int inputCount, int inputTrigCount, int outputTrigCount, int paramCount, int midiInputCount, int midiOutputCount)
 		: handler(handler), inputCount(inputCount), inputTrigCount(inputTrigCount), outputTrigCount(outputTrigCount), paramCount(paramCount), midiInputCount(midiInputCount), midiOutputCount(midiOutputCount) {
+		seedRandom(1);   // engines driven without a host (tests) still get a defined sequence
 	}
 
-	std::shared_ptr<ITaskWorker> taskWorker;
-	MidiInQueue midiInQueue;
-	// (trigPort, channel, frame) — the trigger input is polyphonic, so each tick
-	// carries the channel that fired and the frame of its edge. Sized for the
-	// worst case between two drains (every 8th sample): all trigger channels of
-	// the largest variant (2 ports x 16 channels) firing on each of 8 samples.
+	// Not owned: the host owns the domain and outlives its engines' use of it,
+	// so the worker is destroyed (and drains its queue) while the engines are
+	// still alive. Null until the host injects one. The engine joins the domain's
+	// bus only when its script defines rack.onBroadcast. The host removes the
+	// engine from the bus before the engine is destroyed.
+	WorkerDomain* domain = nullptr;
+	MidiInRingBuffer midiInQueue;
+	// (trigPort, channel, frame). Sized for the worst case between two drains
+	// (every 8th sample): 2 ports x 16 channels firing on each of 8 samples.
 	dsp::RingBuffer<std::tuple<int, uint8_t, int64_t>, 256> tickInQueue;
 
-	// Audio thread. dsp::RingBuffer::push() does not bounds-check: on a full
-	// buffer it overwrites unread entries and leaves size() > capacity, after
-	// which empty()/full() misreport. Drops the new event instead.
+	// Audio thread. dsp::RingBuffer::push() does not bounds-check: a full buffer
+	// is overwritten and empty()/full() then misreport. Drops the new event.
 	template <typename Q, typename T>
 	void pushInQueue(Q& queue, T&& value) {
 		if (!queue.full()) queue.push(std::forward<T>(value));
 	}
 
-	// Worker thread (the consumer of the in-queues), from unloadScriptOnWorker():
-	// events captured for the closed script must not reach the next one.
+	// Worker thread, from unloadScriptOnWorker(): events captured for the closed
+	// script must not reach the next one.
 	void discardInQueues() {
 		while (!midiInQueue.empty()) midiInQueue.pop();
 		while (!tickInQueue.empty()) tickInQueue.shift();
 		while (!tipsyInQueue.empty()) tipsyInQueue.shift();
+		// Reset the slots too, so the queue does not pin stale payloads.
+		for (InboundBroadcast& m : broadcastInQueue.data) m = InboundBroadcast();
+		broadcastInQueue.clear();
+		broadcastOverflowLogged = false;
 	}
 
 	// Worker thread: the frame of the event being dispatched, -1 outside one.
 	int64_t currentInFrame = -1;
-	// Sets currentInFrame for a scope and restores the previous value, so a
-	// dispatch cannot leak its frame into unrelated work.
+	// Sets currentInFrame for a scope and restores it after.
 	struct InFrameScope {
 		int64_t& slot;
 		int64_t prev;
@@ -507,23 +480,34 @@ struct MidiScriptEngine {
 		~InFrameScope() { slot = prev; }
 	};
 
-	// The frame for sendAfterMs: `ms` after the causing event in timing mode,
-	// otherwise (and with no event) after the module's latest process() frame.
-	// A negative `ms` (-1) means "after Rack's output queue": a framed message
-	// handed over late in a block is transmitted up to two blocks after that
-	// block starts, so a frame-less message released two blocks (and a frame) on
-	// goes out behind everything Rack still holds. Shared by both engines.
-	int64_t frameAfterMs(double ms) const {
-		int64_t base = handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getTimingCurrentFrame();
-		if (ms < 0.0) return base + 2 * handler->getTimingBlockFrames() + 1;
-		float sr = handler->getSampleRate();
-		return base + int64_t(sr > 0.f ? ms / 1000.0 * sr : 0.0);
+	// How far ahead a script can schedule: sendAfterMs and sendAtFrame are
+	// limited to 2 hours past the base frame, sendAfterTrigger to 10000 trigger
+	// ticks. A larger finite value is clamped to the limit; NaN and Infinity are
+	// refused by the bindings (a 60000 / bpm with bpm = 0 gives Infinity), since
+	// a message stuck for good would also use up a queue slot for good.
+	static constexpr double MAX_SCHEDULE_MS = 2.0 * 3600.0 * 1000.0;
+	static constexpr int MAX_SCHEDULE_TICKS = 10000;
+
+	// The frame scheduling is relative to: the causing event in timing mode,
+	// otherwise the module's latest process() frame.
+	int64_t scheduleBase() const {
+		return handler->isTimingEnabled() && currentInFrame >= 0 ? currentInFrame : handler->getTimingCurrentFrame();
 	}
 
-	// rack.msToFrames() / rack.framesToMs(): conversion at the current sample
-	// rate, which is read on every call because it can change while a script is
-	// loaded. Frames are rounded to a whole number, milliseconds are not. NaN
-	// and an unknown (zero) sample rate give 0. Shared by both engines.
+	// The frame for sendAfterMs: `ms` (at most MAX_SCHEDULE_MS) after the base. A
+	// negative `ms` means "behind Rack's output queue": framed messages handed
+	// over late in a block go out up to two blocks later, so this lands two
+	// blocks and a frame on. `ms` must be finite (checked by the bindings).
+	int64_t frameAfterMs(double ms) const {
+		int64_t base = scheduleBase();
+		if (ms < 0.0) return base + 2 * handler->getTimingBlockFrames() + 1;
+		float sr = handler->getSampleRate();
+		const double maxMs = MAX_SCHEDULE_MS;   // a copy: std::min would odr-use the constant (C++11)
+		return base + int64_t(sr > 0.f ? std::min(ms, maxMs) / 1000.0 * sr : 0.0);
+	}
+
+	// rack.msToFrames() / framesToMs() at the current sample rate (read per call,
+	// it can change). Frames are rounded. NaN and an unknown rate give 0.
 	double msToFrames(double ms) const {
 		float sr = handler->getSampleRate();
 		if (std::isnan(ms) || !(sr > 0.f)) return 0.0;
@@ -535,94 +519,76 @@ struct MidiScriptEngine {
 		return frames / sr * 1000.0;
 	}
 
-	// The stamp for a trigger output write (trig.setTrigger/setGate/setHigh/
-	// setLow). In timing mode, inside an event, the write is applied on the audio
-	// thread at the event's frame plus one audio block: the same offset Rack puts
-	// on framed MIDI, so a trigger and the MIDI it belongs to stay together.
-	// -1 (apply when the script runs) otherwise.
+	// The stamp for a trigger output write. In timing mode, inside an event: the
+	// event's frame plus one block, the offset Rack puts on framed MIDI, so a
+	// trigger stays with its MIDI. Otherwise -1 (apply when the script runs).
 	int64_t frameForTrig() const {
 		if (!handler->isTimingEnabled() || currentInFrame < 0) return -1;
 		return currentInFrame + handler->getTimingBlockFrames();
 	}
 
-	// The frame for send: the causing event's in timing mode (-1 outside an
-	// event), always -1 otherwise.
+	// The frame for send: the causing event's in timing mode, otherwise -1.
 	int64_t frameForSend() const {
 		return handler->isTimingEnabled() ? currentInFrame : -1;
 	}
 
-	// The frame for sendAtFrame. Negative values collide with the -1 "no frame"
-	// encoding, so they all mean "no frame".
-	static int64_t frameAtFrame(double frame) {
-		return frame < 0.0 ? -1 : int64_t(frame);
+	// The frame for sendAtFrame, at most MAX_SCHEDULE_MS past the base. Negatives
+	// collide with the -1 "no frame". `frame` must be finite (checked by the bindings).
+	int64_t frameAtFrame(double frame) const {
+		if (frame < 0.0) return -1;
+		int64_t base = scheduleBase();
+		float sr = handler->getSampleRate();
+		double limit = double(base) + (sr > 0.f ? MAX_SCHEDULE_MS / 1000.0 * sr : 0.0);
+		return int64_t(std::min(frame, limit));
 	}
 
-	// Setter-argument rule shared by both engines: a number is rounded to the
-	// nearest integer and clamped to [lo, hi], never wrapped. Clamping happens in
-	// double before the integer conversion (an out-of-range float -> integer
-	// cast is undefined behaviour); NaN maps to lo.
-	// T is the result type (uint8_t/uint16_t for MIDI fields); lo and hi must fit it.
+	// Setter-argument rule: round to nearest and clamp to [lo, hi], never wrap.
+	// Clamps in double first (an out-of-range float -> integer cast is undefined);
+	// NaN gives lo. `T` is the result type; lo and hi must fit it.
 	template <typename T = int>
 	static T clampInt(double v, int lo, int hi) {
 		if (std::isnan(v)) return static_cast<T>(lo);
 		return static_cast<T>(std::max(static_cast<double>(lo), std::min(static_cast<double>(hi), std::round(v))));
 	}
 
-	// The 14-bit CC value is 0..127.992 (MSB plus a fraction in 1/128 steps), so
-	// it is clamped but not rounded.
-	static double clampCc14bitValue(double v) {
-		if (std::isnan(v)) return 0.0;
-		return std::max(0.0, std::min(127.0 + 127.0 / 128.0, v));
-	}
-
-	void setWorker(std::shared_ptr<ITaskWorker> w) {
-		taskWorker = std::move(w);
+	void setDomain(WorkerDomain* d) {
+		domain = d;
 	}
 
 	bool runAsync(std::function<void()> task) {
-		return taskWorker->work(task, APP);
+		return domain->worker->work(task, APP);
 	}
 
-	// Low-priority lane for queries the UI makes into the script (port names,
-	// param labels). The worker is one FIFO shared by every MidiKit module, so
-	// queueing these with runAsync() would put them in line ahead of later
-	// MIDI/trigger dispatch and use up its few slots. Instead they wait here,
-	// and process() runs them only behind dispatch work: one at the tail of
-	// each dispatch task, or on their own when there is no dispatch to do. A
-	// query therefore delays MIDI by at most one script call, and never the
-	// other way round.
+	// Low-priority lane for UI queries into the script (port names, param labels).
+	// They must not use runAsync(): the worker is one FIFO shared by every MidiKit
+	// module and its few slots belong to MIDI/trigger dispatch. process() runs
+	// them behind dispatch work, so a query delays MIDI by at most one script call.
 	//
-	// UI thread only (single producer); drained on the worker (single
-	// consumer). Returns false, dropping the task, if the lane is full —
-	// callers retry on their next redraw.
+	// UI thread only (single producer). False, dropping the task, if the lane is
+	// full; callers retry on their next redraw.
 	bool runLowPriority(std::function<void()> task) {
 		if (uiQueryQueue.full()) return false;
 		uiQueryQueue.push(std::move(task));
 		return true;
 	}
 
-	// True on the thread script code runs on. All script execution happens there
-	// — dispatch, load/teardown, setConfig()/getConfig() — so the interpreter and
-	// contextMenus are only ever touched from it, and the call sites assert that.
-	// Always true under SyncTaskWorker (tests), which runs tasks inline.
+	// True on the thread script code runs on (dispatch, load/teardown,
+	// setConfig()/getConfig()). Always true under SyncTaskWorker (tests).
 	bool onWorkerThread() const {
-		return taskWorker && taskWorker->isWorkerThread();
+		return domain && domain->worker->isWorkerThread();
 	}
 
-	// What a script's "@requires" tag asks for; 0 for a key the tag doesn't have.
+	// What a script's "@requires" tag asks for; 0 for a key it doesn't have.
 	struct Requires {
-		// The script needs at least N panel params (e.g. 4 does not fit MIDI-µKIT's 2).
+		// At least N panel params (4 does not fit MIDI-µKIT's 2).
 		int params = 0;
-		// The script needs a message store of at least N slots (a minimum, like
-		// params: smaller values keep msgStoreDefault). Checked against
+		// A message store of at least N slots (a minimum). Checked against
 		// msgStoreMax in checkRequires(), so the error can name the limit.
 		int messages = 0;
 	};
 
-	// Parses the value of a "@requires" tag: space-separated key=value pairs,
-	// "params=N" and "messages=N". Returns false with `error` set for an unknown
-	// key or a malformed value: a requirement that can't be checked can't be
-	// assumed met.
+	// Parses a "@requires" value: space-separated "params=N" and "messages=N".
+	// False with `error` set for an unknown key or malformed value.
 	static bool parseRequires(const std::string& value, Requires& req, std::string& error) {
 		req = Requires();
 		std::istringstream ss(value);
@@ -647,9 +613,8 @@ struct MidiScriptEngine {
 		return true;
 	}
 
-	// The params a script's "@requires" tag asks for, 0 when absent or invalid.
-	// Only for UI hints (greying out example scripts a variant can't run);
-	// checkRequires() is what enforces the tag at load time.
+	// The params "@requires" asks for, 0 when absent or invalid. A UI hint only
+	// (greys out example scripts a variant can't run); checkRequires() enforces.
 	static int requiredParams(const std::string& script) {
 		std::string header = script.substr(0, 2048);
 		size_t tag = header.find("@requires");
@@ -661,90 +626,114 @@ struct MidiScriptEngine {
 		return parseRequires(header.substr(start, eol == std::string::npos ? std::string::npos : eol - start), req, error) ? req.params : 0;
 	}
 
-	// Checks the optional "@requires" header tag against this module variant and
-	// sizes the message store for it. Logs why and returns false when the script
-	// must not load. Called by both engines right after the "@engine" check.
-	// The store is already at its default (loadScriptOnWorker() resets it first),
-	// so a refused script never leaves a big one behind.
+	// Checks "@requires" against this variant and sizes the message store. Logs
+	// why and returns false if the script must not load. Called by both engines
+	// after the "@engine" check; the store is still at its default, so a refused
+	// script leaves no big one behind.
 	bool checkRequires(const std::map<std::string, std::string>& topics) {
 		auto it = topics.find("requires");
 		if (it == topics.end()) return true;
 		Requires req;
 		std::string error;
 		if (!parseRequires(it->second, req, error)) {
-			handler->writeLog("Script not loaded: " + error, false);
+			handler->writeError("Script not loaded: " + error);
 			return false;
 		}
 		if (req.params > paramCount) {
-			handler->writeLog(string::f("Script not loaded: it requires %d params, this module has %d", req.params, paramCount), false);
+			handler->writeError(string::f("Script not loaded: it requires %d params, this module has %d", req.params, paramCount));
 			return false;
 		}
 		if (req.messages > msgStoreMax) {
-			handler->writeLog(string::f("Script not loaded: @requires messages=%d exceeds the maximum of %d", req.messages, msgStoreMax), false);
+			handler->writeError(string::f("Script not loaded: @requires messages=%d exceeds the maximum of %d", req.messages, msgStoreMax));
 			return false;
 		}
 		sizeStore(req.messages);
 		return true;
 	}
 
-	// True if this engine should process `script`: a simple "@engine <name>"
-	// substring match, so the module needs no header parser of its own.
+	// True if this engine should process `script` ("@engine <name>" substring).
 	virtual bool testScript(const std::string& script) = 0;
 
 
-	// The load, always on the worker thread (ScriptHost::load() queues it), into
-	// an unloaded engine: the caller ends any previous script with
-	// unloadScriptOnWorker() first (implementations assert it).
+	// The load, on the worker thread, into an unloaded engine (the caller ran
+	// unloadScriptOnWorker() first; implementations assert it).
 	//
-	// initialConfigJson, if non-empty, is parsed and installed on the engine as
-	// the script's workingConfig BEFORE any script code runs — top-level code
-	// and onLoad() see it via rack.getConfig(). Empty installs a fresh, empty
-	// config (script switch). This is an install, not an argument to a hook:
-	// getConfig()/setConfig() are live calls, not hooks. Implementations must
-	// installConfig() from it at the top, before any script code runs.
+	// A non-empty initialConfigJson is installed as workingConfig BEFORE any script
+	// code runs, so top-level code and onLoad() see it via rack.getConfig(). Empty
+	// installs a fresh config. Implementations installConfig() at the top.
 	//
-	// Load messages and parse errors reach the user via handler->writeLog().
+	// Load messages and parse errors go to handler->writeLog().
 	virtual void loadScriptOnWorker(const char* script, const std::string& initialConfigJson) = 0;
 
-	// The end of a script, however it ends (replaced, cleared, reset, removed,
-	// memory limit, load error), always on the worker thread. Implementations run
-	// rack.onUnload() after handler->beginUnload() and free their interpreter if
-	// a script is running, then always discardInQueues() and
-	// handler->endUnload(). onUnload()'s return value is ignored: config comes
-	// from rack.setConfig(), not from teardown. publishedConfig is deliberately
-	// left untouched, so a save racing this teardown still persists the last
-	// known config.
+	// The end of a script however it ends (replaced, cleared, reset, removed,
+	// memory limit, load error), on the worker thread. Implementations run
+	// rack.onUnload() after handler->beginUnload(), free the interpreter if a
+	// script is running, then always discardInQueues() and handler->endUnload().
+	// onUnload()'s return value is ignored. publishedConfig is left untouched, so a
+	// racing save still persists the last known config.
 	virtual void unloadScriptOnWorker() = 0;
 
-	// Main interface for message processing. Takes the decoded form so the
-	// assembly the module already performed (NRPN/RPN/14-bit CC) travels with
-	// the raw message instead of being redone on the worker.
+	// Takes the decoded form, so the NRPN/RPN/14-bit CC assembly the module
+	// already did travels with the message.
 	virtual void processInMessage(int midiPort, const QueuedMessage& msg) = 0;
 	virtual void processInTick(int trigPort, uint8_t channel, int64_t frame = -1) = 0;
 
-	// Decoded Tipsy messages awaiting dispatch. Engine-owned, like midiInQueue:
-	// the decoding is the module's job but dispatching into script code is the
-	// engine's. Pushed by the module's processTipsyInput() (audio thread),
-	// drained by process() (worker) — the mirror image of the module's
-	// tipsyOutQueue.
+	// Decoded Tipsy messages awaiting dispatch. Pushed by the module's
+	// processTipsyInput() (audio thread), drained by process() (worker).
 	dsp::RingBuffer<TipsyMessage, 8> tipsyInQueue;
+
+	// Broadcasts from other engines, pushed and drained on the worker thread (see
+	// BroadcastBus). The audio thread only reads size().
+	static const size_t broadcastInQueueSize = 16;
+	dsp::RingBuffer<InboundBroadcast, broadcastInQueueSize> broadcastInQueue;
+
+	// Worker thread, from BasicBroadcastBus::send(): a broadcast for this engine was
+	// dropped, its queue is full. Logs once per episode, which ends when the queue
+	// is next drained.
+	virtual void onBroadcastDropped() {
+		if (broadcastOverflowLogged) return;
+		broadcastOverflowLogged = true;
+		if (handler) handler->writeError("Broadcast input queue full, message(s) dropped");
+	}
+	bool broadcastOverflowLogged = false;
+
+	// Worker thread, from the sendBroadcast bindings. Takes ownership of `owned`
+	// (a converted script value) and sends it, with the optional `topic`, to every
+	// other receiver. Returns how many it reached; 0 and a log line if the value
+	// exceeds broadcastMaxBytes or the topic broadcastTopicMaxBytes.
+	// Never raises: the Lua bindings must not luaL_error after building C++ objects.
+	int sendBroadcast(json_t* owned, const std::string* topic = nullptr) {
+		std::shared_ptr<json_t> value = ownJson(owned);
+		if (topic && topic->size() > broadcastTopicMaxBytes) {
+			handler->writeError(string::f("sendBroadcast: topic exceeds %d bytes (ignored)", (int)broadcastTopicMaxBytes));
+			return 0;
+		}
+		char* dump = json_dumps(value.get(), JSON_COMPACT);
+		size_t size = dump ? strlen(dump) : 0;
+		if (dump) free(dump);
+		if (size > broadcastMaxBytes) {
+			handler->writeError(string::f("sendBroadcast: message exceeds the %d KB limit (ignored)", (int)(broadcastMaxBytes / 1024)));
+			return 0;
+		}
+		if (!domain) return 0;
+		return domain->bus->send(this, value, currentInFrame, topic);
+	}
 
 	// Worker thread, after each dispatch pass: lets an engine refresh state the UI
 	// reads through atomics (e.g. memory usage).
 	virtual void publishMemoryUsage() {}
 
-	// UI thread. Bytes in use by the loaded script's heap and the limit it is
-	// held to, or false if no script is loaded. Reads only atomics.
+	// UI thread. Bytes used by the script's heap and its limit, or false if no
+	// script is loaded. Reads only atomics.
 	virtual bool getMemoryUsage(size_t& used, size_t& total) = 0;
 
-	// Pending runLowPriority() tasks. See there.
+	// Pending runLowPriority() tasks.
 	dsp::RingBuffer<std::function<void()>, 16> uiQueryQueue;
-	// A stand-alone drain task is in the worker's queue. Keeps process(), which
-	// runs every few samples, from flooding the shared worker while it waits.
+	// A stand-alone drain task is queued; keeps process() from flooding the worker.
 	std::atomic<bool> uiDrainScheduled{false};
 
-	// Worker thread. Runs at most one pending UI query, so the time MIDI can
-	// wait behind this is a single script call.
+	// Worker thread. Runs at most one UI query, so MIDI waits behind a single
+	// script call.
 	void drainUiQuery() {
 		if (!uiQueryQueue.empty()) {
 			std::function<void()> task = uiQueryQueue.shift();
@@ -752,10 +741,10 @@ struct MidiScriptEngine {
 		}
 	}
 
-	// Dispatches queued midiInQueue/tickInQueue/tipsyInQueue onto the engine via
-	// runAsync(). Virtual so tests can override it to observe call counts.
+	// Dispatches the queued input onto the engine via runAsync(). Virtual so tests
+	// can observe call counts.
 	virtual void process() {
-		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0 || tipsyInQueue.size() > 0)) {
+		if ((midiInQueue.size() > 0 || tickInQueue.size() > 0 || tipsyInQueue.size() > 0 || broadcastInQueue.size() > 0)) {
 			runAsync([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
@@ -785,7 +774,21 @@ struct MidiScriptEngine {
 					InFrameScope scope(currentInFrame, msg.frame);
 					dispatchTipsyMessage(msg);
 				}
-				// After everything above, so queries never hold up MIDI.
+				// Only what was queued before this pass: a reply from onBroadcast is
+				// answered on the next pass, so two replying scripts ping-pong
+				// instead of spinning the shared worker.
+				size_t n = broadcastInQueue.size();
+				while (n-- > 0 && !broadcastInQueue.empty()) {
+					// Moved out, so the slot drops its reference right away.
+					InboundBroadcast& slot = broadcastInQueue.data[broadcastInQueue.start % broadcastInQueueSize];
+					InboundBroadcast msg = std::move(slot);
+					slot = InboundBroadcast();
+					broadcastInQueue.start++;
+					InFrameScope scope(currentInFrame, msg.frame);
+					dispatchBroadcast(msg);
+				}
+				broadcastOverflowLogged = false;
+				// Last, so queries never hold up MIDI.
 				drainUiQuery();
 				publishMemoryUsage();
 			});
@@ -800,97 +803,33 @@ struct MidiScriptEngine {
 		}
 	}
 
-	// Engine-specific dispatch of a single message/tick, invoked from
-	// process() above on the worker thread.
+	// Engine-specific dispatch, from process() on the worker thread.
 	virtual void dispatchMidiMessage(int midiPort, Message& msg) = 0;
 
-	// Dispatches an assembled parameter change to midi.onNrpn/onRpn, or a 14-bit
-	// controller change to midi.onCc14bit.
-	//
-	// The whole QueuedMessage is passed, not the decoded scalars, because the
-	// script receives it as a message HANDLE — the same shape onMessage gets —
-	// and reads it through midi.getControl()/getValue()/getChannel(). That keeps
-	// the raw bytes reachable and lets the handle be cloned or forwarded like any
-	// other. Worker thread.
+	// An assembled parameter change (midi.onNrpn/onRpn) or 14-bit controller
+	// change (midi.onCc14bit). The whole QueuedMessage is passed because the script
+	// gets it as a message handle, like onMessage, so the raw bytes stay reachable.
 	virtual void dispatchNrpn(int midiPort, const QueuedMessage& q, bool isRpn) = 0;
 	virtual void dispatchCc14bit(int midiPort, const QueuedMessage& q) = 0;
 	virtual void dispatchTrigger(int trigPort, uint8_t channel) = 0;
 	virtual void dispatchTipsyMessage(const TipsyMessage& msg) = 0;
+	// A broadcast from another engine. The value is shared with the other
+	// receivers and must not be modified.
+	virtual void dispatchBroadcast(const InboundBroadcast& msg) = 0;
 
 	// Queries into the script from the UI
 	virtual std::string getInputName(int i) = 0;
 	virtual std::string getParamName(int i) = 0;
 	virtual std::string getParamFormatValue(int i) = 0;
 
-	// Called from the UI thread while the context menu is built. Evaluates each
-	// item's onGetValue on the WORKER thread (script code must never run on the
-	// UI thread), then invokes `callback`. The callback must not construct
-	// widgets — it only publishes specs for the menu to poll from step().
+	// UI thread, while the context menu is built. Evaluates each item's onGetValue
+	// on the WORKER thread, then calls `callback`, which must not construct
+	// widgets: it only publishes specs for the menu to poll from step().
 	virtual void getContextMenus(const std::function<void(const std::vector<ScriptMenuItem>&)>& callback) = 0;
-	// Called from the UI thread when the user clicks a menu item. value is 0/1
-	// for Boolean, the selected index for Options. Runs the callback on the
-	// worker thread.
-	virtual void invokeContextMenuCallback(int callbackId, int value) = 0;
+	// UI thread, on a menu click. Runs the callback on the worker thread; the click's
+	// content is described at menuCallArgs(). A click that does not fit the item is ignored.
+	virtual void invokeContextMenuCallback(int callbackId, const ScriptMenuClick& click) = 0;
 };
-
-
-struct MidiScriptEnginePortInfo : PortInfo {
-	bool enabled;
-	MidiScriptEngine* se;
-	std::string bufferedName;
-	std::atomic<bool> queryInFlight{false};
-
-	std::string getName() override {
-		if (enabled) {
-			bool expected = false;
-			if (queryInFlight.compare_exchange_strong(expected, true)) {
-				bool queued = se->runLowPriority([=] {
-					bufferedName = se->getInputName(portId);
-					queryInFlight.store(false);
-				});
-				if (!queued) {
-					queryInFlight.store(false);
-				}
-			}
-			return bufferedName;
-		}
-		return "<Disabled>";
-	}
-};
-
-
-struct MidiScriptEngineParamQuantity : ParamQuantity {
-	bool enabled;
-	MidiScriptEngine* se;
-	std::string bufferedLabel;
-	std::string bufferedDisplayValue;
-	std::atomic<bool> queryInFlight{false};
-
-	std::string getLabel() override {
-		return enabled ? bufferedLabel : "";
-	}
-	std::string getDisplayValueString() override {
-		if (enabled) {
-			bool expected = false;
-			if (queryInFlight.compare_exchange_strong(expected, true)) {
-				bool queued = se->runLowPriority([=] {
-					bufferedLabel = se->getParamName(paramId);
-					bufferedDisplayValue = se->getParamFormatValue(paramId);
-					queryInFlight.store(false);
-				});
-				if (!queued) {
-					queryInFlight.store(false);
-				}
-			}
-			std::string s = bufferedDisplayValue;
-			return !s.empty() ? s : ParamQuantity::getDisplayValueString();
-		}
-		else {
-			return "<Disabled>";
-		}
-	}
-};
-
 
 } // namespace MidiScript
 } // namespace StoermelderPackOne

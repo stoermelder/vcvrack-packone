@@ -220,7 +220,7 @@ midi.onMessage = function(midiPort, msg)
     end
 
     -- Note Off
-    if midi.isNoteOff(msg) or (midi.isNoteOn(msg) and midi.getValue(msg) == 0) then
+    if midi.isNoteRelease(msg) then
         local note = midi.getNote(msg)
 
         if isPoly then

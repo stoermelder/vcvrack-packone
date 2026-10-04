@@ -1,14 +1,14 @@
 // rack.setConfig()/getConfig(): types, validation, caps, persistence and patch round-trips.
 //
-// Part of the cross-engine suite: included into the __engine namespace by
-// MidiKit.test.cpp after MidiKit.test.engine.hpp, which defines the shared helpers.
+// Part of the cross-engine suite: the shared helpers (run, requireEquivalent, EngineRun, ...)
+// are in MidiKit.test.hpp.
 
 // round-trip of every JSON type
 
 TEST_CASE("setConfig() then getConfig() round-trips every JSON type, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		// One "ok:<n>" line per assertion inside the script — the pass/fail
@@ -17,7 +17,6 @@ TEST_CASE("setConfig() then getConfig() round-trips every JSON type, in both eng
 		REQUIRE(log.find("FAIL") == std::string::npos);
 		REQUIRE(log.find("ok:7") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_ROUNDTRIP = R"(/**
@@ -80,15 +79,14 @@ check(rack.getConfig("negfloat") == -3.5, "negfloat")
 
 
 TEST_CASE("getConfig() for an unset key returns the default, or undefined/nil without one, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("FAIL") == std::string::npos);
 		REQUIRE(log.find("ok:3") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_UNSET = R"(/**
@@ -127,9 +125,9 @@ check(rack.getConfig("channel", 1) == 5, "set-key-ignores-default")
 
 
 TEST_CASE("setConfig(key, undefined/nil) deletes the key; a later getConfig sees the default again, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("FAIL") == std::string::npos);
@@ -142,7 +140,6 @@ TEST_CASE("setConfig(key, undefined/nil) deletes the key; a later getConfig sees
 		REQUIRE(json_object_get(j, "channel") == nullptr);
 		json_decref(j);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_DELETE = R"(/**
@@ -181,7 +178,6 @@ check(rack.getConfig("channel", 1) == 1, "deleted-falls-back-to-default")
 // key validation
 
 TEST_CASE("setConfig()/getConfig() key validation matrix, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	// Rejected: "a.b" (dot reserved for future path addressing), "" (empty),
 	// "1abc" (must not start with a digit), "a b" (space), "a-b" (hyphen), a
 	// 65-char key (over the length cap), and a non-string key (number).
@@ -191,13 +187,13 @@ TEST_CASE("setConfig()/getConfig() key validation matrix, in both engines", "[Mi
 	// default forever — it returns undefined/nil even when a default
 	// argument was given, and it logs too.
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("FAIL") == std::string::npos);
 		REQUIRE(log.find("ok:12") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_KEYS = R"(/**
@@ -288,15 +284,14 @@ check(rack.getConfig("a.b") == nil, "rejected-key-unreachable")
 // rejected values
 
 TEST_CASE("setConfig() with a function value is rejected: key unchanged, one log line, script alive, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("setConfig") != std::string::npos); // the rejection log line
 		REQUIRE(log.find("ok:1") != std::string::npos);       // script kept running
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_FUNC_VALUE = R"(/**
@@ -319,15 +314,14 @@ if rack.getConfig("fn") == nil then rack.log("ok:1") end
 
 
 TEST_CASE("Nesting exactly 4 deep is accepted and round-trips; 5 deep is rejected, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("FAIL") == std::string::npos);
 		REQUIRE(log.find("ok:2") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 
 	// Depth counts from 1 (the value passed to setConfig() itself): in
@@ -380,9 +374,9 @@ check(rack.getConfig("d5") == nil, "depth-5-rejected")
 // forever. QuickJS's own jsValueToJson() gets the identical guard for
 // contract parity, even though JS_JSONStringify would have thrown on its own.
 TEST_CASE("A self-referencing table/object is rejected by setConfig(), not a crash, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		// If the depth guard were missing, this call itself would stack-
 		// overflow the process — reaching drainLog() at all is part of the
 		// assertion.
@@ -391,7 +385,6 @@ TEST_CASE("A self-referencing table/object is rejected by setConfig(), not a cra
 		REQUIRE(log.find("FAIL") == std::string::npos);
 		REQUIRE(log.find("ok:1") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_CYCLE = R"(/**
@@ -420,15 +413,14 @@ else rack.log("FAIL cyclic-accepted") end
 
 
 TEST_CASE("setConfig() rejects a value that would push the config past the size cap; the previous value survives, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		std::string log = drainLog(m);
 		REQUIRE(log.find("FAIL") == std::string::npos);
 		REQUIRE(log.find("ok:2") != std::string::npos);
 
-		Test::destroyModule(m);
 	};
 
 	// configMaxBytes is 64 KB (MidiScriptEngine::configMaxBytes) — a single
@@ -472,9 +464,9 @@ check(rack.getConfig("big") == nil and rack.getConfig("small") == "kept", "overs
 // setConfig() from every callback context
 
 TEST_CASE("setConfig() persists when called from top-level, onLoad, onUnload, midi.onMessage, and a context-menu onChange, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		drainLog(m);
 
@@ -484,7 +476,7 @@ TEST_CASE("setConfig() persists when called from top-level, onLoad, onUnload, mi
 
 		// midi.onMessage.
 		midi::Message msg = noteOn(1, 60, 100);
-		m->host.queueMessage(0, msg);
+		m->host.queueMessage(0, QueuedMessage(msg));
 		m->host.process();
 		REQUIRE(configInt(cfg(), "onMessage") == 1);
 
@@ -500,7 +492,6 @@ TEST_CASE("setConfig() persists when called from top-level, onLoad, onUnload, mi
 		m->clearScript();
 		// publishedConfig survives teardown: read it before the module
 		// (and its engines) are destroyed.
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_ALL_CONTEXTS = R"(/**
@@ -555,7 +546,8 @@ rack.registerContextMenu({
 	// read on the SAME engine instance before teardown completes. Re-run with
 	// an inline read timed against the unload itself.
 	auto checkOnUnload = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		drainLog(m);
 		MidiScriptEngine* engine = m->host.getActiveEngine();
@@ -565,7 +557,6 @@ rack.registerContextMenu({
 		// down — so reading its publishedConfig after clearScript() is safe
 		// and is exactly the "racing save" scenario described above.
 		REQUIRE(configInt(publishedConfigJson(engine), "onUnload") == 1);
-		Test::destroyModule(m);
 	};
 	checkOnUnload(JS_ALL_CONTEXTS);
 	checkOnUnload(LUA_ALL_CONTEXTS);
@@ -575,9 +566,9 @@ rack.registerContextMenu({
 // full patch round-trip
 
 TEST_CASE("Full patch round-trip: setConfig -> dataToJson -> new module -> dataFromJson -> getConfig, in both engines", "[MidiKit][CrossEngine][JSON]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		drainLog(m);
 
@@ -586,7 +577,8 @@ TEST_CASE("Full patch round-trip: setConfig -> dataToJson -> new module -> dataF
 		REQUIRE(configJ != NULL);
 		REQUIRE(json_integer_value(json_object_get(configJ, "channel")) == 7);
 
-		MidiKitModule* m2 = createModule();
+		Kit<> kit2;
+		MidiKitModule* m2 = kit2.m;
 		m2->dataFromJson(rootJ);
 		json_decref(rootJ);
 		std::string log2 = drainLog(m2);
@@ -601,9 +593,6 @@ TEST_CASE("Full patch round-trip: setConfig -> dataToJson -> new module -> dataF
 		m2->host.getActiveEngine()->process();   // UI queries run on the engine's next pump
 		REQUIRE(specs.size() == 1);
 		REQUIRE(specs[0].selected == 7);
-
-		Test::destroyModule(m);
-		Test::destroyModule(m2);
 	};
 
 	static const char* JS_ROUNDTRIP_PATCH = R"(/**
@@ -646,9 +635,9 @@ rack.registerContextMenu({
 // lifecycle: script switch and reset
 
 TEST_CASE("Switching to a new script gets a fresh, empty config, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& scriptA, const std::string& scriptB) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(scriptA);
 		drainLog(m);
 		REQUIRE(configInt(publishedConfigJson(m->host.getActiveEngine()), "fromA") == 1);
@@ -665,7 +654,6 @@ TEST_CASE("Switching to a new script gets a fresh, empty config, in both engines
 		REQUIRE(json_object_size(j) == 0);
 		json_decref(j);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_FROM_A = R"(/**
@@ -698,9 +686,9 @@ midi.onMessage = function(midiPort, msg) end
 
 
 TEST_CASE("onReset() clears the config; a subsequent dataToJson() writes no scriptConfig, in both engines", "[MidiKit][CrossEngine]") {
-	ModuleScaffold mods;
 	auto check = [](const std::string& script) {
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(script);
 		drainLog(m);
 		REQUIRE(configInt(publishedConfigJson(m->host.getActiveEngine()), "x") == 1);
@@ -711,7 +699,6 @@ TEST_CASE("onReset() clears the config; a subsequent dataToJson() writes no scri
 		REQUIRE(json_object_get(rootJ, "scriptConfig") == NULL);
 		json_decref(rootJ);
 
-		Test::destroyModule(m);
 	};
 
 	static const char* JS_RESET = R"(/**
@@ -728,4 +715,205 @@ rack.setConfig("x", 1)
 )";
 	check(JS_RESET);
 	check(LUA_RESET);
+}
+
+
+
+// rack.setConfig()/getConfig()
+// Replaces the old rack.onSave()/rack.onLoad(persistedConfig) pull model: the
+// script now PUSHES config via setConfig() whenever it changes something, and
+// the engine just holds the latest published JSON. onUnload() is unaffected: still
+// teardown-only, its return value still ignored, and it must not touch config
+// on its own.
+
+
+// rack.random(): per-module, seeded from the stored randomSeed, restarted by every load
+
+static const char* JS_RANDOM_ON_LOAD = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.onLoad = function() {
+	rack.log("r=" + Math.floor(rack.random() * 1e9) + "," + Math.floor(rack.random() * 1e9));
+};
+)";
+
+static const char* LUA_RANDOM_ON_LOAD = R"(--[[
+@engine minilua@v1
+--]]
+rack.onLoad = function()
+	rack.log("r=" .. math.floor(rack.random() * 1e9) .. "," .. math.floor(rack.random() * 1e9))
+end
+)";
+
+// The "r=a,b" values the script logged on its latest load.
+static std::string randomValues(MidiKitModule* m) {
+	std::string log = drainLog(m);
+	size_t at = log.rfind("r=");
+	REQUIRE(at != std::string::npos);
+	return log.substr(at, log.find('\n', at) - at);
+}
+
+TEST_CASE("rack.random() replays the same values on every script reload, in both engines", "[MidiKit][CrossEngine][Random]") {
+	Pair scripts{JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(script);
+	std::string first = randomValues(m);
+	REQUIRE(first.size() > 4);
+
+	m->loadScript(script);
+	REQUIRE(randomValues(m) == first);
+	m->clearScript();
+	m->loadScript(script);
+	REQUIRE(randomValues(m) == first);
+}
+
+TEST_CASE("rack.random() follows the seed: another seed gives other values, the same seed the same", "[MidiKit][CrossEngine][Random]") {
+	Pair scripts{JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->host.randomSeed = 1234;
+	m->loadScript(script);
+	std::string a = randomValues(m);
+
+	m->host.randomSeed = 1235;
+	m->loadScript(script);
+	REQUIRE(randomValues(m) != a);
+
+	m->host.randomSeed = 1234;
+	m->loadScript(script);
+	REQUIRE(randomValues(m) == a);
+
+	// Seed 0 must not degenerate to a constant sequence.
+	m->host.randomSeed = 0;
+	m->loadScript(script);
+	std::string z = randomValues(m);
+	REQUIRE(z != "r=0,0");
+}
+
+TEST_CASE("The rack.random() seed is stored in the patch and restored, so a new module repeats the values", "[MidiKit][CrossEngine][Random][JSON]") {
+	Pair scripts{JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD};
+	FOR_EACH_LANG;
+	const char* script = scripts.get(lang);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(script);
+	std::string expected = randomValues(m);
+
+	json_t* rootJ = m->dataToJson();
+	json_t* seedJ = json_object_get(rootJ, "randomSeed");
+	REQUIRE(seedJ != NULL);
+	REQUIRE(json_integer_value(seedJ) == (json_int_t)m->host.randomSeed);
+
+	Kit<> kit2;
+	MidiKitModule* m2 = kit2.m;
+	m2->dataFromJson(rootJ);
+	json_decref(rootJ);
+	REQUIRE(m2->host.randomSeed == m->host.randomSeed);
+	REQUIRE(randomValues(m2) == expected);
+}
+
+TEST_CASE("A patch without a stored seed keeps the module's own seed", "[MidiKit][Random][JSON]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	uint32_t seed = m->host.randomSeed;
+	json_t* rootJ = json_object();
+	json_object_set_new(rootJ, "script", json_string(LUA_RANDOM_ON_LOAD));
+	m->dataFromJson(rootJ);
+	json_decref(rootJ);
+	REQUIRE(m->host.randomSeed == seed);
+}
+
+static const char* JS_SET_SEED = R"(/**
+ * @engine QuickJs@v1
+ */
+function two() { return Math.floor(rack.random() * 1e9) + "," + Math.floor(rack.random() * 1e9); }
+rack.onLoad = function() {
+	rack.setRandomSeed(42);
+	let a = two();
+	rack.setRandomSeed(42.9);     // truncated: the same seed
+	let b = two();
+	rack.setRandomSeed(42 + 4294967296);   // wraps: the same seed
+	let c = two();
+	rack.setRandomSeed(43);
+	let d = two();
+	rack.setRandomSeed(-1);
+	let e = two();
+	rack.setRandomSeed(4294967295);
+	let f = two();
+	rack.log("same=" + (a == b && b == c) + " other=" + (a != d) + " neg=" + (e == f));
+	let threw = 0;
+	try { rack.setRandomSeed(NaN); } catch (x) { threw++; }
+	try { rack.setRandomSeed(Infinity); } catch (x) { threw++; }
+	try { rack.setRandomSeed("1"); } catch (x) { threw++; }
+	rack.log("threw=" + threw);
+	rack.setRandomSeed(7);
+	rack.log("r=" + two());
+};
+)";
+
+static const char* LUA_SET_SEED = R"(--[[
+@engine minilua@v1
+--]]
+local function two() return math.floor(rack.random() * 1e9) .. "," .. math.floor(rack.random() * 1e9) end
+rack.onLoad = function()
+	rack.setRandomSeed(42)
+	local a = two()
+	rack.setRandomSeed(42.9)
+	local b = two()
+	rack.setRandomSeed(42 + 4294967296)
+	local c = two()
+	rack.setRandomSeed(43)
+	local d = two()
+	rack.setRandomSeed(-1)
+	local e = two()
+	rack.setRandomSeed(4294967295)
+	local f = two()
+	rack.log("same=" .. tostring(a == b and b == c) .. " other=" .. tostring(a ~= d) .. " neg=" .. tostring(e == f))
+	local threw = 0
+	if not pcall(rack.setRandomSeed, 0 / 0) then threw = threw + 1 end
+	if not pcall(rack.setRandomSeed, math.huge) then threw = threw + 1 end
+	if not pcall(rack.setRandomSeed, {}) then threw = threw + 1 end
+	rack.log("threw=" .. threw)
+	rack.setRandomSeed(7)
+	rack.log("r=" .. two())
+end
+)";
+
+TEST_CASE("rack.setRandomSeed restarts the sequence, wraps to 32 bits and rejects non-finite input", "[MidiKit][CrossEngine][Random]") {
+	FOR_EACH_LANG;
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(Pair{JS_SET_SEED, LUA_SET_SEED}.get(lang));
+	std::string log = drainLog(m);
+	REQUIRE(log.find("same=true other=true neg=true") != std::string::npos);
+	REQUIRE(log.find("threw=3") != std::string::npos);
+	size_t at = log.rfind("r=");
+	REQUIRE(at != std::string::npos);
+	// Seed 7 yields the same values in both engines, so a script ports as it is.
+	REQUIRE(log.substr(at, log.find('\n', at) - at) == "r=404900533,568463585");
+}
+
+TEST_CASE("rack.setRandomSeed does not change the stored seed; a reload starts from it again", "[MidiKit][CrossEngine][Random]") {
+	FOR_EACH_LANG;
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->host.randomSeed = 99;
+	m->loadScript(Pair{JS_SET_SEED, LUA_SET_SEED}.get(lang));
+	drainLog(m);
+	REQUIRE(m->host.randomSeed == 99);
+
+	// A script without the call after one with it: back on the stored sequence.
+	Kit<> fresh;
+	MidiKitModule* f = fresh.m;
+	f->loadScript(Pair{JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD}.get(lang));
+	std::string expected = randomValues(f);
+	f->loadScript(Pair{JS_SET_SEED, LUA_SET_SEED}.get(lang));
+	drainLog(f);
+	f->loadScript(Pair{JS_RANDOM_ON_LOAD, LUA_RANDOM_ON_LOAD}.get(lang));
+	REQUIRE(randomValues(f) == expected);
 }

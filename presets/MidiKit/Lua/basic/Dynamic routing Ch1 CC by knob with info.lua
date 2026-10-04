@@ -6,7 +6,7 @@
 --]]
 
 -- Same routing as "Dynamic routing Ch1 CC by knob", plus panel feedback:
--- param.getName() supplies the tooltip title of a knob and param.getValueFormat()
+-- param.onTooltip() supplies the tooltip title of a knob and param.onValueText()
 -- the text of its value, so the tooltip shows the channel (1-16) instead of the
 -- raw 0..1 position. Both are called by the module whenever a tooltip is shown.
 
@@ -14,13 +14,13 @@ rack.onLoad = function()
     param.enable(1)
 end
 
-param.getName = function(port)
+param.onTooltip = function(port)
     if port == 1 then return "MIDI Channel" end
     return ""
 end
 
 -- The displayed value uses the same 0..1 -> 1-16 scaling as the routing below
-param.getValueFormat = function(port)
+param.onValueText = function(port)
     if port == 1 then
         return number.toString(math.ceil(param.getValue(1) * 16))
     end

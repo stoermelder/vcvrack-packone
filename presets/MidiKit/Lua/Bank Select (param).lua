@@ -69,7 +69,7 @@ local function sendPreset(index)
 
     -- Bank Select: CC 0 = MSB (bank), CC 32 = LSB (0), sent as an atomic pair
     local bankMsg = midi.createCc14bit()
-    midi.setCc14bit(bankMsg, config.channel, 0, bank)
+    midi.setCc14bit(bankMsg, config.channel, 0, bank * 128)
     midiOut.send(bankMsg)
 
     local programMsg = midi.create()
@@ -110,13 +110,13 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then return "Bank" end
     if i == 2 then return "Program in bank" end
     return ""
 end
 
-param.getValueFormat = function(i)
+param.onValueText = function(i)
     if i == 1 then return number.toString(bankIndex()) end
     if i == 2 then return number.toString(programNumber()) end
     return number.toString(param.getValue(i))

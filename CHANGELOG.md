@@ -1,3 +1,13 @@
+## 2.x.x
+
+### New modules
+
+- Module [MIDI-KIT](./docs/midikit/MidiKit.md) and [MIDI-µKIT](./docs/midikit/MidiKit.md)
+    - Scripting module for altering, filtering, delaying and generating MIDI messages. Scripts are written in JavaScript (QuickJS) or Lua and share one API for MIDI input and output on four ports, NRPN/RPN/14-bit CC, CV and trigger ports, panel knobs, context-menu items and messages between modules
+    - Optional sample-accurate timing for MIDI output, with scheduling by time, frame or clock tick and cancelling of scheduled messages
+    - Many ready-made example scripts (arpeggiator, Euclidean rhythm, scale quantiser, clock multiplier, NRPN tools and more) in the context menu
+    - MIDI-µKIT is the compact variant with two CV inputs and two knobs
+
 ## 2.7.0
 
 ### New modules
@@ -39,7 +49,7 @@
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
-    - Improved performance (no more memory allocation on dsp)
+    - Improved performance (no memory allocation on dsp, lock-free MIDI-input)
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"

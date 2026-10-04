@@ -30,8 +30,19 @@ let config = {
     ],
 
     // Optional: CC channel (1-16, default: 1)
-    ccChannel: rack.getConfig("ccChannel", 1)
+    ccChannel: rack.getConfig("ccChannel", 1),
+
+    // Optional: the device sends 7-bit NRPN (99, 98, 6 without CC 38)
+    sevenBit: rack.getConfig("sevenBit", false)
 };
+
+// Assemble NRPN parameter changes on MIDI input port 1 into midi.onNrpn. In
+// "msb" mode a change also fires on CC 6, for devices that never send CC 38. A
+// device that sends both then fires twice per change (coarse value, then the
+// real one). Calling it again switches the mode, for all channels.
+function enableInput() {
+    midi.enableNrpnIn(1, null, config.sevenBit ? "msb" : "lsb");
+}
 
 // Context menu choices
 let CHANNEL_LABELS = [];
@@ -67,8 +78,21 @@ rack.onLoad = function() {
         }
     });
 
-    // Assemble NRPN parameter changes on MIDI input port 1 into midi.onNrpn.
-    midi.enableNrpnIn(1);
+    rack.registerContextMenu({
+        type: "boolean",
+        label: "Device sends 7-bit NRPN",
+        onGetValue: function() {
+            return config.sevenBit;
+        },
+        onChange: function(checked) {
+            config.sevenBit = checked;
+            rack.setConfig("sevenBit", checked);
+            enableInput();
+            rack.log("7-bit NRPN: ", checked);
+        }
+    });
+
+    enableInput();
 
     rack.log("NRPN to CC converter initialized");
     rack.log("Mapped NRPN numbers: ", config.map.length);
@@ -95,7 +119,7 @@ midi.onNrpn = function(midiPort, msg) {
     rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber);
 
     let cc14 = midi.createCc14bit();
-    midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128);
+    midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue);
     // The pair (CC ccNumber = MSB, CC ccNumber + 32 = LSB) is sent atomically.
     midiOut.send(cc14);
 };

@@ -1,14 +1,20 @@
+#include "LogDispatcher.hpp"
+#include "Logging.hpp"
 #include "MidiScriptEngine.hpp"
+#include "MidiScriptUi.hpp"
 #include "MidiScriptEngineLua.hpp"
 #include "MidiScriptEngineQuickJs.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LedTextField.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "MidiKitEditorHost.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../vcv/fs.hpp"
 #include "../../vcv/engine.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "../../utils/BoundedPriorityQueue.hpp"
+#include "../midi/MidiCInputQueue.hpp"
 #include "../midi/MidiProcessor.hpp"
 #include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <algorithm>
@@ -47,13 +53,6 @@ static T& frontRing(dsp::RingBuffer<T, S>& ring) {
 }
 
 
-enum class LOG_FORMAT {
-	RESET,
-	TIMESTAMP,
-	INDENTED,
-	TEXT
-};
-
 // TPORTS is the number of trigger inputs of the module, one tick clock each.
 template <int TPORTS = 1>
 struct MidiOutput : midi::Output {
@@ -64,6 +63,10 @@ struct MidiOutput : midi::Output {
 		uint64_t seq;
 		// Sent by the onUnload() of a replaced script: survives the swap's clear.
 		bool unload;
+		// From sendAfterMs/sendAtFrame (MidiScript::OutTag): midiOut.cancel() only
+		// drops these, never a timing-mode send() waiting in the same queue.
+		bool scheduled;
+		MidiScript::OutGroup group;
 		bool operator<(const FrameSchedule& other) const {
 			if (msg.frame != other.msg.frame) return msg.frame > other.msg.frame;
 			return seq > other.seq;
@@ -76,46 +79,20 @@ struct MidiOutput : midi::Output {
 	// Messages that can wait for a trigger tick, per (trigger input, channel).
 	static constexpr size_t TICK_QUEUE_MAX = 32;
 
-	// A priority queue that is reserved up front and never grows past MAX, so it
-	// never reallocates on the audio thread (the caller checks full() before a
-	// push). Dropping entries in place keeps the capacity too.
-	template <typename T, size_t MAX>
-	struct BoundedQueue : std::priority_queue<T> {
-		BoundedQueue() {
-			this->c.reserve(MAX);
-		}
-		bool full() const {
-			return this->c.size() >= MAX;
-		}
-		// Takes the front element out by move: top() is const, so copying it out
-		// would allocate (midi::Message::bytes) on the audio thread.
-		T popTop() {
-			std::pop_heap(this->c.begin(), this->c.end(), this->comp);
-			T t = std::move(this->c.back());
-			this->c.pop_back();
-			return t;
-		}
-	};
-
-	struct FrameQueue : BoundedQueue<FrameSchedule, FRAME_QUEUE_MAX> {
-		template <typename Pred>
-		void removeIf(Pred pred) {
-			this->c.erase(std::remove_if(this->c.begin(), this->c.end(), pred), this->c.end());
-			std::make_heap(this->c.begin(), this->c.end(), this->comp);
-		}
-	};
+	using FrameQueue = BoundedPriorityQueue<FrameSchedule, FRAME_QUEUE_MAX>;
 
 	struct TickSchedule {
 		midi::Message msg;
 		uint64_t tick;
 		uint64_t seq;
+		MidiScript::OutGroup group;
 		bool operator<(const TickSchedule& other) const {
 			if (tick != other.tick) return tick > other.tick;
 			return seq > other.seq;
 		}
 	};
 
-	using TickQueue = BoundedQueue<TickSchedule, TICK_QUEUE_MAX>;
+	using TickQueue = BoundedPriorityQueue<TickSchedule, TICK_QUEUE_MAX>;
 
 	FrameQueue frameQueue;
 	uint64_t nextSeq = 0;
@@ -193,6 +170,22 @@ struct MidiOutput : midi::Output {
 		clearTickQueues();
 	}
 
+	// Audio thread, midiOut.cancel(): drops the scheduled messages that
+	// `mode`/`pattern`/`group` select from the frame queue and every tick queue.
+	// Immediate messages (a timing-mode send() waiting for this pump) and
+	// onUnload() output are never scheduled, so they stay.
+	void cancelScheduled(MidiScript::CancelMode mode, const midi::Message& pattern, const MidiScript::OutGroup& group) {
+		frameQueue.removeIf([&](const FrameSchedule& s) {
+			return s.scheduled && MidiScript::cancelMatches(mode, pattern, group, s.msg, s.group);
+		});
+		for (TickQueue& q : tickQueue) {
+			if (q.empty()) continue;
+			q.removeIf([&](const TickSchedule& s) {
+				return MidiScript::cancelMatches(mode, pattern, group, s.msg, s.group);
+			});
+		}
+	}
+
 	void reset() {
 		Output::reset();
 		while (!frameQueue.empty()) frameQueue.pop();
@@ -205,14 +198,15 @@ struct MidiOutput : midi::Output {
 
 	// `now`: the current engine frame, for frame-less messages in timing mode.
 	// `unload`: see FrameSchedule::unload.
+	// `tag`: what midiOut.cancel() needs to know about the message.
 	// `msg` is consumed (moved into a queue).
-	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1, bool unload = false) {
+	void send(midi::Message& msg, uint8_t channel, uint64_t tick, int trigPort = 0, int64_t now = -1, bool unload = false, const MidiScript::OutTag& tag = MidiScript::OutTag()) {
 		if (tick != 0) {
 			TickQueue& q = tickQueue[tickQueueIndex(channel, trigPort)];
 			if (!q.full()) {
 				// Built from the moved message: a default-constructed
 				// midi::Message allocates its bytes.
-				q.push(TickSchedule{std::move(msg), tick, nextSeq++});
+				q.push(TickSchedule{std::move(msg), tick, nextSeq++, tag.group});
 				return;
 			}
 			// A full queue sends at once, as a message without a schedule would
@@ -230,7 +224,7 @@ struct MidiOutput : midi::Output {
 
 		if (msg.frame != -1) {
 			if (!frameQueue.full()) {
-				frameQueue.push(FrameSchedule{std::move(msg), nextSeq++, unload});
+				frameQueue.push(FrameSchedule{std::move(msg), nextSeq++, unload, tag.scheduled, tag.group});
 				return;
 			}
 			scheduleFull = true;
@@ -311,6 +305,12 @@ struct MidiOutput : midi::Output {
 struct ExtendedCcEnables {
 	std::atomic<uint16_t> nrpnEnabledMask{0};
 	std::atomic<uint16_t> rpnEnabledMask{0};
+	// Channels whose device sends 7-bit data entry, per kind: CC 6 fires an event
+	// of its own there (MidiDecoder::setMsbDataEntry). The audio thread copies
+	// them into each port's decoder before decoding. Zero is the default mode,
+	// "lsb": fire on CC 38.
+	std::atomic<uint16_t> msbDataEntryNrpnMask{0};
+	std::atomic<uint16_t> msbDataEntryRpnMask{0};
 	// One mask per 14-bit MSB controller (0-31), since registration is per-CC:
 	// a script can take CC 7 as 14-bit while still seeing CC 39 raw.
 	std::atomic<uint16_t> cc14bitEnabledMask[32];
@@ -324,11 +324,16 @@ struct ExtendedCcEnables {
 	}
 
 	// Worker side — midi.enableNrpnIn()/enableRpnIn() binding. channel is
-	// 0-based, or -1 for all; kind 1 = RPN, otherwise NRPN.
-	void enableNrpn(int kind, int channel) {
+	// 0-based, or -1 for all; kind 1 = RPN, otherwise NRPN. Enabling is additive,
+	// but the data entry mode is overwritten for the channels named: msbDataEntry
+	// sets it, otherwise it is cleared, so the last call for a channel decides.
+	void enableNrpn(int kind, int channel, bool msbDataEntry = false) {
 		uint16_t bits = channelBits(channel);
 		if (bits == 0) return;
 		(kind == 1 ? rpnEnabledMask : nrpnEnabledMask).fetch_or(bits, std::memory_order_relaxed);
+		std::atomic<uint16_t>& mode = kind == 1 ? msbDataEntryRpnMask : msbDataEntryNrpnMask;
+		if (msbDataEntry) mode.fetch_or(bits, std::memory_order_relaxed);
+		else mode.fetch_and(static_cast<uint16_t>(~bits), std::memory_order_relaxed);
 	}
 
 	// Worker side — midi.enableCc14bitIn() binding. cc is the 0-31 MSB
@@ -392,101 +397,9 @@ struct ExtendedCcEnables {
 	void clear() {
 		nrpnEnabledMask.store(0, std::memory_order_relaxed);
 		rpnEnabledMask.store(0, std::memory_order_relaxed);
+		msbDataEntryNrpnMask.store(0, std::memory_order_relaxed);
+		msbDataEntryRpnMask.store(0, std::memory_order_relaxed);
 		for (int i = 0; i < 32; i++) cc14bitEnabledMask[i].store(0, std::memory_order_relaxed);
-	}
-};
-
-
-// Script log + overlay, one per module
-// Everything the module tells the widget about: the runtime log and the
-// current overlay message. Touched from three threads, which is why the
-// contract is stated here once rather than inferred from call sites:
-//   - worker thread: writeLog()/writeOverlay() produce log entries + overlay;
-//   - audio thread: raises notices (ScriptLog::raise), which become log lines
-//     when the log is drained;
-//   - loadScript()/onReset() callers produce RESET markers and "No script";
-//   - UI thread: the widget drains the log (ScriptLog::tryPop) and the
-//     overlay ring (nextOverlayMessageId/getOverlayMessage).
-// midiLogMessages is an MPMC queue because the log has concurrent producers;
-// overlayQueue is a single-producer ring (worker) drained by the widget.
-struct ScriptLog {
-	// Log entries, FIFO. MPMC: pushed by the worker (writeLog) and the
-	// loadScript/onReset callers (and the drain, for raised notices).
-	rigtorp::MPMCQueue<std::tuple<LOG_FORMAT, float, std::string>> midiLogMessages{512};
-
-	// Overlay ring + current message. Single-producer (worker via writeOverlay),
-	// single-consumer (widget).
-	dsp::RingBuffer<int, 8> overlayQueue;
-	std::tuple<std::string, std::string, std::string> overlayMessage;
-
-	// Notices raised from the audio thread. Building a log line allocates, which
-	// the audio thread must not do, so it only raises the notice: a flag set,
-	// nothing else. The text is a std::string made once, off the audio thread
-	// (in the constructor), and becomes a log line when tryPop() next runs on
-	// the thread that drains the log. Repeats before that are one line.
-	enum Notice {
-		OUTPUT_QUEUE_FULL,
-		SCHEDULE_QUEUE_FULL,
-		TRIGGER_QUEUE_FULL,
-		TIPSY_INPUT_MALFORMED,
-		TIPSY_INPUT_QUEUE_FULL,
-		TIMING_LATE,
-		NOTICE_COUNT
-	};
-	struct NoticeSlot {
-		std::atomic<bool> pending{false};
-		std::string text;
-	};
-	NoticeSlot notices[NOTICE_COUNT];
-
-	ScriptLog() {
-		notices[OUTPUT_QUEUE_FULL].text = "MIDI output queue full, message(s) dropped";
-		notices[SCHEDULE_QUEUE_FULL].text = "MIDI schedule queue full, message(s) sent at once";
-		notices[TRIGGER_QUEUE_FULL].text = "Trigger output queue full, write(s) dropped";
-		notices[TIPSY_INPUT_MALFORMED].text = "Tipsy input: malformed stream";
-		notices[TIPSY_INPUT_QUEUE_FULL].text = "Tipsy input queue full, message(s) dropped";
-		notices[TIMING_LATE].text = "Timing: message(s) reached the output too late";
-	}
-
-	// Any thread, allocation-free.
-	void raise(Notice n) {
-		notices[n].pending.store(true, std::memory_order_release);
-	}
-
-	// Worker side — writeLog(). Enqueues one entry.
-	void push(LOG_FORMAT format, float timestamp, const std::string& text) {
-		midiLogMessages.try_push(std::make_tuple(format, timestamp, text));
-	}
-
-	// Takes the next log entry, after turning the notices raised since the last
-	// call into lines. For the thread that drains the log (the widget; tests).
-	bool tryPop(std::tuple<LOG_FORMAT, float, std::string>& entry) {
-		for (int i = 0; i < NOTICE_COUNT; i++) {
-			if (notices[i].pending.exchange(false, std::memory_order_acquire)) pushText(notices[i].text);
-		}
-		return midiLogMessages.try_pop(entry);
-	}
-
-	// Plain text line. The timestamp is not displayed.
-	void pushText(const std::string& text, float timestamp = 0.f) {
-		push(LOG_FORMAT::TEXT, timestamp, text);
-	}
-
-	// Line prefixed with the timestamp (seconds).
-	void pushTimestamped(float timestamp, const std::string& text) {
-		push(LOG_FORMAT::TIMESTAMP, timestamp, text);
-	}
-
-	// Marks a script load/reset; the widget clears its display on it.
-	void pushReset() {
-		push(LOG_FORMAT::RESET, 0.f, std::string(""));
-	}
-
-	// Worker side — writeOverlay(). Marks one overlay slot with the current
-	// message.
-	void pushOverlay(const std::string& s1, const std::string& s2, const std::string& s3) {
-		overlayQueue.push(0);
-		overlayMessage = std::make_tuple(s1, s2, s3);
 	}
 };
 
@@ -507,8 +420,7 @@ struct MidiInputs {
 	// are queued for the worker, not dispatched inline.
 	struct Port : MidiProcessorHandler {
 		/** [Stored to Json] */
-		midi::InputQueue queue;
-		MidiProcessor processor{&queue};
+		MidiCProcessor processor;
 		ExtendedCcEnables extendedCc;
 
 		MidiInputs* owner = nullptr;
@@ -557,11 +469,13 @@ struct MidiInputs {
 
 	using Sink = std::function<void(int port, const MidiScript::QueuedMessage&)>;
 	Sink onMessage;
+	ScriptLog* log;
 	// Audio thread: dispatch()'s working message, kept so its byte vector is
 	// allocated once.
 	MidiScript::QueuedMessage scratch;
 
-	MidiInputs() {
+	// Log lines (queue overflow) go to `log`, which must outlive this.
+	explicit MidiInputs(ScriptLog* log) : log(log) {
 		// Without this the processor decodes into an empty handler list and
 		// nothing reaches the script.
 		for (int i = 0; i < NIN; i++) {
@@ -582,9 +496,9 @@ struct MidiInputs {
 	bool isEnabled(int port) const {
 		return port < count.load(std::memory_order_relaxed);
 	}
-	void enableNrpn(int port, int kind, int channel) {
+	void enableNrpn(int port, int kind, int channel, bool msbDataEntry = false) {
 		if (port < 0 || port >= NIN) return;
-		ports[port].extendedCc.enableNrpn(kind, channel);
+		ports[port].extendedCc.enableNrpn(kind, channel, msbDataEntry);
 	}
 	void enableCc14bit(int port, int cc, int channel) {
 		if (port < 0 || port >= NIN) return;
@@ -611,24 +525,23 @@ struct MidiInputs {
 	// others are only emptied: a device selected on an unused input must not pile
 	// up messages that would flood the script once it is enabled.
 	void process(int64_t frame) {
-		midi::Message msg;
 		int n = count.load(std::memory_order_relaxed);
-		for (int i = 0; i < n; i++) {
-			while (ports[i].queue.tryPop(&msg, frame)) {
-				ports[i].processor.processMessage(msg);
+		for (int i = 0; i < NIN; i++) {
+			// The script's data entry mode, onto the thread that owns the decoder.
+			const ExtendedCcEnables& ext = ports[i].extendedCc;
+			ports[i].processor.setMsbDataEntry(ext.msbDataEntryNrpnMask.load(std::memory_order_relaxed), ext.msbDataEntryRpnMask.load(std::memory_order_relaxed));
+			if (i < n) ports[i].processor.process(frame);
+			else ports[i].processor.processBypass(frame);
+			// Once per drain: a saturated queue must not flood the log.
+			if (ports[i].processor.getInput().overflow.exchange(false, std::memory_order_relaxed)) {
+				log->raise(ScriptLog::INPUT_QUEUE_FULL);
 			}
-		}
-		for (int i = n; i < NIN; i++) {
-			while (ports[i].queue.tryPop(&msg, frame)) {}
 		}
 	}
 
 	// Audio thread. Empties every queue without decoding (bypass).
 	void processBypass(int64_t frame) {
-		midi::Message msg;
-		for (int i = 0; i < NIN; i++) {
-			while (ports[i].queue.tryPop(&msg, frame)) {}
-		}
+		for (int i = 0; i < NIN; i++) ports[i].processor.processBypass(frame);
 	}
 
 	// Audio thread. Drops the half-received NRPN/RPN/14-bit CC state of every
@@ -642,7 +555,9 @@ struct MidiInputs {
 	// capture the next data entry.
 	void reset() {
 		for (int i = 0; i < NIN; i++) {
-			ports[i].queue.reset();
+			// reset() only deselects the device; clear() drops what is queued.
+			ports[i].processor.getInput().reset();
+			ports[i].processor.getInput().clear();
 			ports[i].processor.reset();
 			ports[i].extendedCc.clear();
 		}
@@ -652,6 +567,12 @@ struct MidiInputs {
 	// runs on the worker and must never be entered from here.
 	bool dispatch(int port, const MessageEx& m) {
 		if (!isEnabled(port) || !ports[port].accepts(m)) return false;
+		// A SysEx longer than a script can create is dropped whole, never cut, so a
+		// script can forward or clone every message it receives.
+		if (m.source->bytes.size() > size_t(MidiScript::MidiScriptEngine::sysExMaxPayloadLength) + 2) {
+			if (log) log->raise(ScriptLog::INPUT_TOO_LONG);
+			return false;
+		}
 		// Reused: a fresh QueuedMessage would allocate its byte vector every time.
 		MidiScript::QueuedMessage& q = scratch;
 		q.msg = *m.source;
@@ -691,12 +612,21 @@ struct MidiOutputs {
 		uint32_t gen;
 		// Sent by the onUnload() of a replaced script.
 		bool unload;
+		// What midiOut.cancel() needs to know about the message.
+		MidiScript::OutTag tag;
+		// A midiOut.cancel() instead of a message: `msg` is the pattern (MESSAGE
+		// mode) and `tag.group` the group pattern (GROUP mode).
+		bool cancel;
+		MidiScript::CancelMode cancelMode;
 	};
 
 	// Entries handed to the ports per drain. The ring absorbs a burst, the
 	// budget spreads it over later drains (every 8 samples), so a single
 	// process() call does no more work than it did with a 128-entry ring.
 	static constexpr int DRAIN_BUDGET = 128;
+	// One cancel scans up to FRAME_QUEUE_MAX + 32 tick queues' worth of entries,
+	// so it weighs more than a send: at most 16 cancels per drain.
+	static constexpr int CANCEL_WEIGHT = 8;
 
 	/** [Stored to Json] */
 	Port ports[NOUT];
@@ -760,7 +690,7 @@ struct MidiOutputs {
 	// Worker. Queues a group of messages, tagged with the script generation that
 	// sent them and whether its onUnload() did; false (group dropped) for an
 	// unknown or disabled port, or a full queue.
-	bool enqueue(int port, const MidiScript::Message* msgs, size_t n, uint8_t channel, uint64_t tick, int trigPort = 0, uint32_t gen = 0, bool unload = false) {
+	bool enqueue(int port, const MidiScript::Message* msgs, size_t n, uint8_t channel, uint64_t tick, int trigPort = 0, uint32_t gen = 0, bool unload = false, const MidiScript::OutTag& tag = MidiScript::OutTag()) {
 		if (port < 0 || port >= NOUT) return false;
 		if (!isEnabled(port)) {
 			// Once per port, not per message.
@@ -777,8 +707,24 @@ struct MidiOutputs {
 			return false;
 		}
 		for (size_t i = 0; i < n; i++) {
-			queue.push(Entry{port, msgs[i], channel, tick, trigPort, gen, unload});
+			queue.push(Entry{port, msgs[i], channel, tick, trigPort, gen, unload, tag, false, MidiScript::CancelMode::ALL});
 		}
+		return true;
+	}
+
+	// Worker. Queues a cancel for `port` behind what the script already sent, so
+	// it applies in call order. True without queuing for a disabled port (nothing
+	// can be scheduled there); false, logged as OUTPUT_QUEUE_FULL, on a full queue.
+	bool enqueueCancel(int port, MidiScript::CancelMode mode, const MidiScript::Message& pattern, const MidiScript::OutGroup& group, uint32_t gen) {
+		if (port < 0 || port >= NOUT) return false;
+		if (!isEnabled(port)) return true;
+		if (queue.capacity() < 1) {
+			overflow.store(true, std::memory_order_relaxed);
+			return false;
+		}
+		MidiScript::OutTag tag;
+		tag.group = group;
+		queue.push(Entry{port, pattern, 0, 0, 0, gen, false, tag, true, mode});
 		return true;
 	}
 
@@ -810,6 +756,13 @@ struct MidiOutputs {
 			// Taken from the slot by move: copying the entry out (shift())
 			// would allocate the message's bytes on this thread.
 			Entry& t = frontRing(queue);
+			if (t.cancel) {
+				// A replaced script's cancel has nothing left to cancel: the swap cleared it.
+				if (age == 0) ports[t.port].cancelScheduled(t.cancelMode, t.msg, t.tag.group);
+				budget -= CANCEL_WEIGHT - 1;
+				queue.start++;
+				continue;
+			}
 			bool unload = t.unload;
 			if (age < 0 && !unload && !isDue(t, frame)) {
 				queue.start++;
@@ -820,8 +773,9 @@ struct MidiOutputs {
 			uint8_t channel = t.channel;
 			uint64_t tick = t.tick;
 			int trigPort = t.trigPort;
+			MidiScript::OutTag tag = t.tag;
 			queue.start++;
-			ports[port].send(msg, channel, tick, trigPort, frame, unload);
+			ports[port].send(msg, channel, tick, trigPort, frame, unload, tag);
 		}
 		// All ports, not just enabled ones: a replaced script may have left framed
 		// messages behind.
@@ -856,7 +810,7 @@ struct MidiOutputs {
 	void flush(int64_t now) {
 		while (!queue.empty()) {
 			Entry& t = frontRing(queue);
-			if (!t.unload && !isDue(t, now)) {
+			if (t.cancel || (!t.unload && !isDue(t, now))) {
 				queue.start++;
 				continue;
 			}
@@ -1142,16 +1096,19 @@ struct MidiKitMicroConfig {
 };
 
 
-// The one async worker shared by all MidiKit modules; the weak_ptr lets it die
-// with the last module. Unguarded: modules are constructed on the UI thread only.
-static std::shared_ptr<ITaskWorker> defaultWorker() {
-	static std::weak_ptr<ITaskWorker> shared;
-	if (shared.expired()) {
-		auto worker = std::make_shared<MpmcTaskWorker>("MidiKit worker");
-		shared = worker;
-		return worker;
+using MidiScript::WorkerDomain;
+
+// The domain of all modules built without one. Unguarded: modules are
+// constructed on the UI thread only. The weak_ptr lets it die with the last
+// module.
+static std::shared_ptr<WorkerDomain> defaultDomain() {
+	static std::weak_ptr<WorkerDomain> shared;
+	std::shared_ptr<WorkerDomain> domain = shared.lock();
+	if (!domain) {
+		domain = std::make_shared<WorkerDomain>();
+		shared = domain;
 	}
-	return shared.lock();
+	return domain;
 }
 
 
@@ -1164,6 +1121,9 @@ static std::shared_ptr<ITaskWorker> defaultWorker() {
 // load() and unload() run on the UI thread. Both hand the whole swap to the
 // worker as one task; unload() waits for it.
 struct ScriptHost {
+	// The module's log, for the error of a script no engine takes.
+	ScriptLog* log;
+
 	// The engine running the loaded script, or null. Written only by
 	// load()/unload().
 	MidiScript::MidiScriptEngine* activeEngine = nullptr;
@@ -1173,20 +1133,44 @@ struct ScriptHost {
 	MidiScript::Lua::MidiScriptEngineLua seLua;
 	MidiScript::QuickJs::MidiScriptEngineQuickJs seQuickJs;
 
-	// The worker that runs all script code, shared by the host and both engines:
-	// defaultWorker() unless one is injected (tests).
-	std::shared_ptr<ITaskWorker> worker;
+	// The worker that runs all script code and the broadcast bus, shared by the
+	// host and both engines: the default domain unless one is injected (tests).
+	std::shared_ptr<WorkerDomain> domain;
 
 	/** [Stored to JSON] */
 	std::string script = "";
 
-	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, const PortCounts& c, std::shared_ptr<ITaskWorker> worker = nullptr)
-		: seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
+	/** [Stored to JSON] Seed of rack.random(); every load of a script restarts its
+	sequence from it. A new module gets a random one, so two modules differ. */
+	uint32_t randomSeed = rack::random::u32();
+
+	ScriptHost(MidiScript::MidiScriptEngineHandler* handler, ScriptLog* log, const PortCounts& c, std::shared_ptr<WorkerDomain> domain = nullptr)
+		: log(log),
+		  seLua(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
 		  seQuickJs(handler, c.cvInputs, c.trigInputs, c.trigOutputs, c.params, c.midiInputs, c.midiOutputs),
-		  worker(worker ? std::move(worker) : defaultWorker()) {
+		  domain(domain ? std::move(domain) : defaultDomain()) {
 		// The member: the parameter is moved from.
-		seLua.setWorker(this->worker);
-		seQuickJs.setWorker(this->worker);
+		seLua.setDomain(this->domain.get());
+		seQuickJs.setDomain(this->domain.get());
+	}
+
+	// Removes both engines from the bus. Idempotent. Needed when an unload never
+	// ran (it can time out, and the module is then destroyed anyway), so that
+	// send() cannot reach a destroyed engine. The module calls it from its own
+	// destructor, while the handler is still intact: a send() that finds a full
+	// queue calls handler->writeLog().
+	void leaveBus() {
+		domain->bus->leave(&seLua);
+		domain->bus->leave(&seQuickJs);
+	}
+
+	// Replaces the domain of the host and both engines together (tests: a worker
+	// whose tasks the test runs by hand). Nothing may be queued on the old worker
+	// that still has to run.
+	void setDomain(std::shared_ptr<WorkerDomain> d) {
+		seLua.setDomain(d.get());
+		seQuickJs.setDomain(d.get());
+		domain = std::move(d);
 	}
 
 	MidiScript::MidiScriptEngine* getActiveEngine() const {
@@ -1206,14 +1190,13 @@ struct ScriptHost {
 
 	// Queues `task` on the worker; false if the queue was full.
 	bool runOnWorker(std::function<void()> task) {
-		return worker->work(std::move(task), APP);
+		return domain->worker->work(std::move(task), APP);
 	}
 
-	// Queues `task` and blocks until it has run. False if it never ran or did not
-	// finish in time. The wait is bounded for liveness, not latency:
-	// ~MpmcTaskWorker discards pending tasks, which breaks the promise (hence the
-	// catch), so the timeout only covers a wedged-but-alive worker. The
-	// shared_ptr keeps the promise alive for a worker still running past it.
+	// Queues `task` and blocks until it has run; false if it never ran
+	// (~MpmcTaskWorker discards pending tasks, which breaks the promise).
+	// No time limit: the task touches the module, so it must finish before the
+	// module goes (a callback is interrupted after at most 10M instructions).
 	bool runOnWorkerAndWait(std::function<void()> task) {
 		auto done = std::make_shared<std::promise<void>>();
 		std::future<void> future = done->get_future();
@@ -1224,8 +1207,9 @@ struct ScriptHost {
 
 		// Function-local: wait_for() takes its duration by reference, so a static
 		// constexpr member would be odr-used and need an out-of-line definition.
-		const std::chrono::milliseconds timeout{500};
-		if (future.wait_for(timeout) != std::future_status::ready) return false;
+		// const std::chrono::milliseconds timeout{500};
+		// if (future.wait_for(timeout) != std::future_status::ready) return false;
+		future.wait();
 		try {
 			future.get();
 		}
@@ -1259,21 +1243,28 @@ struct ScriptHost {
 		if (seQuickJs.testScript(src)) next = &seQuickJs;
 
 		MidiScript::MidiScriptEngine* outgoing = engineToUnload(prev);
-		runOnWorker([outgoing, next, src, configJson]() {
+		uint32_t seed = randomSeed;
+		runOnWorker([this, outgoing, next, src, configJson, seed]() {
 			outgoing->unloadScriptOnWorker();
-			if (next) next->loadScriptOnWorker(src.c_str(), configJson);
+			if (next) {
+				next->seedRandom(seed);
+				next->loadScriptOnWorker(src.c_str(), configJson);
+			}
+			else if (!src.empty()) {
+				// After the unload, which resets the log.
+				this->log->pushError(0.f, "Script has no known @engine header (QuickJs@v1 or minilua@v1)");
+			}
 		});
 		activeEngine = next;
 		return next;
 	}
 
 	// Unloads the active script like load() without a new one, but BLOCKS until
-	// onUnload() has run and the script state is reset. Nulls the pointer. Rack
-	// holds the engine mutex across onRemove()/onReset(), so process() cannot run
-	// concurrently. FIFO, so a load() still in the queue completes first.
-	// A failed dispatch (timeout) is deliberately not retried inline: the worker
-	// may be wedged inside the interpreter, and unloading here would put two
-	// threads in it at once.
+	// onUnload() has run and the script state is reset. Nulls the pointer. Called
+	// from the module's destructor and from onReset() (engine mutex held), so
+	// process() cannot run concurrently. FIFO: a queued load() completes first.
+	// A failed dispatch is not retried inline: that could put two threads in the
+	// interpreter.
 	void unload() {
 		MidiScript::MidiScriptEngine* engine = activeEngine;
 		activeEngine = nullptr;
@@ -1563,9 +1554,11 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to JSON] */
+	LOG_TIME logTime = LOG_TIME::TIMESTAMP;
 
 	// The MIDI inputs (see MidiInputs for the threading contract).
-	MidiInputs<CONFIG::midiInputs> midiIns;
+	MidiInputs<CONFIG::midiInputs> midiIns{&log};
 
 	// Frame of the latest process() call, for code without ProcessArgs.
 	std::atomic<int64_t> timingCurrentFrame{0};
@@ -1624,10 +1617,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// onUnload() still reads them, endUnload() clears them.
 	void bindPortsAndParams(MidiScript::MidiScriptEngine* engine) {
 		for (int i = 0; i < CV_INPUTS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->se = engine;
+			reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->se = engine;
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->se = engine;
+			reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->se = engine;
 		}
 	}
 
@@ -1636,26 +1629,34 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// which still reads them (see endUnload()).
 	void disablePortsAndParams() {
 		for (int i = 0; i < CV_INPUTS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = false;
+			reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->enabled = false;
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = false;
+			reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->enabled = false;
 		}
 	}
 
 	// MidiScriptEngineHandler
 	void writeLog(const std::string& text, bool useTimestamp = true) override {
 		if (useTimestamp) {
-			float sr = sampleRate.load(std::memory_order_relaxed);
-			int64_t frames = getTimingCurrentFrame() - scriptStartFrame.load(std::memory_order_relaxed);
-			log.pushTimestamped(sr != 0.f ? float(frames) / sr : 0.f, text);
+			log.pushTextTimestamped(scriptTime(), text, getTimingCurrentFrame(), true);
 		}
 		else {
-			log.pushText(text);
+			log.pushText(text, getTimingCurrentFrame(), true);
 		}
 	}
-
-	// MidiScriptEngineHandler
+	void writeLoad(const std::string& text) override {
+		log.pushLoad(scriptTime(), text, getTimingCurrentFrame());
+	}
+	void writeError(const std::string& text) override {
+		log.pushError(scriptTime(), text, getTimingCurrentFrame());
+	}
+	// Seconds since the script was loaded.
+	float scriptTime() {
+		float sr = sampleRate.load(std::memory_order_relaxed);
+		int64_t frames = getTimingCurrentFrame() - scriptStartFrame.load(std::memory_order_relaxed);
+		return sr != 0.f ? float(frames) / sr : 0.f;
+	}
 	void writeOverlay(const std::string& s1, const std::string& s2, const std::string& s3) override {
 		log.pushOverlay(s1, s2, s3);
 	}
@@ -1663,7 +1664,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void enableInput(int i) override {
 		if (i < 0 || i >= CV_INPUTS) return;
-		reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled = true;
+		reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler — midi.enablePorts() / midiOut.enablePorts()
@@ -1758,7 +1759,7 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	float getInputVoltage(int i, uint8_t ch) override {
 		if (i < 0 || i >= CV_INPUTS || ch >= PORT_MAX_CHANNELS) return 0.f;
-		if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[INPUT + i])->enabled)
+		if (reinterpret_cast<MidiScript::ScriptPortInfo*>(inputInfos[INPUT + i])->enabled)
 			return inputs[INPUT + i].getVoltage(ch);
 		return 0.f;
 	}
@@ -1771,8 +1772,8 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 
 	// MidiScriptEngineHandler — midi.enableNrpnIn()/enableRpnIn() binding
 	// (worker thread).
-	void enableNrpnIn(int midiPort, int kind, int channel) override {
-		midiIns.enableNrpn(midiPort, kind, channel);
+	void enableNrpnIn(int midiPort, int kind, int channel, bool msbDataEntry = false) override {
+		midiIns.enableNrpn(midiPort, kind, channel, msbDataEntry);
 	}
 
 	// MidiScriptEngineHandler — midi.enableCc14bitIn() binding (worker thread).
@@ -1801,13 +1802,13 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	// MidiScriptEngineHandler
 	void enableParam(int i) override {
 		if (i < 0 || i >= PARAMS) return;
-		reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled = true;
+		reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->enabled = true;
 	}
 
 	// MidiScriptEngineHandler
 	float getParamValue(int i) override {
 		if (i < 0 || i >= PARAMS) return 0.f;
-		if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[PARAM + i])->enabled)
+		if (reinterpret_cast<MidiScript::ScriptParamQuantity*>(paramQuantities[PARAM + i])->enabled)
 			return params[PARAM + i].getValue();
 		return 0.f;
 	}
@@ -1826,10 +1827,17 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	}
 
 	// MidiScriptEngineHandler
-	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0) override {
+	bool sendMidi(int midiPort, const MidiScript::Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0, const MidiScript::OutTag& tag = MidiScript::OutTag()) override {
 		uint32_t gen = scriptGen.load(std::memory_order_relaxed);
 		if (unloading) return tick == 0 && sendMidiOnUnload(midiPort, msgs, count, gen);
-		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort, gen);
+		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort, gen, false, tag);
+	}
+
+	// MidiScriptEngineHandler — ignored in onUnload(), silently: the swap drops
+	// everything the old script scheduled anyway.
+	bool cancelMidi(int midiPort, MidiScript::CancelMode mode, const MidiScript::Message& pattern, const MidiScript::OutGroup& group) override {
+		if (unloading) return true;
+		return midiOuts.enqueueCancel(midiPort, mode, pattern, group, scriptGen.load(std::memory_order_relaxed));
 	}
 
 	// Worker, onUnload() of a replaced script (see beginUnload()), messages
@@ -1855,23 +1863,23 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	bool sendTipsyOut(const char* mimeType, const unsigned char* data, uint32_t dataBytes) override {
 		if (unloading) return true;
 		if (!mimeType || !data || dataBytes > MidiScript::tipsyMaxPayloadLength) {
-			writeLog("Tipsy: invalid parameters", false);
+			writeError("Tipsy: invalid parameters");
 			return false;
 		}
 		size_t mimeSize = strlen(mimeType);
 		// An empty mime type would be indistinguishable from a discard sentinel.
 		if (mimeSize == 0) {
-			writeLog("Tipsy: mime type must not be empty", false);
+			writeError("Tipsy: mime type must not be empty");
 			return false;
 		}
 		if (mimeSize + 1 > MidiScript::tipsyMaxMimeTypeSize) {
-			writeLog("Tipsy: mime type too long", false);
+			writeError("Tipsy: mime type too long");
 			return false;
 		}
 		// send() keeps the last slot free for the discard sentinel; a full queue
 		// is reported here so the drop is logged.
 		if (!tipsyOut.send(mimeType, data, dataBytes)) {
-			writeLog("Tipsy: pending queue full", false);
+			writeError("Tipsy: pending queue full");
 			return false;
 		}
 		return true;
@@ -1922,10 +1930,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 				triggerOuts.applyVoltage(0, channel, f);
 				return true;
 			case TipsyOutput::Output::INIT_ERROR:
-				writeLog("Tipsy encoder error: " + std::to_string(tipsyOut.lastInitErrorCode), false);
+				writeError("Tipsy encoder error: " + std::to_string(tipsyOut.lastInitErrorCode));
 				return false;
 			case TipsyOutput::Output::ENCODE_ERROR:
-				writeLog("Tipsy encoding error", false);
+				writeError("Tipsy encoding error");
 				return false;
 			default: // IDLE
 				return false;
@@ -1962,10 +1970,14 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return PortCounts{ CONFIG::cvInputs, CONFIG::trigInputs, CONFIG::trigOutputs, CONFIG::params, CONFIG::midiInputs, CONFIG::midiOutputs };
 	}
 
-	// `worker`: injected by tests; null runs scripts on the shared default worker
+	// A domain around an injected worker with a private bus: what most tests need.
+	explicit MidiKitModuleBase(std::shared_ptr<ITaskWorker> worker)
+		: MidiKitModuleBase(std::make_shared<WorkerDomain>(std::move(worker))) {}
+
+	// `domain`: injected by tests; null runs scripts on the shared default domain
 	// (see ScriptHost).
-	explicit MidiKitModuleBase(std::shared_ptr<ITaskWorker> worker = nullptr)
-		: host(this, portCounts(), std::move(worker)) {
+	explicit MidiKitModuleBase(std::shared_ptr<WorkerDomain> domain = nullptr)
+		: host(this, &log, portCounts(), std::move(domain)) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// Wire the trigger ports into TriggerInputs/TriggerOutputs so they can
@@ -1980,10 +1992,10 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 			configOutput(OUTPUT_TRIG + i, TRIG_OUTPUTS > 1 ? string::f("Trigger %d", i + 1) : "Trigger");
 		}
 		for (int i = 0; i < CV_INPUTS; i++) {
-			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i);
+			configInput<MidiScript::ScriptPortInfo>(INPUT + i);
 		}
 		for (int i = 0; i < PARAMS; i++) {
-			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f);
+			configParam<MidiScript::ScriptParamQuantity>(PARAM + i, 0.f, 1.f, 0.f);
 		}
 		// No engine is loaded yet — bind to null (clears the UI state); it is
 		// bound to the active engine by loadScript() once a script loads.
@@ -2007,13 +2019,17 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		log.pushText("No script");
 	}
 
-	// Closes the active engine and drains whatever its onUnload() queued. Rack
-	// dispatches this before the module leaves the engine and holds the engine
-	// mutex across it, so process() cannot run concurrently.
-	// unload() blocks, so the worker has stopped producing before the drain
-	// — preserve that order, it is what makes the drain safe.
+	// Under Rack's engine mutex, so nothing here may wait for the worker: the
+	// script is closed in the destructor (UI thread).
 	void onRemove(const RemoveEvent& e) override {
-		host.unload();        // closes + nulls the active engine (blocking)
+		host.leaveBus();
+	}
+
+	// Closes the active engine, then drains what its onUnload() queued. unload()
+	// blocks, so no worker task is left on the module and the drain is safe:
+	// keep that order.
+	~MidiKitModuleBase() {
+		host.unload();
 		flushMidiOut();
 	}
 
@@ -2091,13 +2107,15 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "logTime", json_integer((int)logTime));
+		json_object_set_new(rootJ, "randomSeed", json_integer(host.randomSeed));
 
 		// Only the ports the script uses are written. The others keep their
 		// driver/device/channel in memory (a script reload never touches them),
 		// so they come back once a script enables them again, but a patch does
 		// not carry settings of ports nobody uses.
 		for (int i = 0, n = midiIns.enabledCount(); i < n; i++) {
-			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiIns.ports[i].queue.toJson());
+			json_object_set_new(rootJ, midiInputKey(i).c_str(), midiIns.ports[i].processor.getInput().toJson());
 		}
 		for (int i = 0, n = midiOuts.enabledCount(); i < n; i++) {
 			json_object_set_new(rootJ, midiOutputKey(i).c_str(), midiOuts.ports[i].toJson());
@@ -2124,10 +2142,19 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 	void dataFromJson(json_t* rootJ) override {
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* logTimeJ = json_object_get(rootJ, "logTime");
+		if (logTimeJ) {
+			int v = json_integer_value(logTimeJ);
+			logTime = v >= 0 && v <= (int)LOG_TIME::OFF ? (LOG_TIME)v : LOG_TIME::TIMESTAMP;
+		}
+
+		// Before loadScript() below: the seed is read when the script loads.
+		json_t* randomSeedJ = json_object_get(rootJ, "randomSeed");
+		if (randomSeedJ && json_is_integer(randomSeedJ)) host.randomSeed = static_cast<uint32_t>(json_integer_value(randomSeedJ));
 
 		for (int i = 0; i < MIDI_INPUTS; i++) {
 			json_t* midiInputJ = json_object_get(rootJ, midiInputKey(i).c_str());
-			if (midiInputJ && json_is_object(midiInputJ)) midiIns.ports[i].queue.fromJson(midiInputJ);
+			if (midiInputJ && json_is_object(midiInputJ)) midiIns.ports[i].processor.getInput().fromJson(midiInputJ);
 		}
 		for (int i = 0; i < MIDI_OUTPUTS; i++) {
 			json_t* midiOutputJ = json_object_get(rootJ, midiOutputKey(i).c_str());
@@ -2159,161 +2186,28 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		bindPortsAndParams(engine);
 	}
 
+	// UI thread: the running script's published config as a JSON string, empty if it
+	// has none. What dataToJson() writes as "scriptConfig", in the form loadScript()
+	// takes.
+	std::string peekConfigJson() {
+		const std::shared_ptr<json_t>& cfg = host.peekConfig();
+		if (!cfg || json_object_size(cfg.get()) == 0) return "";
+		char* s = json_dumps(cfg.get(), JSON_COMPACT);
+		std::string result = s ? s : "";
+		free(s);
+		return result;
+	}
+
+	// Loads a new script text but hands the running script's config over to it, so an
+	// edit that is applied does not reset what the script saved (rack.setConfig).
+	// The config is read here, before load() queues the swap that tears it down.
+	void loadScriptKeepingConfig(std::string s) {
+		std::string configJson = peekConfigJson();
+		loadScript(std::move(s), configJson);
+	}
+
 	void clearScript() {
 		loadScript("");
-	}
-};
-
-
-// One log entry as a display line (without a trailing newline); empty for
-// entries that print nothing (RESET).
-static std::string formatLogEntry(const std::tuple<LOG_FORMAT, float, std::string>& s) {
-	const std::string& text = std::get<2>(s);
-	switch (std::get<0>(s)) {
-		case LOG_FORMAT::TIMESTAMP:
-			return string::f("[%9.4f] %s", std::get<1>(s), text.c_str());
-		case LOG_FORMAT::TEXT:
-			return text;
-		case LOG_FORMAT::INDENTED:
-			return "     " + text;
-		default:
-			return "";
-	}
-}
-
-struct LogDisplay : LedTextDisplay {
-	std::list<std::tuple<LOG_FORMAT, float, std::string>>* buffer;
-	bool dirty = true;
-	// Set by the widget: adds the running script's section (engine, RAM usage,
-	// rack.registerContextMenu items, ...) to the top of this menu and returns
-	// whether it added anything. Kept as a hook because that needs the module,
-	// which the display knows nothing about.
-	std::function<bool(Menu*)> appendScriptItems;
-
-	LogDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		bgColor.a = 0.f;
-		fontSize = 9.2f;
-		textOffset.y += 2.f;
-	}
-
-	void step() override {
-		LedTextDisplay::step();
-		if (dirty) {
-			text = "";
-			// Cap to the number of lines that vertically fit.
-			size_t size = std::min(buffer->size(), static_cast<size_t>(box.size.y / fontSize) + 1);
-			size_t i = 0;
-			for (const auto& s : *buffer) {
-				if (i >= size) break;
-				if (std::get<0>(s) == LOG_FORMAT::RESET) continue;
-				text += formatLogEntry(s) + "\n";
-				i++;
-			}
-			dirty = false;
-		}
-	}
-
-	void reset() {
-		buffer->clear();
-		dirty = true;
-	}
-
-	// The whole buffer as text, oldest line first (the display itself shows the
-	// newest first, capped to what fits).
-	std::string toText() const {
-		std::string out;
-		for (auto it = buffer->rbegin(); it != buffer->rend(); ++it) {
-			if (std::get<0>(*it) == LOG_FORMAT::RESET) continue;
-			out += formatLogEntry(*it) + "\n";
-		}
-		return out;
-	}
-
-	void appendContextMenu(Menu* menu) {
-		bool empty = buffer->empty();
-		if (appendScriptItems && appendScriptItems(menu)) menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Log"));
-		menu->addChild(createMenuItem("Copy to clipboard", "", [=]() {
-			StoermelderPackOne::vcv::ui::setClipboard(toText());
-		}, empty));
-		menu->addChild(createMenuItem("Clear", "", [=]() {
-			reset();
-		}, empty));
-	}
-
-	void onButton(const ButtonEvent& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			appendContextMenu(createMenu());
-			e.consume(this);
-			return;
-		}
-		LedTextDisplay::onButton(e);
-	}
-};
-
-// Placeholder menu entry that builds the script-registered items
-// (rack.registerContextMenu) asynchronously. getContextMenus() evaluates each
-// item's onGetValue callback on the worker thread and then invokes its
-// callback with the evaluated specs.
-template <typename MODULE>
-struct ScriptContextMenuItems : ui::MenuEntry {
-	struct Context {
-		std::vector<MidiScript::ScriptMenuItem> specs;
-		std::atomic<bool> loaded{false};
-	};
-	MODULE* module;
-	std::shared_ptr<Context> ctx;
-	bool built = false;
-
-	ScriptContextMenuItems(MODULE* module) : module(module) {
-		box.size.y = 0.f;
-		ctx = std::make_shared<Context>();
-		// Capture a local copy: Apple's Clang rejects capturing the data
-		// member `ctx` by name in a capture list.
-		std::shared_ptr<Context> c = ctx;
-		module->host.getActiveEngine()->getContextMenus([c](const std::vector<MidiScript::ScriptMenuItem>& specs) {
-			// Runs on the worker thread once every onGetValue has been
-			// evaluated. Only publishes the specs; the menu widgets are
-			// constructed by step() on the UI thread.
-			c->specs = specs;
-			c->loaded.store(true, std::memory_order_release);
-		});
-	}
-
-	void step() override {
-		if (!built && ctx->loaded.load(std::memory_order_acquire)) {
-			built = true;
-			buildItems();
-			requestDelete();
-		}
-		ui::MenuEntry::step();
-	}
-
-	void buildItems() {
-		Menu* menu = dynamic_cast<Menu*>(parent);
-		if (!menu) return;
-		MODULE* m = module;
-		Widget* anchor = this;
-		for (const MidiScript::ScriptMenuItem& spec : ctx->specs) {
-			Widget* item;
-			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
-				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
-					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
-				});
-			}
-			else {
-				item = createSubmenuItem(spec.label, "", [m, spec](Menu* sub) {
-					for (size_t i = 0; i < spec.options.size(); i++) {
-						sub->addChild(createMenuItem(spec.options[i], CHECKMARK(i == static_cast<size_t>(spec.selected)), [m, spec, i]() {
-							m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, static_cast<int>(i));
-						}));
-					}
-				});
-			}
-			menu->addChildAbove(item, anchor);
-			anchor = item;
-		}
 	}
 };
 
@@ -2325,7 +2219,7 @@ template <typename CONFIG>
 struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, OverlayMessageProvider {
 	using MODULE = MidiKitModuleBase<CONFIG>;
 	using BASE = ThemedModuleWidget<MODULE>;
-	using ScriptContextMenuItems = ScriptContextMenuItems<MODULE>;
+	using ScriptContextMenuItems = MidiScript::ScriptContextMenuItems<MODULE>;
 	// Members of the dependent base need an explicit qualifier.
 	using BASE::module;
 	using BASE::box;
@@ -2337,11 +2231,20 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	const size_t BUFFERSIZE = 800;
 	// Null for variants without a log display (no addLogDisplay() call).
 	LogDisplay* logDisplay = nullptr;
+	// Scrolls the log display's lines; null along with it.
+	rack::ui::ScrollWidget* logScroll = nullptr;
 	// How many log entries the widget keeps; variants without a log display
 	// can lower this to what they show elsewhere.
 	size_t bufferLimit = BUFFERSIZE;
-	std::list<std::tuple<LOG_FORMAT, float, std::string>> buffer;
+	std::list<ScriptLog::Entry> buffer;
 	std::string filename = "";
+	// Everything that wants to see the module's log subscribes here: the log display's
+	// buffer, the script editor's log area. step() pumps the module's log through it.
+	LogDispatcher<ScriptLog::Entry> logs;
+
+	// The open script editor, if any. Weak: the overlay lives on APP->scene and
+	// can go away on its own (it closes itself).
+	WeakPtr<ui::editor::ScriptEditorOverlay> editorOverlay;
 
 	MidiKitWidgetBase(MODULE* module, const std::string& slug)
 		: BASE(module, slug) {
@@ -2355,6 +2258,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(this);
+			logs.add([this](const ScriptLog::Entry& s) { bufferLogEntry(s); });
 		}
 	}
 
@@ -2362,7 +2266,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	void addMidiInputDisplay(int i, Rect r) {
 		MidiWidget<>* display = createWidget<MidiWidget<>>(r.pos);
 		display->box.size = r.size;
-		display->setMidiPort(module ? &module->midiIns.ports[i].queue : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
+		display->setMidiPort(module ? &module->midiIns.ports[i].processor.getInput() : NULL, CONFIG::midiInputs > 1 ? string::f("In %d", i + 1) : "In");
 		addChild(display);
 	}
 
@@ -2378,17 +2282,35 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		textDisplay->box.size = r.size;
 		addChild(textDisplay);
 
-		logDisplay = createWidget<LogDisplay>(Vec());
+		// The lines scroll, newest on top; the scrollbar shows once they outgrow the area.
+		logScroll = new rack::ui::ScrollWidget;
+		// Like the lists of MIDI-KEY's display, but 3px above and below; the scrollbar is over the right edge.
+		logScroll->box.pos.y = 3.f;
+		// A narrow scrollbar is drawn partly beyond its box: stay clear of the right edge.
+		logScroll->box.size = Vec(textDisplay->box.size.x - 3.f, textDisplay->box.size.y - 2.f * logScroll->box.pos.y);
+		logScroll->verticalScrollbar->box.size.x = 8.f;
+		logScroll->horizontalScrollbar->hide();
+		textDisplay->addChild(logScroll);
+
+		logDisplay = new LogDisplay;
 		logDisplay->buffer = &buffer;
-		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 6.f));
+		if (module) logDisplay->logTime = &module->logTime;
+		logDisplay->box.size = Vec(logScroll->box.size.x - logScroll->verticalScrollbar->box.size.x, logScroll->box.size.y);
+		logDisplay->minHeight = logScroll->box.size.y;
 		logDisplay->fontSize = 7.2f;
 		logDisplay->appendScriptItems = [this](Menu* menu) {
-			return appendRunningScriptItems(menu);
+			if (!module) return false;
+			if (appendRunningScriptItems(menu)) menu->addChild(new MenuSeparator());
+			appendScriptItems(menu);
+			return true;
 		};
-		textDisplay->addChild(logDisplay);
+		logScroll->container->addChild(logDisplay);
 	}
 
 	~MidiKitWidgetBase() {
+		// The editor's apply callback targets this module, so it must not outlive it.
+		// Unapplied text is dropped without asking: there is nothing left to apply it to.
+		if (editorOverlay) editorOverlay->dismiss();
 		if (module) {
 			OverlayMessageWidget::unregisterProvider(this);
 		}
@@ -2397,22 +2319,35 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 	void step() override {
 		BASE::step();
 		if (!module) return;
-		std::tuple<LOG_FORMAT, float, std::string> s;
-		while (module->log.tryPop(s)) {
-			if (buffer.size() >= bufferLimit) buffer.pop_back();
-			if (std::get<0>(s) == LOG_FORMAT::RESET) {
-				resetLog();
-			}
-			else {
-				buffer.push_front(s);
-				if (logDisplay) logDisplay->dirty = true;
+		logs.pump(module->log);
+	}
+
+	LOG_TIME logTimeMode() const {
+		return module ? module->logTime : LOG_TIME::TIMESTAMP;
+	}
+
+	// The log display's side: keeps the newest entries, first in the list.
+	void bufferLogEntry(const ScriptLog::Entry& s) {
+		if (buffer.size() >= bufferLimit) buffer.pop_back();
+		if (std::get<0>(s) == LOG_FORMAT::RESET) {
+			resetLog();
+		}
+		else {
+			buffer.push_front(s);
+			if (logDisplay) {
+				logDisplay->dirty = true;
+				// A view scrolled back to older lines stays on them as the new one pushes them down.
+				if (logScroll->offset.y > 0.f) logScroll->offset.y += logDisplay->fontSize;
 			}
 		}
 	}
 
 	void resetLog() {
 		buffer.clear();
-		if (logDisplay) logDisplay->reset();
+		if (logDisplay) {
+			logDisplay->reset();
+			logScroll->offset = Vec();
+		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -2422,7 +2357,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		menu->addChild(new MenuSeparator());
 		// Ports 2+ are only configurable while the script has enabled them.
 		for (int i = 0, n = module->midiIns.enabledCount(); i < n; i++) {
-			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiIns.ports[i].queue));
+			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiInputs > 1 ? string::f("MIDI input %d", i + 1) : "MIDI input", &module->midiIns.ports[i].processor.getInput()));
 		}
 		for (int i = 0, n = module->midiOuts.enabledCount(); i < n; i++) {
 			menu->addChild(Rack::createStickyMidiMenuItem(CONFIG::midiOutputs > 1 ? string::f("MIDI output %d", i + 1) : "MIDI output", &module->midiOuts.ports[i]));
@@ -2434,13 +2369,21 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		}
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Script"));
 		menu->addChild(createSubmenuItem("Examples (JavaScript)", "", [=](Menu* menu) {
 			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/JavaScript"), ".js");
 		}));
 		menu->addChild(createSubmenuItem("Examples (Lua)", "", [=](Menu* menu) {
 			appendExampleItems(menu, vcv::fs::getPluginDirectory("presets/MidiKit/Lua"), ".lua");
 		}));
+		menu->addChild(new MenuSeparator());
+		appendScriptItems(menu);
+	}
+
+	// The "Script" section: edit, clear, clipboard, load, reload, save. Shared by
+	// the module's menu and the log display's.
+	void appendScriptItems(Menu* menu) {
+		menu->addChild(createMenuLabel("Script"));
+		menu->addChild(createMenuItem("Edit…", RACK_MOD_ALT_NAME "+E", [=]() { openEditor(); }));
 		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
 		menu->addChild(createMenuItem("Copy to clipboard", RACK_MOD_ALT_NAME "+C", [=]() { copyJsClipboard(); }));
@@ -2607,6 +2550,10 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 				pasteJsClipboard();
 				e.consume(this);
 			}
+			if (e.keyName == "e") {
+				openEditor();
+				e.consume(this);
+			}
 			if (e.keyName == "l") {
 				loadJsDialog();
 				e.consume(this);
@@ -2619,6 +2566,14 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			}
 		}
 		BASE::onHoverKey(e);
+	}
+
+	// Opens the script editor on the applied script.
+	void openEditor() {
+		using EditorHost = MidiKitEditorHost<MidiKitWidgetBase>;
+		if (!module || editorOverlay) return;
+		editorOverlay = ui::editor::openScriptEditor(
+			module->host.script, std::unique_ptr<ui::editor::ScriptEditorHost>(new EditorHost(this)));
 	}
 
 	void pasteJsClipboard() {
@@ -2680,7 +2635,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 		// Menu entry with word-wrapped text at a fixed width; its height follows the
 		// wrapped text. ui::MenuLabel is always one line as wide as its text, which is
 		// unusable for long log lines.
-		struct MenuMultilineLabel : ui::MenuEntry {
+		struct MenuMultilineLabel : rack::ui::MenuEntry {
 			float WIDTH = 320.f;
 			float FONT_SIZE = 12.f;
 			float PADDING_X = 10.f;
@@ -2702,7 +2657,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 					measuredText = text;
 					measured = true;
 				}
-				ui::MenuEntry::step();
+				rack::ui::MenuEntry::step();
 			}
 
 			void draw(const DrawArgs& args) override {
@@ -2720,7 +2675,7 @@ struct MidiKitMicroWidget : MidiKitWidgetBase<MidiKitMicroConfig> {
 			bool any = false;
 			for (const auto& entry : buffer) {
 				if (std::get<0>(entry) == LOG_FORMAT::RESET) continue;
-				menu->addChild(new MenuMultilineLabel(formatLogEntry(entry)));
+				menu->addChild(new MenuMultilineLabel(formatLogEntry(entry, logTimeMode())));
 				any = true;
 			}
 			if (!any) menu->addChild(createMenuLabel("(empty)"));

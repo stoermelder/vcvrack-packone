@@ -169,7 +169,8 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteOn(msg)) {
+    // A Note-On with velocity 0 is how most keyboards send a release.
+    if (midi.isNoteOn(msg) && !midi.isNoteRelease(msg)) {
         let note = midi.getNote(msg);
         // A Note-On resets the channel's bend: MPE senders emit the bend for a
         // new note after the Note-On, so carrying the previous note's bend over
@@ -189,7 +190,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteOff(msg)) {
+    if (midi.isNoteRelease(msg)) {
         // Release the note that is actually sounding on this channel, not the
         // one in the incoming message: the fold may have shifted it, and the
         // receiver only knows the shifted note.

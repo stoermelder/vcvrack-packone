@@ -166,7 +166,7 @@ midi.onMessage = function(midiPort, msg)
     end
 
     -- Velocity 0 is the running-status spelling of a Note-Off
-    local isRelease = midi.isNoteOff(msg) or (midi.isNoteOn(msg) and midi.getValue(msg) == 0)
+    local isRelease = midi.isNoteRelease(msg)
 
     if midi.isNoteOn(msg) and not isRelease then
         local note = midi.getNote(msg)

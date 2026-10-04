@@ -216,7 +216,7 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-input.getName = function(port)
+input.onTooltip = function(port)
     if port == 1 then return "Root (1V/oct)" end
     return ""
 end
@@ -246,7 +246,9 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isNoteOn(msg) then
+    -- A Note-On with velocity 0 is how most keyboards send a release, so it
+    -- must take the release path below and use state.playedAs.
+    if midi.isNoteOn(msg) and not midi.isNoteRelease(msg) then
         local note = midi.getNote(msg)
         local snapped = quantise(note)
         state.playedAs[note] = snapped
@@ -257,7 +259,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isNoteOff(msg) then
+    if midi.isNoteRelease(msg) then
         local note = midi.getNote(msg)
         -- Release whatever was actually sent for this key. If the note was
         -- never seen (script loaded mid-chord), fall back to the raw number.

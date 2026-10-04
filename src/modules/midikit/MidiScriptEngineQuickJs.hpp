@@ -53,7 +53,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// interruptCountLimit it aborts the script with an UNCATCHABLE "interrupted"
 	// error, so a `while(true)` can't wedge the shared worker. Reset by
 	// beginScriptExecution() per callback (worker-thread only).
-	static const int interruptCountLimit = 10000;   // 10k polls * 10k instr = 100M
+	static const int interruptCountLimit = 1000;   // 1k polls * 10k instr = 10M
 	int interruptCount = 0;
 
 	// JS_SetInterruptHandler callback; opaque is `this`. Non-zero throws the
@@ -103,6 +103,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	JSValue onCc14bitFn = JS_UNDEFINED;
 	JSValue onTriggerFn = JS_UNDEFINED;
 	JSValue onTipsyMessageFn = JS_UNDEFINED;
+	// rack.onBroadcast. Defined at load means the engine receives broadcasts.
+	JSValue onBroadcastFn = JS_UNDEFINED;
 	JSValue onLoadFn = JS_UNDEFINED;
 	JSValue onUnloadFn = JS_UNDEFINED;
 
@@ -115,10 +117,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Formats a QuickJS exception with its source position: reads message +
-	// "stack" (file/line info when available, e.g. a parse-time SyntaxError)
-	// straight off the exception object.
+	// "stack" (file/line info, for a parse-time SyntaxError and for a runtime
+	// error in a callback) straight off the exception object. Used at every site
+	// that logs a script error, so the log shows the line as Lua's does.
 	std::string formatError(JSValueConst exc) {
 		std::string message = jsToStdString(exc);
+		// Only an object has a stack: a thrown string or number has none, and
+		// reading a property of undefined/null would raise a second exception.
+		if (!JS_IsObject(exc)) return message;
 		JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
 		if (!JS_IsUndefined(stack)) {
 			std::string s = jsToStdString(stack);
@@ -203,7 +209,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 
 		if (topics.find("engine") == topics.end() || topics["engine"] != "QuickJs@v1") {
-			handler->writeLog("Script is not compatible with MIDI-KIT", false);
+			handler->writeError("Script is not compatible with MIDI-KIT");
 			return;
 		}
 
@@ -235,11 +241,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, exc);
 			// Logged after the close, which resets the log.
 			unloadScriptOnWorker();
-			handler->writeLog(string::f("Error loading script: %s", message.c_str()), false);
+			handler->writeError(string::f("Error loading script: %s", message.c_str()));
 		}
 		else {
 			JS_FreeValue(ctx, r);
-			handler->writeLog("Script loaded", false);
+			handler->writeLoad("Script loaded");
 
 			// Callbacks live on the predefined objects, not the global scope.
 			// rack holds onLoad/onUnload; the midi object holds onMessage (the
@@ -259,6 +265,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsObject(rackObj)) {
 				onLoadFn = cacheCallableProp(rackObj, "onLoad");
 				onUnloadFn = cacheCallableProp(rackObj, "onUnload");
+				onBroadcastFn = cacheCallableProp(rackObj, "onBroadcast");
 			}
 			else {
 				JS_FreeValue(ctx, rackObj);
@@ -290,6 +297,13 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsUndefined(onMessageFn)) {
 				handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
 			}
+
+			// Before onLoad(), so broadcasts sent from other modules' onLoad() during
+			// the same patch load are not lost.
+			if (!JS_IsUndefined(onBroadcastFn) && domain) {
+				domain->bus->join(this);
+			}
+
 			// No argument: config is restored via rack.getConfig() (installed
 			// into workingConfig before load, above), not passed as a hook
 			// parameter.
@@ -330,6 +344,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, onTipsyMessageFn);
 			JS_FreeValue(ctx, onLoadFn);
 			JS_FreeValue(ctx, onUnloadFn);
+			JS_FreeValue(ctx, onBroadcastFn);
 			rackObj = JS_UNDEFINED;
 			midiObj = JS_UNDEFINED;
 			trigObj = JS_UNDEFINED;
@@ -341,6 +356,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			onTipsyMessageFn = JS_UNDEFINED;
 			onLoadFn = JS_UNDEFINED;
 			onUnloadFn = JS_UNDEFINED;
+			onBroadcastFn = JS_UNDEFINED;
 			// publishedConfig/workingConfig are deliberately left untouched
 			// here: a save racing this teardown must still persist the last
 			// known config, not an empty one.
@@ -350,6 +366,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			rt = NULL;
 			heapBytes.store(0, std::memory_order_relaxed);
 		}
+		if (domain) domain->bus->leave(this);
 		discardInQueues();
 		handler->endUnload();
 	}
@@ -368,7 +385,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onLoad error: %s", jsToStdString(exc).c_str()));
+			handler->writeError(string::f("onLoad error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -393,7 +410,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("onUnload error: %s", jsToStdString(exc).c_str()));
+			handler->writeError(string::f("onUnload error: %s", formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 			return JS_UNDEFINED;
 		}
@@ -414,18 +431,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 	void dispatchMidiMessage(int midiPort, Message& msg) override {
 		if (ctx) {
-			// Assigning the whole QueuedMessage (not just .msg) also resets the
-			// decode fields to their defaults, so a plain message cannot report
-			// the type or parameter of an assembled one that used slot 0 before.
-			msgStore[0].in = QueuedMessage(msg);
-			// Slot 0 is reused for the incoming message, but it can have been a
-			// chain leader (NRPN/14-bit CC) in an onLoad/onUnload callback whose
-			// store started at 0 — clear the leader flags so a stale one can't
-			// make a send emit a chain from the incoming message.
-			msgStore[0].isNrpn = false;
-			msgStore[0].isRpn = false;
-			msgStore[0].isCc14bit = false;
-			beginStore(1);
+			storeIncoming(QueuedMessage(msg));
 
 			inCallback = true;
 			// Calls the cached onMessageFn with midiObj as thisVal — no by-name
@@ -442,7 +448,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onMessage error: %s", jsToStdString(exc).c_str()));
+					handler->writeError(string::f("onMessage error: %s", formatError(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -463,15 +469,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	void dispatchAssembled(JSValue fn, const char* name, int midiPort, const QueuedMessage& q) {
 		if (!ctx || JS_IsUndefined(fn)) return;
 
-		// The whole QueuedMessage lands in the slot, so the decode result travels
-		// with the bytes and no field-by-field copy can drift.
-		msgStore[0].in = q;
-		// Slot 0 is reused across callbacks, so clear the outgoing chain flags for
-		// the same reason dispatchMidiMessage() does.
-		msgStore[0].isNrpn = false;
-		msgStore[0].isRpn = false;
-		msgStore[0].isCc14bit = false;
-		beginStore(1);
+		storeIncoming(q);
 
 		inCallback = true;
 		beginScriptExecution();
@@ -483,7 +481,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (JS_IsException(r)) {
 			JS_FreeValue(ctx, r);
 			JSValue exc = JS_GetException(ctx);
-			handler->writeLog(string::f("%s error: %s", name, jsToStdString(exc).c_str()));
+			handler->writeError(string::f("%s error: %s", name, formatError(exc).c_str()));
 			JS_FreeValue(ctx, exc);
 		}
 		else {
@@ -515,7 +513,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
 				JSValue exc = JS_GetException(ctx);
-				handler->writeLog(string::f("onTrigger error: %s", jsToStdString(exc).c_str()));
+				handler->writeError(string::f("onTrigger error: %s", formatError(exc).c_str()));
 				JS_FreeValue(ctx, exc);
 			}
 			else {
@@ -527,6 +525,34 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Dispatches onTipsyMessage(data, mimeType) when a Tipsy message finishes
 	// decoding. No-op if never defined. `data` is a string; binary payloads
 	// survive intact (JS strings hold arbitrary 16-bit code units).
+	// Dispatches onBroadcast(value, topic) via the cached onBroadcastFn, with
+	// rackObj as thisVal. The value is converted into a fresh JS value, never
+	// shared with the sender. The topic is undefined when the sender gave none.
+	void dispatchBroadcast(const MidiScript::InboundBroadcast& msg) override {
+		if (!ctx || JS_IsUndefined(onBroadcastFn)) return;
+		beginStore(0);
+		inCallback = true;
+		beginScriptExecution();
+		JSValue args[2] = {
+			jsonToJsValue(ctx, msg.value.get()),
+			msg.hasTopic ? JS_NewStringLen(ctx, msg.topic.data(), msg.topic.size()) : JS_UNDEFINED
+		};
+		JSValue r = JS_Call(ctx, onBroadcastFn, rackObj, 2, args);
+		JS_FreeValue(ctx, args[0]);
+		JS_FreeValue(ctx, args[1]);
+		inCallback = false;
+		if (JS_IsException(r)) {
+			JS_FreeValue(ctx, r);
+			JSValue exc = JS_GetException(ctx);
+			handler->writeError(string::f("onBroadcast error: %s", formatError(exc).c_str()));
+			JS_FreeValue(ctx, exc);
+		}
+		else {
+			JS_FreeValue(ctx, r);
+		}
+		publishMemoryUsage();
+	}
+
 	void dispatchTipsyMessage(const MidiScript::TipsyMessage& msg) override {
 		if (ctx) {
 			beginStore(0);
@@ -545,7 +571,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
 					JSValue exc = JS_GetException(ctx);
-					handler->writeLog(string::f("onTipsyMessage error: %s", jsToStdString(exc).c_str()));
+					handler->writeError(string::f("onTipsyMessage error: %s", formatError(exc).c_str()));
 					JS_FreeValue(ctx, exc);
 				}
 				else {
@@ -559,7 +585,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// Calls a global "name(i+1)" function returning a string, e.g.
-	// input.getName(i)/param.getName(i)/param.getValueFormat(i). Falls back to
+	// input.onTooltip(i)/param.onTooltip(i)/param.onValueText(i). Falls back to
 	// "" if unset or the call raises.
 	std::string callGlobalStringFn(const char* objName, const char* fnName, int i) {
 		if (!ctx) return "";
@@ -587,15 +613,15 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	std::string getInputName(int i) override {
-		return callGlobalStringFn("input", "getName", i);
+		return callGlobalStringFn("input", "onTooltip", i);
 	}
 
 	std::string getParamName(int i) override {
-		return callGlobalStringFn("param", "getName", i);
+		return callGlobalStringFn("param", "onTooltip", i);
 	}
 
 	std::string getParamFormatValue(int i) override {
-		return callGlobalStringFn("param", "getValueFormat", i);
+		return callGlobalStringFn("param", "onValueText", i);
 	}
 
 	// Frees the stored script callbacks. Called only from unloadScriptOnWorker(),
@@ -649,7 +675,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 					if (JS_IsException(r)) {
 						JS_FreeValue(ctx, r);
 						JSValue exc = JS_GetException(ctx);
-						handler->writeLog(string::f("Context menu error: %s", jsToStdString(exc).c_str()));
+						handler->writeError(string::f("Context menu error: %s", formatError(exc).c_str()));
 						JS_FreeValue(ctx, exc);
 					}
 					else {
@@ -681,50 +707,42 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// state isn't stored on the spec — the next menu build re-evaluates it from
 	// onGetValue, so onChange's config changes are picked up automatically. The
 	// call is deferred to runAsync() with all other JS work.
-	void invokeContextMenuCallback(int callbackId, int value) override {
+	void invokeContextMenuCallback(int callbackId, const ScriptMenuClick& click) override {
 		// The whole body runs on the worker thread, incl. the spec lookup:
 		// contextMenus is worker-owned, so no lock. The caller ignores timing,
 		// so the read needn't be synchronous on the UI thread.
-		runAsync([this, callbackId, value]() {
+		runAsync([this, callbackId, click]() {
 			assert(onWorkerThread());
 			if (!ctx) return;
 			auto it = contextMenus.find(callbackId);
 			if (it == contextMenus.end()) return;
-			const ContextMenuEntry& entry = it->second;
-			ScriptMenuItem::Type type = entry.spec.type;
-			std::string label;
-			if (type != ScriptMenuItem::Type::Boolean) {
-				if (value < 0 || value >= static_cast<int>(entry.spec.options.size())) return;
-				label = entry.spec.options[value];
-			}
+			std::vector<ScriptMenuArg> args;
+			if (!menuCallArgs(it->second.spec, click, args)) return;
 			// Dup so the call below owns a reference even if the script's
 			// onChange re-registers menus and rewrites the map.
-			JSValue fn = JS_DupValue(ctx, entry.callbackFn);
+			JSValue fn = JS_DupValue(ctx, it->second.callbackFn);
 
 			// Uses the cached rackObj — see getContextMenus() above.
-			JSValue args[2];
-			int argc;
-			if (type == ScriptMenuItem::Type::Boolean) {
-				args[0] = JS_NewBool(ctx, value != 0);
-				argc = 1;
-			}
-			else {
-				args[0] = JS_NewInt32(ctx, value);
-				args[1] = JS_NewString(ctx, label.c_str());
-				argc = 2;
+			std::vector<JSValue> jsArgs;
+			for (const ScriptMenuArg& a : args) {
+				switch (a.kind) {
+					case ScriptMenuArg::Kind::Bool: jsArgs.push_back(JS_NewBool(ctx, a.b)); break;
+					case ScriptMenuArg::Kind::Int: jsArgs.push_back(JS_NewInt32(ctx, a.i)); break;
+					case ScriptMenuArg::Kind::String: jsArgs.push_back(JS_NewStringLen(ctx, a.s.data(), a.s.size())); break;
+				}
 			}
 			// A callback like onLoad: MIDI it sends goes out as it calls midiOut.*.
 			beginStore(0);
 			inCallback = true;
 			beginScriptExecution();
-			JSValue r = JS_Call(ctx, fn, rackObj, argc, args);
+			JSValue r = JS_Call(ctx, fn, rackObj, static_cast<int>(jsArgs.size()), jsArgs.data());
 			inCallback = false;
-			for (int i = 0; i < argc; i++) JS_FreeValue(ctx, args[i]);
+			for (JSValue v : jsArgs) JS_FreeValue(ctx, v);
 			JS_FreeValue(ctx, fn);
 			if (JS_IsException(r)) {
 				JS_FreeValue(ctx, r);
 				JSValue exc = JS_GetException(ctx);
-				handler->writeLog(string::f("Context menu callback error: %s", jsToStdString(exc).c_str()));
+				handler->writeError(string::f("Context menu callback error: %s", formatError(exc).c_str()));
 				JS_FreeValue(ctx, exc);
 			}
 			else {
@@ -755,10 +773,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _rack, "msToFrames", JS_NewCFunction(ctx, js_rack_msToFrames, "msToFrames", 1));
 		JS_SetPropertyStr(ctx, _rack, "framesToMs", JS_NewCFunction(ctx, js_rack_framesToMs, "framesToMs", 1));
 		JS_SetPropertyStr(ctx, _rack, "random", JS_NewCFunction(ctx, js_rack_random, "random", 0));
+		JS_SetPropertyStr(ctx, _rack, "setRandomSeed", JS_NewCFunction(ctx, js_rack_setRandomSeed, "setRandomSeed", 1));
 		JS_SetPropertyStr(ctx, _rack, "registerContextMenu", JS_NewCFunction(ctx, js_rack_registerContextMenu, "registerContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "unregisterContextMenu", JS_NewCFunction(ctx, js_rack_unregisterContextMenu, "unregisterContextMenu", 1));
 		JS_SetPropertyStr(ctx, _rack, "getConfig", JS_NewCFunction(ctx, js_rack_getConfig, "getConfig", 2));
 		JS_SetPropertyStr(ctx, _rack, "setConfig", JS_NewCFunction(ctx, js_rack_setConfig, "setConfig", 2));
+		JS_SetPropertyStr(ctx, _rack, "sendBroadcast", JS_NewCFunction(ctx, js_rack_sendBroadcast, "sendBroadcast", 2));
 
 		// number
 		JSValue _number = JS_NewObject(ctx);
@@ -770,10 +790,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// input
 		JSValue _input = JS_Eval(ctx,
 			"(function() { return {"
-			"	getName: function(i) { return \"Port \" + number.toString(i); }"
+			"	onTooltip: function(i) { return \"Port \" + number.toString(i); }"
 			"}; })();", strlen(
 			"(function() { return {"
-			"	getName: function(i) { return \"Port \" + number.toString(i); }"
+			"	onTooltip: function(i) { return \"Port \" + number.toString(i); }"
 			"}; })();"), "<input>", JS_EVAL_TYPE_GLOBAL);
 		JS_SetPropertyStr(ctx, glob, "input", _input);
 		JS_SetPropertyStr(ctx, _input, "count", JS_NewInt32(ctx, inputCount));
@@ -801,8 +821,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// param
 		const char* paramSrc =
 			"(function() { return {"
-			"	getName: function(i) { return \"Param \" + number.toString(i); },"
-			"	getValueFormat: function(i) { return \"\"; }"
+			"	onTooltip: function(i) { return \"Param \" + number.toString(i); },"
+			"	onValueText: function(i) { return \"\"; }"
 			"}; })();";
 		JSValue _param = JS_Eval(ctx, paramSrc, strlen(paramSrc), "<param>", JS_EVAL_TYPE_GLOBAL);
 		JS_SetPropertyStr(ctx, glob, "param", _param);
@@ -839,6 +859,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "isContinue", JS_NewCFunction(ctx, js_midi_isContinue, "isContinue", 1));
 		JS_SetPropertyStr(ctx, _midi, "isKeyPressure", JS_NewCFunction(ctx, js_midi_isKeyPressure, "isKeyPressure", 1));
 		JS_SetPropertyStr(ctx, _midi, "isNoteOff", JS_NewCFunction(ctx, js_midi_isNoteOff, "isNoteOff", 1));
+		JS_SetPropertyStr(ctx, _midi, "isNoteRelease", JS_NewCFunction(ctx, js_midi_isNoteRelease, "isNoteRelease", 1));
 		JS_SetPropertyStr(ctx, _midi, "isNoteOn", JS_NewCFunction(ctx, js_midi_isNoteOn, "isNoteOn", 1));
 		JS_SetPropertyStr(ctx, _midi, "isProgramChange", JS_NewCFunction(ctx, js_midi_isProgramChange, "isProgramChange", 1));
 		JS_SetPropertyStr(ctx, _midi, "isPitchWheel", JS_NewCFunction(ctx, js_midi_isPitchWheel, "isPitchWheel", 1));
@@ -860,8 +881,8 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "setRaw", JS_NewCFunction(ctx, js_midi_setRaw, "setRaw", 2));
 		JS_SetPropertyStr(ctx, _midi, "setSysEx", JS_NewCFunction(ctx, js_midi_setSysEx, "setSysEx", 2));
 		JS_SetPropertyStr(ctx, _midi, "setValue", JS_NewCFunction(ctx, js_midi_setValue, "setValue", 2));
-		JS_SetPropertyStr(ctx, _midi, "enableNrpnIn", JS_NewCFunction(ctx, js_midi_enableNrpnIn, "enableNrpnIn", 2));
-		JS_SetPropertyStr(ctx, _midi, "enableRpnIn", JS_NewCFunction(ctx, js_midi_enableRpnIn, "enableRpnIn", 2));
+		JS_SetPropertyStr(ctx, _midi, "enableNrpnIn", JS_NewCFunction(ctx, js_midi_enableNrpnIn, "enableNrpnIn", 3));
+		JS_SetPropertyStr(ctx, _midi, "enableRpnIn", JS_NewCFunction(ctx, js_midi_enableRpnIn, "enableRpnIn", 3));
 		JS_SetPropertyStr(ctx, _midi, "enablePorts", JS_NewCFunction(ctx, js_midi_enablePorts, "enablePorts", 1));
 		JS_SetPropertyStr(ctx, _midi, "enableCc14bitIn", JS_NewCFunction(ctx, js_midi_enableCc14bitIn, "enableCc14bitIn", 3));
 
@@ -876,6 +897,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterMs", JS_NewCFunction(ctx, js_midiOut_sendAfterMs, "sendAfterMs", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAtFrame", JS_NewCFunction(ctx, js_midiOut_sendAtFrame, "sendAtFrame", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterTrigger", JS_NewCFunction(ctx, js_midiOut_sendAfterTrigger, "sendAfterTrigger", 3));
+		JS_SetPropertyStr(ctx, _midiOut, "cancel", JS_NewCFunction(ctx, js_midiOut_cancel, "cancel", 1));
 
 		JS_FreeValue(ctx, glob);
 	}
@@ -960,15 +982,24 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewFloat64(ctx, rack::crossfade(a, b, p));
 	}
 
+	static JSValue js_rack_setRandomSeed(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		if (argc != 1 || !argIsNumber(ctx, argv[0])) return jsThrow(ctx, "rack.setRandomSeed: bad args");
+		if (!getEngine(ctx)->setRandomSeedFromNumber(argNum(ctx, argv[0]))) {
+			return jsThrow(ctx, "rack.setRandomSeed: seed must be a finite number");
+		}
+		return JS_UNDEFINED;
+	}
+
 	static JSValue js_rack_random(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		if (argc != 0) return jsThrow(ctx, "rack.random: bad args");
-		return JS_NewFloat64(ctx, rack::random::uniform());
+		return JS_NewFloat64(ctx, getEngine(ctx)->nextRandom());
 	}
 
 	// rack.registerContextMenu(options) — registers one item in the module's
 	// context menu:
 	//   { type: "boolean", label, onGetValue: fn() -> bool, onChange: fn(checked) }
 	//   { type: "options", label, options: [..], onGetValue: fn() -> int, onChange: fn(idx, label) }
+	//   { type: "fileopen", label, onChange: fn(content, fileName) }
 	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
 	// thread when the menu is built, so it always reflects the live config —
 	// unlike a value captured at registration. Returns true on success. An item
@@ -985,7 +1016,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_FreeValue(ctx, typeV);
 		if (type == "options") spec.type = ScriptMenuItem::Type::Options;
 		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
-		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\" or \"options\"");
+		else if (type == "action") spec.type = ScriptMenuItem::Type::Action;
+		else if (type == "fileopen") spec.type = ScriptMenuItem::Type::FileOpen;
+		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"fileopen\"");
 
 		JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
 		std::string label = JS_IsString(labelV) ? e->jsToStdString(labelV) : "";
@@ -1034,7 +1067,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// from onGetValue when the menu is built, so it always reflects the
 		// live config. onGetValue is optional and defaults to 0.
 		JSValue onGetValueV = JS_GetPropertyStr(ctx, argv[0], "onGetValue");
-		if (!JS_IsFunction(ctx, onGetValueV)) {
+		// Only boolean and options items have a value to show.
+		bool hasValue = spec.type == ScriptMenuItem::Type::Boolean || spec.type == ScriptMenuItem::Type::Options;
+		if (!hasValue || !JS_IsFunction(ctx, onGetValueV)) {
 			// Not a function — ignore and default to value 0.
 			JS_FreeValue(ctx, onGetValueV);
 			onGetValueV = JS_UNDEFINED;
@@ -1233,7 +1268,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			key = keyStr.c_str();
 		}
 		if (!MidiScriptEngine::isValidConfigKey(key)) {
-			e->handler->writeLog(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			e->handler->writeError(string::f("getConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
 			return JS_UNDEFINED;
 		}
 		json_t* val = e->getConfigValue(key);
@@ -1260,7 +1295,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			key = keyStr.c_str();
 		}
 		if (!MidiScriptEngine::isValidConfigKey(key)) {
-			e->handler->writeLog(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
+			e->handler->writeError(string::f("setConfig: invalid key \"%s\" (ignored)", key ? key : "(not a string)"));
 			return JS_UNDEFINED;
 		}
 		// undefined deletes the key — jsValueToJson(undefined) would otherwise
@@ -1272,7 +1307,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		json_t* val = jsValueToJson(ctx, argv[1]);
 		if (!val) {
-			e->handler->writeLog(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
+			e->handler->writeError(string::f("setConfig: value for \"%s\" is not JSON-serializable, too deeply nested, or cyclic (ignored)", key));
 			return JS_UNDEFINED;
 		}
 		// Enforce the total-size cap by trial: build what the config WOULD be,
@@ -1286,12 +1321,39 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (dump) free(dump);
 		json_decref(trial);
 		if (size > MidiScriptEngine::configMaxBytes) {
-			e->handler->writeLog(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
+			e->handler->writeError(string::f("setConfig: \"%s\" would push the config past the %d KB limit (ignored)", key, (int)(MidiScriptEngine::configMaxBytes / 1024)));
 			json_decref(val);
 			return JS_UNDEFINED;
 		}
 		e->setConfigValue(key, val); // takes ownership of val
 		return JS_UNDEFINED;
+	}
+
+	// rack.sendBroadcast(value [, topic]) — sends `value`, with an optional string
+	// topic, to every other module whose script defines rack.onBroadcast, and
+	// returns how many it reached. Same value rules as setConfig(); a value or
+	// topic that is rejected or too large is logged, returns 0 and the script
+	// keeps running. No argument (or undefined) is a script error.
+	static JSValue js_rack_sendBroadcast(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		assert(e->onWorkerThread());
+		if (argc < 1 || JS_IsUndefined(argv[0])) return JS_ThrowTypeError(ctx, "sendBroadcast: requires a value");
+		std::string topic;
+		bool hasTopic = false;
+		if (argc >= 2 && !JS_IsUndefined(argv[1])) {
+			if (!JS_IsString(argv[1])) {
+				e->handler->writeError("sendBroadcast: topic must be a string (ignored)");
+				return JS_NewInt32(ctx, 0);
+			}
+			topic = e->jsToStdString(argv[1]);
+			hasTopic = true;
+		}
+		json_t* val = jsValueToJson(ctx, argv[0]);
+		if (!val) {
+			e->handler->writeError("sendBroadcast: value is not JSON-serializable, too deeply nested, or cyclic (ignored)");
+			return JS_NewInt32(ctx, 0);
+		}
+		return JS_NewInt32(ctx, e->sendBroadcast(val, hasTopic ? &topic : nullptr)); // takes ownership of val
 	}
 
 	static JSValue js_number_rescale(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
@@ -1516,7 +1578,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Extracts the message-handle argument shared by every midi.* accessor and
 	// resolves it to a store slot. Fails for anything that is not a live handle
 	// of the running callback: a non-integer, NaN, a handle from an earlier
-	// callback, one used outside a callback (top level, param.getName, ...).
+	// callback, one used outside a callback (top level, param.onTooltip, ...).
 	static bool getMsgArg(JSContext* ctx, JSValueConst v, size_t& idx) {
 		if (!JS_IsNumber(v)) return false;
 		double d = 0;
@@ -1533,19 +1595,28 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// Shared by midi.enableNrpnIn() and midi.enableRpnIn(): same arguments, they
 	// differ only in which kind they arm.
 	static JSValue jsEnableParamIn(JSContext* ctx, int argc, JSValueConst* argv, int kind, const char* name) {
-		// midi.enableNrpnIn(midiPort [, channel]) / midi.enableRpnIn(...)
-		//   midiPort: 1-based; channel: 1-based MIDI channel, omitted = all.
-		if (argc < 1 || argc > 2 || !argIsNumber(ctx, argv[0]) || (argc == 2 && !argIsNumber(ctx, argv[1])))
+		// midi.enableNrpnIn(midiPort [, channel] [, dataEntry]) / midi.enableRpnIn(...)
+		//   midiPort: 1-based; channel: 1-based MIDI channel, omitted/null = all;
+		//   dataEntry: "lsb" (default, fire on CC 38) or "msb" (also fire on CC 6).
+		// Every check comes before the handler call, so a bad argument enables nothing.
+		auto isNone = [&](int i) { return JS_IsNull(argv[i]) || JS_IsUndefined(argv[i]); };
+		if (argc < 1 || argc > 3 || !argIsNumber(ctx, argv[0]) || (argc >= 2 && !isNone(1) && !argIsNumber(ctx, argv[1])))
 			return jsThrow(ctx, std::string(name) + ": bad args");
 		int port = static_cast<int>(argNum(ctx, argv[0]));
 		if (port < 1 || port > getEngine(ctx)->midiInputCount) return jsThrow(ctx, std::string(name) + ": bad midiPort");
 		int ch = -1;
-		if (argc == 2) {
+		if (argc >= 2 && !isNone(1)) {
 			ch = static_cast<int>(argNum(ctx, argv[1]));
 			if (ch < 1 || ch > 16) return jsThrow(ctx, std::string(name) + ": bad channel");
 			ch -= 1;
 		}
-		getEngine(ctx)->handler->enableNrpnIn(port - 1, kind, ch);
+		bool msbDataEntry = false;
+		if (argc == 3 && !isNone(2)) {
+			std::string mode = JS_IsString(argv[2]) ? getEngine(ctx)->jsToStdString(argv[2]) : std::string();
+			if (mode != "lsb" && mode != "msb") return jsThrow(ctx, std::string(name) + ": dataEntry must be \"lsb\" or \"msb\"");
+			msbDataEntry = mode == "msb";
+		}
+		getEngine(ctx)->handler->enableNrpnIn(port - 1, kind, ch, msbDataEntry);
 		return JS_UNDEFINED;
 	}
 
@@ -1599,7 +1670,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// A message handle is only valid inside the callback that created it, so
-	// the creators refuse to run anywhere else (top level, param.getName, ...).
+	// the creators refuse to run anywhere else (top level, param.onTooltip, ...).
 	// Raised before the store is touched.
 	static bool inCallbackOrThrow(JSContext* ctx, const std::string& fn, JSValue& exc) {
 		if (getEngine(ctx)->inCallback) return true;
@@ -1654,14 +1725,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (!inCallbackOrThrow(ctx, "midi.clone", exc)) return exc;
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.clone: invalid msg");
-		size_t* s = &getEngine(ctx)->msgCount;
-		if (*s >= getEngine(ctx)->msgStore.size()) return jsStoreFull(ctx, "midi.clone");
-		// Copy only the MIDI payload; the clone starts fresh and unsent (all
-		// fields at defaults) so it can be modified and sent independently.
-		ScriptMessage clone;
-		clone.in.msg = getEngine(ctx)->msgStore[idx].in.msg;
-		getEngine(ctx)->msgStore[*s] = clone;
-		return JS_NewFloat64(ctx, double(getEngine(ctx)->slotToHandle((*s)++)));
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		// A group handle is cloned as a group: all its slots, with the chain flags.
+		if (e->msgCount + MidiScriptEngine::groupSize(e->msgStore[idx]) > e->msgStore.size()) return jsStoreFull(ctx, "midi.clone");
+		return JS_NewFloat64(ctx, double(e->slotToHandle(e->cloneGroup(idx))));
 	}
 
 	// Shared by midi.createNRPN() and midi.createRPN(): the same 4-handle chain,
@@ -1676,6 +1743,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		getEngine(ctx)->msgStore[*s + 0] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 0].isNrpn = true;
 		getEngine(ctx)->msgStore[*s + 0].isRpn = rpn;
+		getEngine(ctx)->msgStore[*s + 0].in.type = rpn ? StoermelderPackOne::MessageEx::Type::RPN : StoermelderPackOne::MessageEx::Type::NRPN;
 		getEngine(ctx)->msgStore[*s + 1] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 2] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 3] = ScriptMessage();
@@ -1701,6 +1769,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// CC cc+32 (value LSB), sent atomically as a pair.
 		getEngine(ctx)->msgStore[*s + 0] = ScriptMessage();
 		getEngine(ctx)->msgStore[*s + 0].isCc14bit = true;
+		getEngine(ctx)->msgStore[*s + 0].in.type = StoermelderPackOne::MessageEx::Type::CC_14BIT;
 		getEngine(ctx)->msgStore[*s + 1] = ScriptMessage();
 		size_t _s = *s;
 		(*s) += 2;
@@ -1870,6 +1939,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return js_midi_isType(ctx, argc, argv, 0x8, "isNoteOff");
 	}
 
+	static JSValue js_midi_isNoteRelease(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		size_t idx;
+		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isNoteRelease: invalid msg");
+		return JS_NewBool(ctx, isNoteRelease(getEngine(ctx)->msgStore[idx].in.msg));
+	}
+
 	static JSValue js_midi_isNoteOn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		return js_midi_isType(ctx, argc, argv, 0x9, "isNoteOn");
 	}
@@ -1909,6 +1984,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setCc: bad args");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setCc: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
@@ -1931,22 +2007,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!getMsgArg(ctx, argv[0], idx1) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3])) {
 				return jsThrow(ctx, "midi.setCc14bit: invalid msg");
 			}
-			ScriptMessage& s1 = e->msgStore[idx1];
-			if (!s1.isCc14bit) return jsThrow(ctx, "midi.setCc14bit: message is not a 14-bit CC pair");
-			ScriptMessage& s2 = e->msgStore[idx1 + 1];
+			if (!e->msgStore[idx1].isCc14bit) return jsThrow(ctx, "midi.setCc14bit: message is not a 14-bit CC pair");
 			uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
-			uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
-			double value = clampCc14bitValue(argNum(ctx, argv[3]));
-			if (s1.in.msg.getSize() != 3) s1.in.msg.setSize(3);
-			if (s2.in.msg.getSize() != 3) s2.in.msg.setSize(3);
-			s1.in.msg.setStatus(0xb);
-			s2.in.msg.setStatus(0xb);
-			s1.in.msg.setChannel(ch - 1);
-			s2.in.msg.setChannel(ch - 1);
-			s1.in.msg.setNote(cc);
-			s2.in.msg.setNote(cc + 32);
-			s1.in.msg.setValue(static_cast<int8_t>(value));
-			s2.in.msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
+			uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 31);
+			uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[3]), 0, 16383);
+			e->fillGroup(idx1, OutGroup::CC14, ch - 1, cc, value);
 			return JS_UNDEFINED;
 		}
 
@@ -1959,9 +2024,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		ScriptMessage& s1 = e->msgStore[idx1];
 		ScriptMessage& s2 = e->msgStore[idx2];
+		if (const char* groupErr = groupSetterError(s1)) return jsThrow(ctx, string::f("midi.setCc14bit: %s", groupErr).c_str());
+		if (const char* groupErr = groupSetterError(s2)) return jsThrow(ctx, string::f("midi.setCc14bit: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[2]), 1, 16);
-		uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
-		double value = clampCc14bitValue(argNum(ctx, argv[4]));
+		uint8_t cc = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 31);
+		uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[4]), 0, 16383);
 		if (s1.in.msg.getSize() != 3) s1.in.msg.setSize(3);
 		if (s2.in.msg.getSize() != 3) s2.in.msg.setSize(3);
 		s1.in.msg.setStatus(0xb);
@@ -1970,17 +2037,16 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		s2.in.msg.setChannel(ch - 1);
 		s1.in.msg.setNote(cc);
 		s2.in.msg.setNote(cc + 32);
-		s1.in.msg.setValue(static_cast<int8_t>(value));
-		s2.in.msg.setValue(static_cast<int8_t>((value - static_cast<int8_t>(value)) * 128.f));
+		s1.in.msg.setValue((value >> 7) & 0x7f);
+		s2.in.msg.setValue(value & 0x7f);
 		return JS_UNDEFINED;
 	}
 
 	static JSValue js_midi_setChannel(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setChannel: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
-		s.in.msg.setChannel(ch - 1);
+		getEngine(ctx)->setGroupChannel(idx, ch - 1);
 		return JS_UNDEFINED;
 	}
 
@@ -1990,6 +2056,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setChanPressure: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setChanPressure: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		// Channel pressure is a 2-byte message (status + pressure), not 3 —
@@ -2007,6 +2074,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setKeyPressure: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setKeyPressure: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t note = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
@@ -2022,6 +2090,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setNote: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setNote: %s", groupErr).c_str());
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[1]), 0, 127);
 		s.in.msg.setNote(value);
 		return JS_UNDEFINED;
@@ -2035,6 +2104,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setNoteOff: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setNoteOff: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t note = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t vel = argc >= 4 ? clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127) : 0;
@@ -2052,6 +2122,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setNoteOn: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setNoteOn: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t note = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		uint8_t vel = clampInt<uint8_t>(argNum(ctx, argv[3]), 0, 127);
@@ -2073,32 +2144,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 		ScriptMessage* s1 = &getEngine(ctx)->msgStore[idx];
 		if (!s1->isNrpn || s1->isRpn != rpn) return jsThrow(ctx, std::string(name) + (rpn ? ": invalid rpn message" : ": invalid nrpn message"));
-		ScriptMessage* s2 = &getEngine(ctx)->msgStore[idx + 1];
-		ScriptMessage* s3 = &getEngine(ctx)->msgStore[idx + 2];
-		ScriptMessage* s4 = &getEngine(ctx)->msgStore[idx + 3];
-
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint16_t number = clampInt<uint16_t>(argNum(ctx, argv[2]), 0, 16383);
 		uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[3]), 0, 16383);
-		// Spec order: NRPN MSB, NRPN LSB, Data Entry MSB, Data Entry LSB.
-		// sendEntry() sends s1..s4 in this order, as MidiProcessor's NRPN
-		// state machine requires (CC99/98 select the number, CC6/38 the value).
-		s1->in.msg.setStatus(0xb);
-		s1->in.msg.setChannel(ch - 1);
-		s1->in.msg.setNote(rpn ? 101 : 99);
-		s1->in.msg.setValue((number >> 7) & 0x7f);
-		s2->in.msg.setStatus(0xb);
-		s2->in.msg.setChannel(ch - 1);
-		s2->in.msg.setNote(rpn ? 100 : 98);
-		s2->in.msg.setValue(number & 0x7f);
-		s3->in.msg.setStatus(0xb);
-		s3->in.msg.setChannel(ch - 1);
-		s3->in.msg.setNote(6);
-		s3->in.msg.setValue((value >> 7) & 0x7f);
-		s4->in.msg.setStatus(0xb);
-		s4->in.msg.setChannel(ch - 1);
-		s4->in.msg.setNote(38);
-		s4->in.msg.setValue(value & 0x7f);
+		getEngine(ctx)->fillGroup(idx, rpn ? OutGroup::RPN : OutGroup::NRPN, ch - 1, number, value);
 		return JS_UNDEFINED;
 	}
 
@@ -2115,6 +2164,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setPitchWheel: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setPitchWheel: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[2]), 0, 16383);
 		if (s.in.msg.getSize() != 3) s.in.msg.setSize(3);
@@ -2131,6 +2181,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			return jsThrow(ctx, "midi.setProgramChange: invalid msg");
 		}
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setProgramChange: %s", groupErr).c_str());
 		uint8_t ch = clampInt<uint8_t>(argNum(ctx, argv[1]), 1, 16);
 		uint8_t prg = clampInt<uint8_t>(argNum(ctx, argv[2]), 0, 127);
 		// Program Change is a 2-byte message (status + program), not 3: a stray
@@ -2146,6 +2197,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !JS_IsString(argv[1])) return jsThrow(ctx, "midi.setRaw: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setRaw: %s", groupErr).c_str());
 		std::string data = getEngine(ctx)->jsToStdString(argv[1]);
 		if (data.length() % 2 != 0) {
 			return jsThrow(ctx, "midi.setRaw: invalid string length");
@@ -2171,6 +2223,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !JS_IsString(argv[1])) return jsThrow(ctx, "midi.setSysEx: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) return jsThrow(ctx, string::f("midi.setSysEx: %s", groupErr).c_str());
 		std::string data = getEngine(ctx)->jsToStdString(argv[1]);
 		if (data.length() % 2 != 0) {
 			return jsThrow(ctx, "midi.setSysEx: invalid string length");
@@ -2202,6 +2255,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midi.setValue: invalid msg");
 		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
+		if (const char* groupErr = groupSetterError(s)) {
+			// A group: the combined 14-bit value, once its setter has given it a number.
+			uint16_t value = clampInt<uint16_t>(argNum(ctx, argv[1]), 0, 16383);
+			if (!getEngine(ctx)->setGroupValue(idx, value)) return jsThrow(ctx, string::f("midi.setValue: %s", groupErr).c_str());
+			return JS_UNDEFINED;
+		}
 		uint8_t value = clampInt<uint8_t>(argNum(ctx, argv[1]), 0, 127);
 		s.in.msg.setValue(value);
 		return JS_UNDEFINED;
@@ -2213,6 +2272,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midiOut.send: invalid msg");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.send: message has no status byte");
 		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameForSend());
 		return JS_UNDEFINED;
 	}
@@ -2220,8 +2280,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_midiOut_sendAfterMs(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAfterMs: bad args");
+		if (!std::isfinite(argNum(ctx, argv[1]))) return jsThrow(ctx, "midiOut.sendAfterMs: ms must be a finite number");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(argNum(ctx, argv[1])));
+		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.sendAfterMs: message has no status byte");
+		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(argNum(ctx, argv[1])), 0, 0, 0, true);
 		return JS_UNDEFINED;
 	}
 
@@ -2229,8 +2291,12 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	static JSValue js_midiOut_sendAtFrame(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 2 || !getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1])) return jsThrow(ctx, "midiOut.sendAtFrame: bad args");
+		if (!std::isfinite(argNum(ctx, argv[1]))) return jsThrow(ctx, "midiOut.sendAtFrame: frame must be a finite number");
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, frameAtFrame(argNum(ctx, argv[1])));
+		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.sendAtFrame: message has no status byte");
+		// A negative frame means "now": a plain send, which cancel() leaves alone.
+		int64_t f = e->frameAtFrame(argNum(ctx, argv[1]));
+		e->sendEntry(e->msgStore[idx], e->selectedPort, f, 0, 0, 0, f >= 0);
 		return JS_UNDEFINED;
 	}
 
@@ -2251,6 +2317,22 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewFloat64(ctx, getEngine(ctx)->framesToMs(argNum(ctx, argv[0])));
 	}
 
+	// midiOut.cancel([msg]) — drop scheduled messages on the selected port: all of
+	// them, or those with msg's address.
+	static JSValue js_midiOut_cancel(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		if (argc == 0) {
+			e->cancelEntry(nullptr);
+			return JS_UNDEFINED;
+		}
+		if (argc > 1) return jsThrow(ctx, "midiOut.cancel: bad args");
+		size_t idx;
+		if (!getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midiOut.cancel: invalid msg");
+		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.cancel: message has no status byte");
+		e->cancelEntry(&e->msgStore[idx]);
+		return JS_UNDEFINED;
+	}
+
 	static JSValue js_midiOut_sendAfterTrigger(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		// midiOut.sendAfterTrigger(msg, ticks, [trigPort], [channel])
 		//   2 args: msg, ticks                          (trig port 1, channel 1)
@@ -2266,25 +2348,27 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2])) {
 				return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
 			}
-			trigPort = static_cast<int>(argNum(ctx, argv[2]));
+			trigPort = clampInt<int>(argNum(ctx, argv[2]), -1, 1024);
 		}
 		else if (argc == 4) {
 			if (!getMsgArg(ctx, argv[0], idx) || !argIsNumber(ctx, argv[1]) || !argIsNumber(ctx, argv[2]) || !argIsNumber(ctx, argv[3])) {
 				return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
 			}
-			trigPort = static_cast<int>(argNum(ctx, argv[2]));
-			channel = static_cast<int>(argNum(ctx, argv[3]));
+			trigPort = clampInt<int>(argNum(ctx, argv[2]), -1, 1024);
+			channel = clampInt<int>(argNum(ctx, argv[3]), -1, 1024);
 		}
 		else {
 			return jsThrow(ctx, "midiOut.sendAfterTrigger: bad args");
 		}
 		if (trigPort < 1 || trigPort > getEngine(ctx)->inputTrigCount) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad trigInput index");
 		if (channel < 1 || channel > PORT_MAX_CHANNELS) return jsThrow(ctx, "midiOut.sendAfterTrigger: bad channel");
-		int ticks = static_cast<int>(argNum(ctx, argv[1]));
+		if (!std::isfinite(argNum(ctx, argv[1]))) return jsThrow(ctx, "midiOut.sendAfterTrigger: ticks must be a finite number");
+		int ticks = clampInt<int>(argNum(ctx, argv[1]), 0, MAX_SCHEDULE_TICKS);
 		MidiScriptEngineQuickJs* e = getEngine(ctx);
+		if (!hasContent(e->msgStore[idx])) return jsThrow(ctx, "midiOut.sendAfterTrigger: message has no status byte");
 		// Read now, so the schedule is relative to the tick count at the call.
 		int64_t currentTicks = e->handler->getTrigTicks(trigPort - 1, channel - 1);
-		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1);
+		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1, true);
 		return JS_UNDEFINED;
 	}
 

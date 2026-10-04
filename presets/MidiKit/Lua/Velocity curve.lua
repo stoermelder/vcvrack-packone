@@ -96,12 +96,12 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(port)
+param.onTooltip = function(port)
     if port == config.curveParam then return "Velocity curve" end
     return ""
 end
 
-param.getValueFormat = function(port)
+param.onValueText = function(port)
     if port == config.curveParam then
         local v = param.getValue(config.curveParam)
         -- Report the curve as a signed shape amount rather than a raw 0..1,

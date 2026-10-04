@@ -569,6 +569,194 @@ TEST_CASE("isComponent survives reset() clearing the tracked pair", "[MidiProces
 	REQUIRE(lastCcIsComponent(h.msgs) == false);
 }
 
+TEST_CASE("A zero MSB on a never-seen controller starts a 14-bit pair", "[MidiProcessor][14bit]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// A 14-bit value below 128 is sent as MSB 0 plus its LSB.
+	mp.processMessage(Test::makeMidiMessage(0xb, 1, 5, 0));
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 1, 32 + 5, 100));
+
+	REQUIRE(countType(h.msgs, MessageEx::Type::CC_14BIT) == 1);
+	for (const MessageEx& m : h.msgs) {
+		if (m.type != MessageEx::Type::CC_14BIT) continue;
+		REQUIRE(m.getParamNumber() == 5);
+		REQUIRE(m.getValue() == 100);
+		REQUIRE(m.getChannel() == 1);
+	}
+}
+
+TEST_CASE("A 14-bit value of 0 assembles from a zero MSB and a zero LSB", "[MidiProcessor][14bit]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 5, 0));
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 0));
+
+	REQUIRE(countType(h.msgs, MessageEx::Type::CC_14BIT) == 1);
+	for (const MessageEx& m : h.msgs) {
+		if (m.type == MessageEx::Type::CC_14BIT) REQUIRE(m.getValue() == 0);
+	}
+}
+
+TEST_CASE("A zero MSB follows the first-MSB rule and is tracked per channel", "[MidiProcessor][14bit][isComponent]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	// Like any first MSB it escapes as a plain CC; afterwards both halves are components.
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 5, 0));
+	REQUIRE(lastCcIsComponent(h.msgs) == false);
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 7));
+	REQUIRE(lastCcIsComponent(h.msgs) == true);
+
+	// Channel 1 never saw an MSB: its LSB is a plain CC and assembles nothing.
+	h.msgs.clear();
+	mp.processMessage(Test::makeMidiMessage(0xb, 1, 32 + 5, 7));
+	REQUIRE(lastCcIsComponent(h.msgs) == false);
+	REQUIRE(countType(h.msgs, MessageEx::Type::CC_14BIT) == 0);
+}
+
+TEST_CASE("reset() forgets a zero MSB", "[MidiProcessor][14bit][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 5, 0));
+	mp.reset();
+	h.msgs.clear();
+
+	mp.processMessage(Test::makeMidiMessage(0xb, 0, 32 + 5, 10));
+	REQUIRE(countType(h.msgs, MessageEx::Type::CC_14BIT) == 0);
+}
+
+// ── MSB data entry mode (CC 6 fires on its own) ─────────────────────────────
+
+// The NRPN/RPN data events (select notifications carry no value) as "N:param:value" / "R:param:value".
+static std::vector<std::string> dataEvents(const std::vector<MessageEx>& msgs) {
+	std::vector<std::string> out;
+	for (const MessageEx& m : msgs) {
+		if ((m.type != MessageEx::Type::NRPN && m.type != MessageEx::Type::RPN) || !m.hasValue()) continue;
+		out.push_back(std::string(m.type == MessageEx::Type::NRPN ? "N:" : "R:") + std::to_string(m.getParamNumber()) + ":" + std::to_string(m.getValue()));
+	}
+	return out;
+}
+
+static void feedCcs(MidiProcessor& mp, int ch, std::initializer_list<std::pair<int, int>> ccs) {
+	for (const auto& c : ccs) mp.processMessage(Test::makeMidiMessage(0xb, ch, c.first, c.second));
+}
+
+using Events = std::vector<std::string>;
+
+TEST_CASE("MSB data entry: by default CC 6 alone fires nothing", "[MidiProcessor][msbDataEntry]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	feedCcs(mp, 0, { {99, 0}, {98, 5}, {6, 64} });
+	REQUIRE(dataEvents(h.msgs).empty());
+	// The data entry still completes with CC 38, as before.
+	feedCcs(mp, 0, { {38, 3} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:5:8195" }));
+}
+
+TEST_CASE("MSB data entry: CC 6 fires with the coarse value, for NRPN and RPN", "[MidiProcessor][msbDataEntry]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+	mp.setMsbDataEntry(0xFFFF, 0xFFFF);
+
+	feedCcs(mp, 0, { {99, 0}, {98, 5}, {6, 64}, {6, 65} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:5:8192", "N:5:8320" }));
+
+	h.msgs.clear();
+	feedCcs(mp, 0, { {101, 0}, {100, 2}, {6, 64}, {6, 65} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "R:2:8192", "R:2:8320" }));
+}
+
+TEST_CASE("MSB data entry: a full quad fires twice, coarse then combined", "[MidiProcessor][msbDataEntry]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+	mp.setMsbDataEntry(0xFFFF, 0xFFFF);
+
+	feedCcs(mp, 0, { {99, 4}, {98, 5}, {6, 20}, {38, 2} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:517:2560", "N:517:2562" }));
+
+	// A running parameter: the next data entry needs no new select.
+	h.msgs.clear();
+	feedCcs(mp, 0, { {6, 21}, {38, 1} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:517:2688", "N:517:2689" }));
+}
+
+TEST_CASE("MSB data entry is per kind", "[MidiProcessor][msbDataEntry]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+	mp.setMsbDataEntry(0xFFFF, 0);   // NRPN on, RPN off
+
+	feedCcs(mp, 0, { {101, 0}, {100, 2}, {6, 64} });
+	REQUIRE(dataEvents(h.msgs).empty());
+
+	feedCcs(mp, 0, { {99, 0}, {98, 5}, {6, 64} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:5:8192" }));
+}
+
+TEST_CASE("MSB data entry is per channel", "[MidiProcessor][msbDataEntry]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+	mp.setMsbDataEntry(1 << 2, 0);   // NRPN on channel 2 only
+
+	feedCcs(mp, 1, { {99, 0}, {98, 5}, {6, 64} });
+	REQUIRE(dataEvents(h.msgs).empty());
+
+	feedCcs(mp, 2, { {99, 0}, {98, 5}, {6, 64} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:5:8192" }));
+}
+
+TEST_CASE("MSB data entry: reset() keeps the masks and clears the armed parameter", "[MidiProcessor][msbDataEntry][reset]") {
+	MidiProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+	mp.setMsbDataEntry(0xFFFF, 0xFFFF);
+
+	feedCcs(mp, 0, { {99, 0}, {98, 5} });
+	mp.reset();
+	h.msgs.clear();
+
+	// No parameter is armed any more: CC 6 is an ordinary controller.
+	feedCcs(mp, 0, { {6, 64} });
+	REQUIRE(dataEvents(h.msgs).empty());
+	REQUIRE(mp.msbDataEntryNrpnMask == 0xFFFF);
+	REQUIRE(mp.msbDataEntryRpnMask == 0xFFFF);
+
+	// The mode survived: a new select and CC 6 fire again.
+	feedCcs(mp, 0, { {99, 0}, {98, 5}, {6, 64} });
+	REQUIRE(dataEvents(h.msgs) == Events({ "N:5:8192" }));
+}
+
+TEST_CASE("MSB data entry: CC 6 is a component in both modes", "[MidiProcessor][msbDataEntry][isComponent]") {
+	for (bool msb : { false, true }) {
+		CATCH_INFO(std::string(msb ? "msb mode" : "lsb mode"));
+		MidiProcessor mp;
+		TestHandler h;
+		mp.subscribe(&h);
+		if (msb) mp.setMsbDataEntry(0xFFFF, 0xFFFF);
+
+		// Armed: CC 6 belongs to the NRPN.
+		feedCcs(mp, 0, { {99, 0}, {98, 5} });
+		h.msgs.clear();
+		feedCcs(mp, 0, { {6, 64} });
+		REQUIRE(lastCcIsComponent(h.msgs) == true);
+	}
+}
+
 TEST_CASE("hasValue() separates parameter select from data entry", "[MidiProcessor][hasValue]") {
 	MidiProcessor mp;
 	TestHandler h;
@@ -614,4 +802,22 @@ TEST_CASE("hasValue() separates parameter select from data entry", "[MidiProcess
 		REQUIRE(cc14 != h.msgs.end());
 		REQUIRE(cc14->hasValue() == true);
 	}
+}
+
+TEST_CASE("A MidiCProcessor pumps in place, in frame order", "[MidiProcessor][input]") {
+	MidiCProcessor mp;
+	TestHandler h;
+	mp.subscribe(&h);
+
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 61, 100, 50));
+	mp.getInput().onMessage(Test::makeMidiMessage(0x9, 0, 60, 100, 10));
+
+	mp.process(20);
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
+	REQUIRE(h.msgs.back().getNote() == 60);
+	REQUIRE(mp.getInput().size() == 1);
+
+	mp.processBypass(50);
+	REQUIRE(mp.getInput().size() == 0);
+	REQUIRE(countType(h.msgs, MessageEx::Type::NOTE_ON) == 1);
 }

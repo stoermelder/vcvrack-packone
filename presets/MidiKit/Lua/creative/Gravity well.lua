@@ -83,13 +83,13 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then return "Center" end
     if i == 2 then return "Strength" end
     return ""
 end
 
-param.getValueFormat = function(i)
+param.onValueText = function(i)
     if i == 1 then return number.toString(centerParam()) .. " (" .. noteName(centerParam()) .. ")" end
     if i == 2 then return number.toString(strengthParam()) end
     return number.toString(param.getValue(i))
@@ -114,7 +114,7 @@ midi.onMessage = function(midiPort, msg)
     if midi.isNoteOn(msg) then vel = midi.getValue(msg) end
     local isOn = midi.isNoteOn(msg) and vel > 0
     -- Velocity 0 is the running-status spelling of a Note-Off.
-    local isOff = midi.isNoteOff(msg) or (midi.isNoteOn(msg) and vel == 0)
+    local isOff = midi.isNoteRelease(msg)
 
     if isOn then
         local note = midi.getNote(msg)

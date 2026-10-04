@@ -188,7 +188,7 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-param.getName = function(i)
+param.onTooltip = function(i)
     if i == 1 then return "Steps" end
     if i == 2 then return "Fills" end
     if i == 3 then return "Note" end
@@ -196,7 +196,7 @@ param.getName = function(i)
     return ""
 end
 
-param.getValueFormat = function(i)
+param.onValueText = function(i)
     if i == 1 then return number.toString(stepsParam()) .. " steps" end
     if i == 2 then return number.toString(fillsParam()) .. " / " .. number.toString(stepsParam()) .. " hits" end
     if i == 3 then return number.toString(noteParam()) .. " (" .. noteName(noteParam()) .. ")" end

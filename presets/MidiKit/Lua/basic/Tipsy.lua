@@ -21,6 +21,6 @@ trig.onTrigger = function(trigPort, channel)
     trig.sendTipsy("Hello Tipsy!")
 
     -- Send with an explicit mime type (e.g. JSON data)
-    -- local config = '{"label":"My snapshot","value":42}'
+    -- local config = json.encode({ label = "My snapshot", value = 42 })
     -- trig.sendTipsy(config, "application/json")
 end

@@ -179,7 +179,7 @@ midi.onMessage = function(midiPort, msg) {
         }
     }
 
-    if (midi.isNoteOff(msg) || (midi.isNoteOn(msg) && midi.getValue(msg) === 0)) {
+    if (midi.isNoteRelease(msg)) {
         let note = midi.getNote(msg);
         let voices = state.voicesOf[note];
 

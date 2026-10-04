@@ -11,7 +11,10 @@
 -- RECOMMENDED: use the "NRPN to CC (assembled)" example instead — it does the
 -- same job through MIDI-KIT's assembled-input API (midi.enableNrpnIn +
 -- midi.onNrpn) without this hand-rolled state machine. This manual version is
--- kept as a worked example of the underlying protocol.
+-- kept as a worked example of the underlying protocol. It also needs all four
+-- CCs for every change, and CC 99/98 resent each time. A device that sends 7-bit
+-- NRPN (99, 98, 6 without CC 38), or only changes the value of the selected
+-- parameter, needs the assembled version and its "Device sends 7-bit NRPN" menu item.
 --
 -- A spec-compliant NRPN message is sent as 4 CC messages on the same channel:
 -- - CC 98 (0x62): NRPN parameter number, LSB
@@ -137,7 +140,7 @@ midi.onMessage = function(midiPort, msg)
         rack.log("nrpn #", nrpnNumber, ": value=", nrpnValue, " -> cc", ccNumber)
 
         local cc14 = midi.createCc14bit()
-        midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue / 128)
+        midi.setCc14bit(cc14, config.ccChannel, ccNumber, nrpnValue)
         -- The pair (CC ccNumber = MSB, CC ccNumber + 32 = LSB) is sent atomically.
         midiOut.send(cc14)
     end

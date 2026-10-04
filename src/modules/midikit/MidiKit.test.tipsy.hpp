@@ -1,5 +1,3 @@
-#include "MidiKit.test.hpp"
-
 // Tests for trig.sendTipsy() API.
 // sendTipsy(data, [mimeType]) queues a Tipsy protocol message for output on
 // the module's trigger CV output. The payload is enqueued on the script
@@ -24,7 +22,6 @@ static std::vector<float> drainTipsy(MidiKitModule* m) {
 }
 
 TEST_CASE("sendTipsy queues and outputs the encoded stream on the trigger CV", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	// JavaScript (data first, mime defaults to "text/plain")
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
@@ -34,12 +31,13 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process(); // SyncTaskWorker: runs midi.onMessage inline
 
 	// sendTipsy must have queued the payload for the audio thread.
@@ -64,11 +62,12 @@ midi.onMessage = function(midiPort, msg)
 end
 )";
 
-	m = mods.create();
+	Kit<> kit2;
+	m = kit2.m;
 	m->loadScript(LUA_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 
 	REQUIRE(m->tipsyOut.outQueue.size() > 0);
@@ -82,7 +81,6 @@ end
 // bug would corrupt the queued payload — check the queued bytes directly,
 // including an embedded NUL.
 TEST_CASE("trig.sendTipsy string payload arrives intact in the out-queue", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -91,7 +89,8 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -100,7 +99,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process(); // SyncTaskWorker: runs midi.onMessage inline
 
 	REQUIRE(m->tipsyOut.outQueue.size() == 1);
@@ -113,7 +112,6 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("sendTipsy rejects invalid arguments", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -122,7 +120,8 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -145,7 +144,6 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("sendTipsy drops messages when the pending queue overflows", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -154,7 +152,8 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -188,8 +187,8 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("Tipsy output queue keeps draining while the trigger output is unpatched", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(R"(/**
  * @engine QuickJs@v1
  */
@@ -224,7 +223,6 @@ TEST_CASE("Tipsy output queue keeps draining while the trigger output is unpatch
 }
 
 TEST_CASE("tipsyOut.reset() drops queued messages but completes the current one", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -233,7 +231,8 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -272,7 +271,6 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("two discards in a row drop both batches", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	// The case a single boolean flag would fail: the second discard must not be
 	// swallowed by the first, or the second batch plays out under a script that
 	// has already been replaced.
@@ -284,7 +282,8 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -305,7 +304,6 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("sendTipsy handles empty data", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -314,12 +312,13 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 
 	// Empty payload still encodes the header and end sentinel.
@@ -330,7 +329,6 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("sendTipsy output is reset when a script is reloaded", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT_1 = R"(/**
  * @engine QuickJs@v1
  */
@@ -347,12 +345,13 @@ midi.onMessage = function(midiPort, msg) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT_1);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
 	midi::Message in = noteOn(1, 60, 100);
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 
@@ -367,7 +366,7 @@ midi.onMessage = function(midiPort, msg) {
 	REQUIRE(m->tipsyOut.outQueue.empty());
 
 	// The new script's sendTipsy works normally afterwards.
-	m->host.getActiveEngine()->processInMessage(0, in);
+	m->host.getActiveEngine()->processInMessage(0, QueuedMessage(in));
 	m->host.getActiveEngine()->process();
 	REQUIRE(m->tipsyOut.outQueue.size() > 0);
 	std::vector<float> voltages = drainTipsy(m);
@@ -376,7 +375,6 @@ midi.onMessage = function(midiPort, msg) {
 }
 
 TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	// Reads one of the bundled example scripts and loads it into the module.
 	auto runExample = [](const std::string& path) {
 		std::ifstream f(path);
@@ -384,7 +382,8 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		std::stringstream ss;
 		ss << f.rdbuf();
 
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(ss.str());
 		REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -396,7 +395,6 @@ TEST_CASE("bundled Tipsy output example scripts work", "[MidiKit][Tipsy]") {
 		std::vector<float> voltages = drainTipsy(m);
 		REQUIRE(voltages.size() > 0);
 		REQUIRE(voltages[0] == tipsy::kMessageBeginSentinel);
-		Test::destroyModule(m);
 	};
 
 	runExample("presets/MidiKit/JavaScript/basic/Tipsy.js");
@@ -432,19 +430,18 @@ static std::vector<float> encodeTipsy(MidiKitModule* m, const char* mime, const 
 }
 
 TEST_CASE("Tipsy input round-trips an encoded message to trig.onTipsyMessage", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
+	FOR_EACH_LANG;
 	// The script echoes what it receives into the log, so the test can assert on
 	// the decoded mime type and payload without extra plumbing.
-	const char* JS_SCRIPT = R"(/**
- * @engine QuickJs@v1
- */
-trig.onTipsyMessage = function(data, mimeType) {
-	rack.log("got:" + mimeType + ":" + data);
-};
-)";
+	std::string src = script(lang, lang == Lang::Js
+		? "trig.onTipsyMessage = function(data, mimeType) {\n\track.log(\"got:\" + mimeType + \":\" + data);\n};"
+		: "trig.onTipsyMessage = function(data, mimeType)\n\track.log(\"got:\" .. mimeType .. \":\" .. data)\nend");
+	const char* mime = lang == Lang::Js ? "text/plain" : "application/json";
+	std::string payload = lang == Lang::Js ? "Hello Tipsy!" : "{\"key\":42}";
 
-	MidiKitModule* m = mods.create();
-	m->loadScript(JS_SCRIPT);
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->loadScript(src);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 	m->processTipsyInput();   // no trigger claimed yet: must be a no-op
 
@@ -452,7 +449,7 @@ trig.onTipsyMessage = function(data, mimeType) {
 	m->enableTipsyIn(0);
 	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
 
-	std::vector<float> voltages = encodeTipsy(m, "text/plain", "Hello Tipsy!");
+	std::vector<float> voltages = encodeTipsy(m, mime, payload);
 	REQUIRE(voltages.size() > 0);
 
 	// Exactly one message completes, at the end of the stream.
@@ -462,35 +459,10 @@ trig.onTipsyMessage = function(data, mimeType) {
 	// The worker dispatches it into the script.
 	m->host.getActiveEngine()->process();
 	REQUIRE(m->host.getActiveEngine()->tipsyInQueue.empty());
-	REQUIRE(drainLog(m).find("got:text/plain:Hello Tipsy!") != std::string::npos);
-}
-
-TEST_CASE("Tipsy input round-trips under Lua", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
-	const char* LUA_SCRIPT = R"(--[[
-@engine minilua@v1
---]]
-trig.onTipsyMessage = function(data, mimeType)
-	rack.log("got:" .. mimeType .. ":" .. data)
-end
-)";
-
-	MidiKitModule* m = mods.create();
-	m->loadScript(LUA_SCRIPT);
-	REQUIRE(m->host.getActiveEngine() != nullptr);
-
-	m->enableTipsyIn(0);
-	m->inputs[MidiKitModule::INPUT_TRIG].channels = 1;
-
-	std::vector<float> voltages = encodeTipsy(m, "application/json", "{\"key\":42}");
-	REQUIRE(feedTipsy(m, 0, voltages) == 1);
-
-	m->host.getActiveEngine()->process();
-	REQUIRE(drainLog(m).find("got:application/json:{\"key\":42}") != std::string::npos);
+	REQUIRE(drainLog(m).find(std::string("got:") + mime + ":" + payload) != std::string::npos);
 }
 
 TEST_CASE("Tipsy input ignores the stream until the trigger is claimed", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -499,7 +471,8 @@ trig.onTipsyMessage = function(data, mimeType) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -523,14 +496,14 @@ trig.onTipsyMessage = function(data, mimeType) {
 }
 
 TEST_CASE("a Tipsy-claimed trigger reads as 0 and CV inputs stay live", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
 trig.onTipsyMessage = function(data, mimeType) {};
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -561,7 +534,6 @@ trig.onTipsyMessage = function(data, mimeType) {};
 }
 
 TEST_CASE("a Tipsy-claimed trigger input suppresses trig.onTrigger on channel 1 only", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	// The encoded Tipsy voltages swing across the trigger threshold constantly,
 	// so while the trigger input is claimed they must not count as clock ticks
 	// or fire trig.onTrigger on channel 1. Other channels are ordinary gates
@@ -579,7 +551,8 @@ trig.onTrigger = function(trigPort, channel) {
 trig.onTipsyMessage = function(data, mimeType) {};
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -620,7 +593,6 @@ trig.onTipsyMessage = function(data, mimeType) {};
 }
 
 TEST_CASE("Tipsy input resyncs after a malformed stream", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
@@ -629,7 +601,8 @@ trig.onTipsyMessage = function(data, mimeType) {
 };
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -649,14 +622,14 @@ trig.onTipsyMessage = function(data, mimeType) {
 }
 
 TEST_CASE("Tipsy input drops messages when the queue overflows", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	const char* JS_SCRIPT = R"(/**
  * @engine QuickJs@v1
  */
 trig.onTipsyMessage = function(data, mimeType) {};
 )";
 
-	MidiKitModule* m = mods.create();
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
 	m->loadScript(JS_SCRIPT);
 	REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -680,7 +653,6 @@ trig.onTipsyMessage = function(data, mimeType) {};
 }
 
 TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
-	ModuleScaffold mods;
 	// Loads a bundled TipsyIn example, feeds it an encoded message, and checks
 	// it reached trig.onTipsyMessage. Not in MidiKit.examples.test.cpp's
 	// PRESETS[] table for the same reason the Tipsy sender isn't: it produces
@@ -691,7 +663,8 @@ TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
 		std::stringstream ss;
 		ss << f.rdbuf();
 
-		MidiKitModule* m = createModule();
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
 		m->loadScript(ss.str());
 		REQUIRE(m->host.getActiveEngine() != nullptr);
 
@@ -706,9 +679,8 @@ TEST_CASE("bundled Tipsy input example scripts work", "[MidiKit][Tipsy]") {
 		std::string log = drainLog(m);
 		REQUIRE(log.find("Tipsy [") != std::string::npos);
 		REQUIRE(log.find(payload) != std::string::npos);
-		Test::destroyModule(m);
 	};
 
 	runExample("presets/MidiKit/JavaScript/basic/TipsyIn.js", "{\"value\":42}", "application/json");
-	runExample("presets/MidiKit/Lua/basic/TipsyIn.lua", "42", "text/plain");
+	runExample("presets/MidiKit/Lua/basic/TipsyIn.lua", "{\"value\":42}", "application/json");
 }
