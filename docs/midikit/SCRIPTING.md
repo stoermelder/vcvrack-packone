@@ -1244,6 +1244,7 @@ Messages are opaque **handles** into an internal message store. Create one with 
 - A script that really needs more *distinct* messages at once asks for them with `@requires messages=N` in its header, up to 512.
 - When the store is full, `midi.create()`, `midi.clone()`, `midi.createNRPN()`, `midi.createRPN()` and `midi.createCc14bit()` raise a script error that aborts the rest of the callback: "midi.create: message store full (32 handles; reuse a handle or raise it with @requires messages=N)".
 - Messages sent before the error have already gone out, so a multi-message sequence (an NRPN pair, a wide chord release) can be emitted partially. A message created but never sent is dropped.
+- A handle that holds no message cannot be sent: an empty `midi.create()` handle, or a group handle whose setter has not run. Every `midiOut.send*` call (and `midiOut.cancel`) raises a script error, "message has no status byte", rather than putting bare data bytes on the wire.
 
 #### Entry points
 

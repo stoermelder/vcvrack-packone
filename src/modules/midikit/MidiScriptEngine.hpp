@@ -284,10 +284,11 @@ struct MidiScriptEngine {
 		return g;
 	}
 
-	// Whether `first` can be a midiOut.cancel() pattern: a group handle whose
-	// setter ran (paramNumber >= 0), or a plain message with a status byte.
-	// Checked by the bindings before cancelEntry().
-	static bool isCancelPattern(const ScriptMessage& first) {
+	// Whether `first` holds a message: a group handle whose setter ran
+	// (paramNumber >= 0), or a plain message with a status byte. Checked by the
+	// bindings before sendEntry() and cancelEntry(), so an empty midi.create()
+	// handle or an unset group never reaches the wire as status-less bytes.
+	static bool hasContent(const ScriptMessage& first) {
 		if (first.isNrpn || first.isCc14bit) return first.in.paramNumber >= 0;
 		const Message& m = first.in.msg;
 		return !m.bytes.empty() && m.bytes[0] >= 0x80;

@@ -2257,6 +2257,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// midiOut.send(msg)
 		auto* e = getEngine(L);
 		size_t idx = checkHandle(L, 1);
+		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameForSend());
 		return 0;
 	}
@@ -2267,6 +2268,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		double ms = luaL_checknumber(L, 2);
 
 		size_t idx = checkHandle(L, 1);
+		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		e->sendEntry(e->msgStore[idx], e->selectedPort, e->frameAfterMs(ms), 0, 0, 0, true);
 		return 0;
 	}
@@ -2277,6 +2279,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		double frame = luaL_checknumber(L, 2);
 
 		size_t idx = checkHandle(L, 1);
+		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		// A negative frame means "now": a plain send, which cancel() leaves alone.
 		int64_t f = frameAtFrame(frame);
 		e->sendEntry(e->msgStore[idx], e->selectedPort, f, 0, 0, 0, f >= 0);
@@ -2313,7 +2316,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			return 0;
 		}
 		size_t idx = checkHandle(L, 1);
-		if (!isCancelPattern(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
+		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		e->cancelEntry(&e->msgStore[idx]);
 		return 0;
 	}
@@ -2342,6 +2345,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		size_t idx = checkHandle(L, 1);
+		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		// Read now, so the schedule is relative to the tick count at the call.
 		int64_t currentTicks = e->handler->getTrigTicks(trigPort - 1, channel - 1);
 		e->sendEntry(e->msgStore[idx], e->selectedPort, -1, uint8_t(channel - 1), uint64_t(currentTicks + ticks), trigPort - 1, true);

@@ -438,6 +438,47 @@ TEST_CASE("midiOut.selectPort rejects an out-of-range port identically", "[MidiK
 }
 
 
+// A handle that holds no message cannot be sent
+// An empty midi.create() handle and an unset NRPN/14-bit group have no status
+// byte, so every send call raises instead of putting bare data bytes on the wire.
+
+TEST_CASE("Sending an empty or unset handle raises, whichever send call is used", "[MidiKit][CrossEngine]") {
+	FOR_EACH_LANG;
+	bool lua = lang == Lang::Lua;
+	const char* calls[] = { "midiOut.send(%s)", "midiOut.sendAfterMs(%s, 10)", "midiOut.sendAtFrame(%s, 1000)", "midiOut.sendAfterTrigger(%s, 1)" };
+	const char* handles[] = { "midi.create()", "midi.createNRPN()", "midi.createCc14bit()" };
+
+	std::string body;
+	int attempts = 0;
+	for (const char* call : calls) {
+		for (const char* handle : handles) {
+			char stmt[128];
+			snprintf(stmt, sizeof(stmt), call, handle);
+			attempts++;
+			if (lua) body += std::string("    t(function() ") + stmt + " end)\n";
+			else body += std::string("    t(function() { ") + stmt + "; });\n";
+		}
+	}
+	std::string src = lua
+		? script(lang, "local function t(f) local ok, err = pcall(f) rack.log(ok and 'ok' or ('err ' .. tostring(err))) end\n"
+			"midi.onMessage = function(port, msg)\n" + body + "    midiOut.send(msg)\nend")
+		: script(lang, "function t(f) { try { f(); rack.log('ok'); } catch (e) { rack.log('err ' + e); } }\n"
+			"midi.onMessage = function(port, msg) {\n" + body + "    midiOut.send(msg);\n};");
+	Kit<> kit;
+	std::string loadLog = kit.loadRaw(src);
+	CATCH_INFO("load log:\n" << loadLog);
+	std::vector<Out> sent = kit.dispatch(msg::noteOn(1, 60, 100));
+	std::string log = kit.log();
+	CATCH_INFO("log:\n" << log);
+
+	REQUIRE(countOf(log, "has no status byte") == size_t(attempts));
+	REQUIRE(log.find("ok") == std::string::npos);
+	// Only the control send of the incoming note went out.
+	REQUIRE(sent.size() == 1);
+	REQUIRE(sent[0].bytes == std::vector<uint8_t>{0x91, 60, 100});
+}
+
+
 // midiOut.sendAfterMs
 
 static const char* JS_SEND_AFTER_MS = R"(/**
