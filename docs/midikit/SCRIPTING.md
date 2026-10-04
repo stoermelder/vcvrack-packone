@@ -3,7 +3,7 @@
 MIDI-KIT runs a script that reads incoming MIDI, trigger and CV, and sends MIDI, triggers and voltages. The script is written in one of two embedded languages, picked by a versioned `@engine` tag in its header:
 
 - `QuickJs@v1`: JavaScript (a full ES2020 engine)
-- `minilua@v1`: Lua 5.4 (sandboxed, via minilua)
+- `minilua@v1`: Lua 5.5 (sandboxed, via minilua)
 
 Both engines offer the *same* API: `midi`, `midiOut`, `input`, `trig`, `param`, `number` and `rack`. Ports, channels and params are **1-based** everywhere. The module identifies the engine from the header, not from the file extension.
 
@@ -26,7 +26,7 @@ Both engines handle the common case equally well: reacting to
 
 | | QuickJs (JS) | Lua |
 |---|---|---|
-| Language completeness | Full JavaScript (ES2020): `while`, `switch`, `try`, `class`, `new`, `this`, `var`/`let`/`const`, function declarations, arrow functions | Full Lua 5.4 syntax; only the *library* is trimmed |
+| Language completeness | Full JavaScript (ES2020): `while`, `switch`, `try`, `class`, `new`, `this`, `var`/`let`/`const`, function declarations, arrow functions | Full Lua 5.5 syntax; only the *library* is trimmed |
 | Data structures | Array literals `[1,2,3]`, object literals `{a:1}` | Only tables (`{}`); no literal array sugar, must use `{ {...}, {...} }` and `#t`/`ipairs` |
 | Stdlib | Full JS standard library: `Math`, `JSON`, `String`, `Array`, ... | Real Lua stdlib subset: `math`, `string`, `table` (no `io`, `os`, `package`, `debug` — sandboxed), plus `string.split(s, sep, limit)` (also `s:split(sep)`), which works like JavaScript's `split`: `sep` is a plain string, not a pattern, empty fields are kept (`("a,,b"):split(",")` gives three pieces), an empty `sep` gives single bytes, and the optional `limit` caps the number of pieces; and a `json` table with `json.encode(value)` and `json.decode(string)` (bundled [json.lua](https://github.com/rxi/json.lua) by rxi, MIT). Invalid input raises an error, so wrap `json.decode` in `pcall`; JSON `null` decodes to `nil` |
 | String formatting | JS auto-coerces numbers in `+` concatenation; `number.toString()` helper available | Lua auto-coerces numbers in `..` concatenation; `string.format` available |
@@ -1468,20 +1468,12 @@ Once a kind is enabled, the CCs it is built from stop reaching `midi.onMessage`.
   `midi.setValue(msg, v)` sets the combined value, and `midiOut.cancel(msg)`
   cancels the scheduled group with that number. Any other setter raises the
   group-handle error described under [Setters](#setters).
+- **A received group reads as its lead message.** `midi.getNote(msg)` and
+  `midi.getRaw(msg)` return the lead (for example CC 99 for an NRPN), not the CC
+  that completed the group; `midi.getControl()` and `midi.getValue()` return the
+  number and the combined value.
 - **A received group takes store slots** (4 for an NRPN or RPN, 2 for a 14-bit CC),
   see "The message store" under Message handles.
-
-**Changes** for scripts written against the earlier behaviour, where a received
-group was a single message, the one that completed it:
-
-- `midiOut.send(msg)` in `midi.onNrpn` / `onRpn` / `onCc14bit` sends the whole
-  group, not only the completing CC.
-- `midi.getNote(msg)` and `midi.getRaw(msg)` return the lead (for example 99), not
-  the completing CC (38).
-- `midi.isNrpn()`, `isRpn()` and `isCc14bit()` are also true for created handles, and
-  `midi.getControl()` / `getValue()` on a created handle that was set return its
-  number and combined value.
-- Single-message setters on `msg` (`setNote`, `setCc`, ...) raise an error.
 
 ### Enabling MIDI ports
 

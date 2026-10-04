@@ -1,6 +1,6 @@
 # stoermelder MIDI-KIT
 
-MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two scripting engines — a full JavaScript engine (QuickJS) and a small subset of Lua — so you can pick whichever language you are more comfortable with.
+MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It bundles two scripting engines — a full JavaScript engine (QuickJS) and Lua 5.5 — so you can pick whichever language you are more comfortable with.
 
 ## How it works
 
@@ -9,7 +9,7 @@ MIDI-KIT provides two interchangeable scripting engines. Both expose the same `m
 | Engine | Language | Underlying interpreter |
 | ------ | -------- | ---------------------- |
 | **JavaScript** | Full JavaScript (ES2020) | [QuickJS](https://bellard.org/quickjs/) |
-| **Lua**        | A small subset of Lua 5.x    | [MiniLua](https://github.com/edubart/minilua) (bundled) |
+| **Lua**        | Lua 5.5, trimmed libraries   | [MiniLua](https://github.com/edubart/minilua) (bundled) |
 
 Neither engine is optimized for raw performance, but MIDI events are typically sparse compared to audio/DSP processing and the engines are adequate for most MIDI scripting tasks.
 
@@ -55,7 +55,7 @@ the module's context menu) are the same scripts on disk under
 
 ## Language reference
 
-MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua runs the full Lua 5.4 language with a trimmed set of libraries. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
+MIDI-KIT supports two scripting languages. The JavaScript engine is [QuickJS](https://bellard.org/quickjs/) (a full ES2020 engine); the Lua engine is a bundled [MiniLua](https://github.com/edubart/minilua). QuickJS ships with the full standard JavaScript library; MiniLua runs the full Lua 5.5 language with a trimmed set of libraries. The `midi` / `midiOut` / `input` / `trig` / `param` / `number` / `rack` API is identical across the two engines, so picking an engine is mostly a matter of personal taste.
 
 ### Quick comparison
 
@@ -87,7 +87,7 @@ Strings are binary data chunks; their length counts bytes rather than Unicode co
 
 #### Language and libraries
 
-The Lua engine runs the full Lua 5.4 language: `goto` and labels, metatables
+The Lua engine runs the full Lua 5.5 language: `goto` and labels, metatables
 (`setmetatable`), closures, integer and float arithmetic, and `string`
 functions with patterns and captures (`string.find`, `match`, `gmatch`, `gsub`,
 `format`). Only the standard *libraries* are trimmed to what is safe to run
@@ -99,14 +99,18 @@ inside a patch:
   (no file access, no precompiled bytecode).
 - Not available: `io`, `os`, `package` / `require`, `debug`, `coroutine`, `utf8`.
 
+In Lua 5.5 the control variable of a `for` loop is read-only (`for i = 1, n do
+i = i + 1 end` does not compile; copy it into a local first), and `global`
+declarations are available.
+
 Strings are binary data chunks: their length counts bytes, not Unicode code
 points — `'Київ':len() == 8`.
 
 There is no implicit number-to-string coercion outside `..` concatenation —
 numbers are auto-converted to strings in `..` (e.g. `'Port ' .. i`); everywhere
 else use `tostring(n)` or the MIDI-KIT helper `number.toString(n)`. For
-everything else, the standard Lua 5.4 semantics apply; please refer to the
-[Lua reference manual](https://www.lua.org/manual/5.4/) for details.
+everything else, the standard Lua 5.5 semantics apply; please refer to the
+[Lua reference manual](https://www.lua.org/manual/5.5/) for details.
 
 ## Settings
 

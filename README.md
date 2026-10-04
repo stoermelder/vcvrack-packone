@@ -50,6 +50,8 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [MIDI-CAT XL](./docs/midicat/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
 - [MIDI-ESX](./docs/midiesx/MidiEsx.md): MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
 - [MIDI-KEY](./docs/midi/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
+- [MIDI-KIT](./docs/midikit/MidiKit.md): scripting module for altering, filtering, delaying and generating MIDI messages, written in JavaScript or Lua
+- [MIDI-µKIT](./docs/midikit/MidiKit.md): compact version of MIDI-KIT with two CV inputs and two knobs
 - [MIDI-MON](./docs/midi/MidiMon.md): input-monitor for MIDI messages
 - [MIDI-PLUG](./docs/midi/MidiPlug.md): a virtual MIDI merger and splitter
 - [MIDI-STEP](./docs/midi/MidiStep.md): utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
