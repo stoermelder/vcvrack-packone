@@ -276,7 +276,9 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// luaopen_base/string still register functions that read files or accept
 		// precompiled bytecode, which the VM doesn't verify. A script travels inside
 		// the patch file, so remove them. load goes too: it defaults to mode "bt".
-		static const char* const removedGlobals[] = { "dofile", "loadfile", "load" };
+		// print goes as well: it writes to Rack's stdout, which nobody sees; the
+		// script calls rack.log() instead, and a call to print fails visibly.
+		static const char* const removedGlobals[] = { "dofile", "loadfile", "load", "print" };
 		for (const char* name : removedGlobals) {
 			lua_pushnil(L);
 			lua_setglobal(L, name);

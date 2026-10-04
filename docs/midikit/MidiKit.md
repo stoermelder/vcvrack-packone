@@ -96,7 +96,8 @@ inside a patch:
 - Available: the base library (`pairs`, `ipairs`, `pcall`, `tostring`,
   `tonumber`, `select`, `setmetatable`, …), `math`, `string` and `table`.
 - Removed from the base library: `dofile`, `loadfile`, `load` and `string.dump`
-  (no file access, no precompiled bytecode).
+  (no file access, no precompiled bytecode), and `print` (it writes to Rack's
+  standard output, not to the log: use `rack.log()`).
 - Not available: `io`, `os`, `package` / `require`, `debug`, `coroutine`, `utf8`.
 
 In Lua 5.5 the control variable of a `for` loop is read-only (`for i = 1, n do

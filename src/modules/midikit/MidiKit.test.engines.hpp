@@ -585,6 +585,7 @@ rack.onLoad = function()
 	rack.log("loadfile=" .. type(loadfile))
 	rack.log("load=" .. type(load))
 	rack.log("dump=" .. type(string.dump))
+	rack.log("print=" .. type(print))
 end
 )";
 
@@ -600,6 +601,7 @@ TEST_CASE("Lua sandbox removes file and bytecode loaders", "[MidiKit][Lua]") {
 	REQUIRE(log.find("loadfile=nil") != std::string::npos);
 	REQUIRE(log.find("load=nil") != std::string::npos);
 	REQUIRE(log.find("dump=nil") != std::string::npos);
+	REQUIRE(log.find("print=nil") != std::string::npos);
 }
 
 

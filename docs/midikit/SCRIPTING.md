@@ -1801,7 +1801,7 @@ Realtime messages are encoded as status `0xf` with a "channel" nibble of `0x8`, 
 
 **Engines**
 
-- Lua's sandboxed standard library excludes `io`, `os`, `package` and `debug`: no file access and no OS calls, by design.
+- Lua's sandboxed standard library excludes `io`, `os`, `package` and `debug`: no file access and no OS calls, by design. `print` is removed too, since it would write to Rack's standard output; use `rack.log()` (JavaScript has no `console.log` either).
 - A script is only run by the engine its `@engine` tag names. Loading a QuickJs script into a module that expects `@engine minilua@v1` (or the reverse) fails with an explicit "not compatible" log message instead of being silently misinterpreted.
 
 
