@@ -1344,6 +1344,7 @@ Messages are opaque **handles** into an internal message store. Create one with 
 | `getSysEx(msg)` | hex string, payload only — without the `f0`/`f7` framing |
 | `getSysExLength(msg)` | payload length in bytes, framing excluded — check before reading with `getSysEx` |
 | `getRaw(msg)` | hex string of the message's raw bytes, exactly as sent/received — no framing added or removed |
+| `toString(msg)` | one line of text for a log, in the wording of [MIDI-MON](../midi/MidiMon.md): `ch01 note on  60 vel 100`, `ch02 cc7=100`, `ch01 nrpn param=1234 value=16383`, `clock tick`, `sysex (12 data bytes) 43 10 4c …` (payload only, the first 32 bytes). A Note-On with velocity 0 reads as `note off`. The text is meant for display and may get more detail later, so do not parse it; use `getRaw()` or the getters for that. It has no port and no time, and never raises an error for a valid handle |
 
 #### Type predicates
 

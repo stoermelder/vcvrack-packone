@@ -1111,6 +1111,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getPitchWheel",   lua_midi_getPitchWheel);
 		setTableFunc("getProgramChange",lua_midi_getProgramChange);
 		setTableFunc("getRaw",          lua_midi_getRaw);
+		setTableFunc("toString",        lua_midi_toString);
 		setTableFunc("getSysEx",        lua_midi_getSysEx);
 		setTableFunc("getSysExLength",  lua_midi_getSysExLength);
 		setTableFunc("getControl",      lua_midi_getControl);
@@ -1976,6 +1977,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 			ss << std::setw(2) << std::setfill('0') << static_cast<int>(m->in.msg.bytes[i]);
 		}
 		std::string s = ss.str();
+		lua_pushlstring(L, s.c_str(), s.size());
+		return 1;
+	}
+
+	// midi.toString(msg): one line for display, in the wording of MIDI-MON.
+	static int lua_midi_toString(lua_State* L) {
+		ScriptMessage* m = getMsg(L, 1);
+		std::string s = messageText(*m);
 		lua_pushlstring(L, s.c_str(), s.size());
 		return 1;
 	}

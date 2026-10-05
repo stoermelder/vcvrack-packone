@@ -1721,3 +1721,50 @@ TEST_CASE("setRaw and setSysEx reject long invalid hex strings, and a valid one 
 	REQUIRE(sent.size() == 1);
 	REQUIRE(sent[0].bytes == std::vector<uint8_t>{0xf0, 0x43, 0x10, 0x4c, 0x00, 0x00, 0xf7});
 }
+
+// ── midi.toString ────────────────────────────────────────────────────────────
+// One line in the wording of MIDI-MON (MidiText), the same for both engines. The
+// script builds each message, logs toString() and the test compares the lines.
+
+TEST_CASE("midi.toString uses the MIDI-MON wording", "[MidiKit][CrossEngine]") {
+	struct Case { const char* js; const char* lua; const char* expected; };
+	const Case cases[] = {
+		{"let m = midi.create(); midi.setNoteOn(m, 1, 60, 100); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setNoteOn(m, 1, 60, 100) rack.log(midi.toString(m))", "ch01 note on  60 vel 100"},
+		{"let m = midi.create(); midi.setNoteOn(m, 1, 60, 0); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setNoteOn(m, 1, 60, 0) rack.log(midi.toString(m))", "ch01 note off 60 vel 0"},
+		{"let m = midi.create(); midi.setCc(m, 2, 7, 100); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setCc(m, 2, 7, 100) rack.log(midi.toString(m))", "ch02 cc7=100"},
+		{"let m = midi.create(); midi.setRaw(m, \"fe\"); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setRaw(m, \"fe\") rack.log(midi.toString(m))", "active sensing"},
+		{"let m = midi.create(); midi.setRaw(m, \"f6\"); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setRaw(m, \"f6\") rack.log(midi.toString(m))", "tune request"},
+		{"let m = midi.create(); midi.setRaw(m, \"f137\"); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setRaw(m, \"f137\") rack.log(midi.toString(m))", "mtc quarter frame piece=3 value=7"},
+		{"let m = midi.create(); midi.setRaw(m, \"f8\"); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setRaw(m, \"f8\") rack.log(midi.toString(m))", "clock tick"},
+		{"let m = midi.create(); midi.setRaw(m, \"f0010203f7\"); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setRaw(m, \"f0010203\" .. \"f7\") rack.log(midi.toString(m))", "sysex (3 data bytes) 01 02 03"},
+		{"let m = midi.create(); midi.setRaw(m, \"f0\" + \"01\".repeat(33) + \"f7\"); rack.log(midi.toString(m));",
+		 "local m = midi.create() midi.setRaw(m, \"f0\" .. string.rep(\"01\", 33) .. \"f7\") rack.log(midi.toString(m))",
+		 "sysex (33 data bytes) 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 \xe2\x80\xa6"},
+		{"let m = midi.createNRPN(); midi.setNRPN(m, 1, 1234, 16383); rack.log(midi.toString(m));",
+		 "local m = midi.createNRPN() midi.setNRPN(m, 1, 1234, 16383) rack.log(midi.toString(m))", "ch01 nrpn param=1234 value=16383"},
+		{"let m = midi.createRPN(); midi.setRPN(m, 1, 0, 256); rack.log(midi.toString(m));",
+		 "local m = midi.createRPN() midi.setRPN(m, 1, 0, 256) rack.log(midi.toString(m))", "ch01 rpn param=0 value=256"},
+		{"let m = midi.createCc14bit(); midi.setCc14bit(m, 1, 7, 12345); rack.log(midi.toString(m));",
+		 "local m = midi.createCc14bit() midi.setCc14bit(m, 1, 7, 12345) rack.log(midi.toString(m))", "ch01 14-bit cc7=12345"},
+	};
+	for (const Case& c : cases) {
+		for (bool lua : {false, true}) {
+			Kit<> kit;
+			MidiKitModule* m = kit.m;
+			std::string body = lua ? c.lua : c.js;
+			m->loadScript(lua
+				? "--[[\n@engine minilua@v1\n--]]\nrack.onLoad = function()\n" + body + "\nend\n"
+				: "/**\n * @engine QuickJs@v1\n */\nrack.onLoad = function() {\n" + body + "\n};\n");
+			std::string log = drainLog(m);
+			REQUIRE(log.find(c.expected) != std::string::npos);
+		}
+	}
+}

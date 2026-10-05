@@ -857,6 +857,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "getPitchWheel", JS_NewCFunction(ctx, js_midi_getPitchWheel, "getPitchWheel", 1));
 		JS_SetPropertyStr(ctx, _midi, "getProgramChange", JS_NewCFunction(ctx, js_midi_getProgramChange, "getProgramChange", 1));
 		JS_SetPropertyStr(ctx, _midi, "getRaw", JS_NewCFunction(ctx, js_midi_getRaw, "getRaw", 1));
+		JS_SetPropertyStr(ctx, _midi, "toString", JS_NewCFunction(ctx, js_midi_toString, "toString", 1));
 		JS_SetPropertyStr(ctx, _midi, "getSysEx", JS_NewCFunction(ctx, js_midi_getSysEx, "getSysEx", 1));
 		JS_SetPropertyStr(ctx, _midi, "getSysExLength", JS_NewCFunction(ctx, js_midi_getSysExLength, "getSysExLength", 1));
 		JS_SetPropertyStr(ctx, _midi, "getValue", JS_NewCFunction(ctx, js_midi_getValue, "getValue", 1));
@@ -1910,6 +1911,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getSysExLength: invalid msg");
 		// Payload length only — f0/f7 framing excluded.
 		return JS_NewFloat64(ctx, std::max(0, getEngine(ctx)->msgStore[idx].in.msg.getSize() - 2));
+	}
+
+	// midi.toString(msg): one line for display, in the wording of MIDI-MON.
+	static JSValue js_midi_toString(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		size_t idx;
+		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.toString: invalid msg");
+		std::string str = messageText(getEngine(ctx)->msgStore[idx]);
+		return JS_NewStringLen(ctx, str.c_str(), str.length());
 	}
 
 	static JSValue js_midi_getRaw(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

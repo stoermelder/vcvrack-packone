@@ -116,6 +116,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("getSysEx", kGetters, {{"msg", MSG}}),
 		ApiFunction("getSysExLength", kGetters, {{"msg", MSG}}),
 		ApiFunction("getRaw", kGetters, {{"msg", MSG}}),
+		ApiFunction("toString", kGetters, {{"msg", MSG}}),
 
 		ApiFunction("isCc", kPredicates, {{"msg", MSG}}),
 		ApiFunction("isNoteOn", kPredicates, {{"msg", MSG}}),
