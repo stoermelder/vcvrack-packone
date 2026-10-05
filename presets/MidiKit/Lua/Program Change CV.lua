@@ -23,8 +23,6 @@ local config = {
 
 -- Note name of a program number under the same mapping (0 = C0)
 local NOTE_NAMES = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
 
 local function noteName(program)
     return NOTE_NAMES[program % 12 + 1] .. math.floor(program / 12)
@@ -38,13 +36,12 @@ rack.onLoad = function()
     -- Context menu - right-click the module to change the MIDI channel live.
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel",
         onGetValue = function()
-            return config.channel - 1
+            return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx + 1
+        onChange = function(value)
+            config.channel = value
             rack.setConfig("channel", config.channel)
             rack.log("Channel: ", config.channel)
         end

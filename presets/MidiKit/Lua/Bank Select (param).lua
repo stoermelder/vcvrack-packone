@@ -42,8 +42,6 @@ local config = {
 }
 
 local PRESETS_PER_BANK = 128
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
 
 -- Absolute index (bank * 128 + program) of the preset sent last, -1 if none
 local current = -1
@@ -96,13 +94,12 @@ rack.onLoad = function()
     -- Context menu - right-click the module to change the MIDI channel live.
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel",
         onGetValue = function()
-            return config.channel - 1
+            return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx + 1
+        onChange = function(value)
+            config.channel = value
             rack.setConfig("channel", config.channel)
             rack.log("Channel: ", config.channel)
         end

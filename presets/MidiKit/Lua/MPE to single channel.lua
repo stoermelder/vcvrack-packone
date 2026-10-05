@@ -114,18 +114,15 @@ end
 
 -- Context menu - right-click the module to change these settings live.
 -- Each menu mirrors a `config` value above; onChange applies the choice.
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
 
 rack.registerContextMenu({
     type = "options",
-    label = "Output channel",
-    options = CHANNEL_LABELS,
+    label = "#midichannel Output",
     onGetValue = function()
-        return config.outChannel - 1
+        return config.outChannel
     end,
-    onChange = function(idx)
-        config.outChannel = idx + 1
+    onChange = function(value)
+        config.outChannel = value
         rack.setConfig("outChannel", config.outChannel)
         rack.log("Output channel: ", config.outChannel)
     end

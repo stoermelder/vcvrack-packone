@@ -44,15 +44,12 @@ local PRESETS_PER_BANK = 128
 local GROUP_SIZE = 16
 local GROUPS = PRESETS_PER_BANK // GROUP_SIZE
 
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
+local BANK_OPTIONS = {}
+for b = 1, config.banks do BANK_OPTIONS[b] = { tostring(b - 1), b - 1 } end
 
-local BANK_LABELS = {}
-for b = 1, config.banks do BANK_LABELS[b] = tostring(b - 1) end
-
-local GROUP_LABELS = {}
+local GROUP_OPTIONS = {}
 for g = 0, GROUPS - 1 do
-    GROUP_LABELS[g + 1] = (g * GROUP_SIZE) .. "-" .. (g * GROUP_SIZE + GROUP_SIZE - 1)
+    GROUP_OPTIONS[g + 1] = { (g * GROUP_SIZE) .. "-" .. (g * GROUP_SIZE + GROUP_SIZE - 1), g }
 end
 
 -- Current selection, restored from the patch. Config numbers come back as
@@ -86,17 +83,18 @@ end
 -- place, which is how the labels follow the group.
 local function registerProgramMenu()
     local first = (program // GROUP_SIZE) * GROUP_SIZE
-    local labels = {}
-    for i = 1, GROUP_SIZE do labels[i] = tostring(first + i - 1) end
+    -- The value of an option is the absolute program number.
+    local programs = {}
+    for i = 1, GROUP_SIZE do programs[i] = { tostring(first + i - 1), first + i - 1 } end
     rack.registerContextMenu({
         type = "options",
         label = "Program",
-        options = labels,
+        options = programs,
         onGetValue = function()
-            return program % GROUP_SIZE
+            return program
         end,
-        onChange = function(idx)
-            program = (program // GROUP_SIZE) * GROUP_SIZE + idx
+        onChange = function(value)
+            program = value
             rack.setConfig("program", program)
             sendPreset()
         end
@@ -107,13 +105,12 @@ end
 rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel",
         onGetValue = function()
-            return config.channel - 1
+            return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx + 1
+        onChange = function(value)
+            config.channel = value
             rack.setConfig("channel", config.channel)
         end
     })
@@ -121,12 +118,12 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Bank",
-        options = BANK_LABELS,
+        options = BANK_OPTIONS,
         onGetValue = function()
             return bank
         end,
-        onChange = function(idx)
-            bank = idx
+        onChange = function(value)
+            bank = value
             rack.setConfig("bank", bank)
             sendPreset()
         end
@@ -135,13 +132,13 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Program group",
-        options = GROUP_LABELS,
+        options = GROUP_OPTIONS,
         onGetValue = function()
             return program // GROUP_SIZE
         end,
-        onChange = function(idx)
+        onChange = function(group)
             -- Keep the position within the group
-            program = idx * GROUP_SIZE + program % GROUP_SIZE
+            program = group * GROUP_SIZE + program % GROUP_SIZE
             rack.setConfig("program", program)
             registerProgramMenu()
         end

@@ -44,10 +44,6 @@ let config = {
     channel: rack.getConfig("channel", 0)
 };
 
-// Context menu choices
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
 function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
@@ -79,15 +75,14 @@ rack.onLoad = function() {
     // Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel+all",
         onGetValue: function() {
             return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx;
+        onChange: function(value, label) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
-            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+            rack.log("Channel: ", label);
         }
     });
 

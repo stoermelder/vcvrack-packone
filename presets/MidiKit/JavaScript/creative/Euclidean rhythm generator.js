@@ -150,10 +150,6 @@ function releaseSounding() {
     }
 };
 
-// Context menu choices
-let CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
 // Setup
 rack.onLoad = function() {
     // Notes leave on the frame of the clock edge instead of a block boundary.
@@ -171,13 +167,12 @@ rack.onLoad = function() {
     // Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type: "options",
-        label: "Output channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel Output",
         onGetValue: function() {
-            return config.outChannel - 1;
+            return config.outChannel;
         },
-        onChange: function(idx) {
-            config.outChannel = idx + 1;
+        onChange: function(value) {
+            config.outChannel = value;
             rack.setConfig("outChannel", config.outChannel);
             rack.log("Output channel: ", config.outChannel);
         }

@@ -31,9 +31,6 @@ const MAX_OUTPUTS = 4;
 // Most messages that can be created in one callback (engine limit)
 const MAX_MESSAGES = 128;
 
-// Context menu choices
-const OUTPUT_COUNT_LABELS = ["2", "3", "4"];
-
 // Internal state.
 // active: number (1-based) of the output currently receiving everything.
 // held: notes sent to the active output and not released yet, as [channel, note].
@@ -71,18 +68,18 @@ function switchTo(out) {
 // Registering a label that already exists replaces that menu item, which is how
 // the list follows a change of config.numOutputs.
 function registerActiveOutputMenu() {
-    const labels = [];
-    for (let i = 1; i <= config.numOutputs; i++) labels.push("Output " + i);
+    const outputs = [];
+    for (let i = 1; i <= config.numOutputs; i++) outputs.push(["Output " + i, i]);
 
     rack.registerContextMenu({
         type: "options",
         label: "Active output",
-        options: labels,
+        options: outputs,
         onGetValue: function() {
-            return active - 1;
+            return active;
         },
-        onChange: function(idx) {
-            switchTo(idx + 1);
+        onChange: function(out) {
+            switchTo(out);
         }
     });
 }
@@ -104,12 +101,12 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Number of outputs",
-        options: OUTPUT_COUNT_LABELS,
+        options: [["2", 2], ["3", 3], ["4", 4]],
         onGetValue: function() {
-            return config.numOutputs - 2;
+            return config.numOutputs;
         },
-        onChange: function(idx) {
-            config.numOutputs = idx + 2;
+        onChange: function(count) {
+            config.numOutputs = count;
             rack.setConfig("numOutputs", config.numOutputs);
             midiOut.enablePorts(config.numOutputs);
             // The active output may be gone now

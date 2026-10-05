@@ -44,15 +44,12 @@ const PRESETS_PER_BANK = 128;
 const GROUP_SIZE = 16;
 const GROUPS = PRESETS_PER_BANK / GROUP_SIZE;
 
-const CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+const BANK_OPTIONS = [];
+for (let b = 0; b < config.banks; b++) BANK_OPTIONS[BANK_OPTIONS.length] = [String(b), b];
 
-const BANK_LABELS = [];
-for (let b = 0; b < config.banks; b++) BANK_LABELS[BANK_LABELS.length] = String(b);
-
-const GROUP_LABELS = [];
+const GROUP_OPTIONS = [];
 for (let g = 0; g < GROUPS; g++) {
-    GROUP_LABELS[GROUP_LABELS.length] = (g * GROUP_SIZE) + "-" + (g * GROUP_SIZE + GROUP_SIZE - 1);
+    GROUP_OPTIONS[GROUP_OPTIONS.length] = [(g * GROUP_SIZE) + "-" + (g * GROUP_SIZE + GROUP_SIZE - 1), g];
 }
 
 // Current selection, restored from the patch
@@ -84,17 +81,18 @@ function sendPreset() {
 // place, which is how the labels follow the group.
 function registerProgramMenu() {
     const first = Math.floor(program / GROUP_SIZE) * GROUP_SIZE;
-    const labels = [];
-    for (let i = 0; i < GROUP_SIZE; i++) labels[labels.length] = String(first + i);
+    // The value of an option is the absolute program number.
+    const programs = [];
+    for (let i = 0; i < GROUP_SIZE; i++) programs[programs.length] = [String(first + i), first + i];
     rack.registerContextMenu({
         type: "options",
         label: "Program",
-        options: labels,
+        options: programs,
         onGetValue: function() {
-            return program % GROUP_SIZE;
+            return program;
         },
-        onChange: function(idx) {
-            program = Math.floor(program / GROUP_SIZE) * GROUP_SIZE + idx;
+        onChange: function(value) {
+            program = value;
             rack.setConfig("program", program);
             sendPreset();
         }
@@ -105,13 +103,12 @@ function registerProgramMenu() {
 rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel",
         onGetValue: function() {
-            return config.channel - 1;
+            return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx + 1;
+        onChange: function(value) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
         }
     });
@@ -119,12 +116,12 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Bank",
-        options: BANK_LABELS,
+        options: BANK_OPTIONS,
         onGetValue: function() {
             return bank;
         },
-        onChange: function(idx) {
-            bank = idx;
+        onChange: function(value) {
+            bank = value;
             rack.setConfig("bank", bank);
             sendPreset();
         }
@@ -133,13 +130,13 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Program group",
-        options: GROUP_LABELS,
+        options: GROUP_OPTIONS,
         onGetValue: function() {
             return Math.floor(program / GROUP_SIZE);
         },
-        onChange: function(idx) {
+        onChange: function(group) {
             // Keep the position within the group
-            program = idx * GROUP_SIZE + program % GROUP_SIZE;
+            program = group * GROUP_SIZE + program % GROUP_SIZE;
             rack.setConfig("program", program);
             registerProgramMenu();
         }

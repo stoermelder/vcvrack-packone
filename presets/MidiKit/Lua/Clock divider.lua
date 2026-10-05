@@ -46,19 +46,8 @@ local state = {
     running = false
 }
 
--- Context menu choices
-local DIVISORS = { 1, 2, 3, 6, 12, 24 }
-local DIVISOR_LABELS = { "1 (24 ppqn)", "2 (12 ppqn)", "3 (8 ppq)", "6 (16th)", "12 (8th)", "24 (quarter)" }
-
 local function resetPhase()
     state.tickCount = 0
-end
-
-local function divisorIndex()
-    for i = 1, #DIVISORS do
-        if DIVISORS[i] == config.divisor then return i - 1 end
-    end
-    return 0
 end
 
 -- Setup
@@ -68,12 +57,12 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Divisor",
-        options = DIVISOR_LABELS,
+        options = { {"1 (24 ppqn)", 1}, {"2 (12 ppqn)", 2}, {"3 (8 ppq)", 3}, {"6 (16th)", 6}, {"12 (8th)", 12}, {"24 (quarter)", 24} },
         onGetValue = function()
-            return divisorIndex()
+            return config.divisor
         end,
-        onChange = function(idx)
-            config.divisor = DIVISORS[idx + 1]
+        onChange = function(divisor)
+            config.divisor = divisor
             rack.setConfig("divisor", config.divisor)
             rack.log("Divisor: ", config.divisor, " (24 ppqn / ", config.divisor, ")")
         end

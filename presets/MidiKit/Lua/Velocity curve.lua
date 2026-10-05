@@ -44,10 +44,6 @@ local config = {
     channel = rack.getConfig("channel", 0)
 }
 
--- Context menu choices
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-
 local function matchesChannel(ch)
     return config.channel == 0 or ch == config.channel
 end
@@ -78,15 +74,14 @@ rack.onLoad = function()
     -- Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel+all",
         onGetValue = function()
             return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx
+        onChange = function(value, label)
+            config.channel = value
             rack.setConfig("channel", config.channel)
-            rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+            rack.log("Channel: ", label)
         end
     })
 

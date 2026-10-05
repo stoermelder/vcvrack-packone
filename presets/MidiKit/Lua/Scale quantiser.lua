@@ -44,10 +44,7 @@ local scales = {
 }
 
 -- Context menu choices
-local SCALE_NAMES = { "chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone" }
-local SCALE_LABELS = { "Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone" }
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
+local SCALE_OPTIONS = { {"Chromatic", "chromatic"}, {"Major", "major"}, {"Minor", "minor"}, {"Harmonic", "harmonic"}, {"Dorian", "dorian"}, {"Phrygian", "phrygian"}, {"Lydian", "lydian"}, {"Mixolydian", "mixolydian"}, {"Pentatonic", "pentatonic"}, {"Minor pentatonic", "minorPenta"}, {"Blues", "blues"}, {"Whole tone", "wholeTone"} }
 
 
 -- Configuration - defaults used when nothing has been persisted yet (or a
@@ -58,7 +55,7 @@ for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
 -- Persist the scale by NAME, not as the semitone-offset table itself. The
 -- table form used to require re-matching a persisted table back to one of
 -- the named scales by comparing elements (arraysEqual), purely so the
--- context menu's reference-equality check (scaleIndex(), below) still
+-- context menu's reference-equality check (scaleName(), below) still
 -- recognized it as selected - a workaround for persisting a value whose
 -- *identity* mattered. A name has no identity problem: it round-trips
 -- through JSON as itself, and looking it up in `scales` is one table read
@@ -147,11 +144,11 @@ local function quantise(note)
     return out
 end
 
-local function scaleIndex()
-    for i = 1, #SCALE_NAMES do
-        if config.scale == scales[SCALE_NAMES[i]] then return i - 1 end
+local function scaleName()
+    for i = 1, #SCALE_OPTIONS do
+        if config.scale == scales[SCALE_OPTIONS[i][2]] then return SCALE_OPTIONS[i][2] end
     end
-    return 0
+    return nil
 end
 
 -- Setup
@@ -173,28 +170,27 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Scale",
-        options = SCALE_LABELS,
+        options = SCALE_OPTIONS,
         onGetValue = function()
-            return scaleIndex()
+            return scaleName()
         end,
-        onChange = function(idx)
-            config.scale = scales[SCALE_NAMES[idx + 1]]
-            rack.setConfig("scale", SCALE_NAMES[idx + 1])
-            rack.log("Scale: ", SCALE_LABELS[idx + 1])
+        onChange = function(name, label)
+            config.scale = scales[name]
+            rack.setConfig("scale", name)
+            rack.log("Scale: ", label)
         end
     })
 
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel+all",
         onGetValue = function()
             return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx
-            rack.setConfig("channel", idx)
-            rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+        onChange = function(value, label)
+            config.channel = value
+            rack.setConfig("channel", value)
+            rack.log("Channel: ", label)
         end
     })
 

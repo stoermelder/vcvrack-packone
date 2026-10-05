@@ -64,9 +64,6 @@ local CHORD_INTERVALS = {
     { 0, 12 },       -- Octave doubling
     { 0, -12, 12 }   -- Three octaves
 }
-local CHORD_LABELS = { "Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves" }
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
 
 local function matchesChannel(ch)
     return config.channel == 0 or ch == config.channel
@@ -99,10 +96,10 @@ local function chordIndex()
             for j = 1, #CHORD_INTERVALS[i] do
                 if config.intervals[j] ~= CHORD_INTERVALS[i][j] then same = false break end
             end
-            if same then return i - 1 end
+            if same then return i end
         end
     end
-    return 0
+    return -1
 end
 
 -- Setup
@@ -117,28 +114,28 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Chord",
-        options = CHORD_LABELS,
+        -- The value of an option is its position in CHORD_INTERVALS, 1-based.
+        options = { {"Major triad", 1}, {"Minor triad", 2}, {"Minor seventh", 3}, {"Power chord", 4}, {"Octave doubling", 5}, {"Three octaves", 6} },
         onGetValue = function()
             return chordIndex()
         end,
-        onChange = function(idx)
-            config.intervals = CHORD_INTERVALS[idx + 1]
+        onChange = function(chord, label)
+            config.intervals = CHORD_INTERVALS[chord]
             rack.setConfig("intervals", config.intervals)
-            rack.log("Chord: ", CHORD_LABELS[idx + 1], " (", #config.intervals, " voices)")
+            rack.log("Chord: ", label, " (", #config.intervals, " voices)")
         end
     })
 
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel+all",
         onGetValue = function()
             return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx
+        onChange = function(value, label)
+            config.channel = value
             rack.setConfig("channel", config.channel)
-            rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+            rack.log("Channel: ", label)
         end
     })
 

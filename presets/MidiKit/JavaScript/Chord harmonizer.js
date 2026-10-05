@@ -64,9 +64,6 @@ let CHORD_INTERVALS = [
     [0, 12],        // Octave doubling
     [0, -12, 12]    // Three octaves
 ];
-let CHORD_LABELS = ["Major triad", "Minor triad", "Minor seventh", "Power chord", "Octave doubling", "Three octaves"];
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
 function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
@@ -82,7 +79,7 @@ function chordIndex() {
             if (same) return i;
         }
     }
-    return 0;
+    return -1;
 };
 
 // Setup
@@ -97,28 +94,28 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Chord",
-        options: CHORD_LABELS,
+        // The value of an option is its position in CHORD_INTERVALS.
+        options: [["Major triad", 0], ["Minor triad", 1], ["Minor seventh", 2], ["Power chord", 3], ["Octave doubling", 4], ["Three octaves", 5]],
         onGetValue: function() {
             return chordIndex();
         },
-        onChange: function(idx) {
-            config.intervals = CHORD_INTERVALS[idx];
+        onChange: function(chord, label) {
+            config.intervals = CHORD_INTERVALS[chord];
             rack.setConfig("intervals", config.intervals);
-            rack.log("Chord: ", CHORD_LABELS[idx], " (", config.intervals.length, " voices)");
+            rack.log("Chord: ", label, " (", config.intervals.length, " voices)");
         }
     });
 
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel+all",
         onGetValue: function() {
             return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx;
+        onChange: function(value, label) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
-            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+            rack.log("Channel: ", label);
         }
     });
 

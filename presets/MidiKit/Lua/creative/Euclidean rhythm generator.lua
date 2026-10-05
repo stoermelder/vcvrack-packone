@@ -151,10 +151,6 @@ local function releaseSounding()
     end
 end
 
--- Context menu choices
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
-
 -- Setup
 rack.onLoad = function()
     -- Notes leave on the frame of the clock edge instead of a block boundary.
@@ -172,13 +168,12 @@ rack.onLoad = function()
     -- Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type = "options",
-        label = "Output channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel Output",
         onGetValue = function()
-            return config.outChannel - 1
+            return config.outChannel
         end,
-        onChange = function(idx)
-            config.outChannel = idx + 1
+        onChange = function(value)
+            config.outChannel = value
             rack.setConfig("outChannel", config.outChannel)
             rack.log("Output channel: ", config.outChannel)
         end

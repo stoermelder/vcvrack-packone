@@ -62,8 +62,8 @@ local function targetChannel(note)
 end
 
 -- Context menu choices
-local PRESET_LABELS = {}
-for i = 0, #config.presets - 1 do PRESET_LABELS[i + 1] = presetLabel(i) end
+local PRESET_OPTIONS = {}
+for i = 0, #config.presets - 1 do PRESET_OPTIONS[i + 1] = { presetLabel(i), i } end
 
 -- Setup
 rack.onLoad = function()
@@ -76,14 +76,14 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Preset",
-        options = PRESET_LABELS,
+        options = PRESET_OPTIONS,
         onGetValue = function()
             return state.active
         end,
-        onChange = function(idx)
-            state.active = idx
-            rack.setConfig("activePreset", idx)
-            rack.log("Preset: ", PRESET_LABELS[idx + 1])
+        onChange = function(preset, label)
+            state.active = preset
+            rack.setConfig("activePreset", preset)
+            rack.log("Preset: ", label)
         end
     })
 

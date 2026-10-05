@@ -100,10 +100,6 @@ local DEFAULT_SCL = config.scl
 config.scl = rack.getConfig("scl", DEFAULT_SCL)
 if type(config.scl) ~= "string" then config.scl = DEFAULT_SCL end
 
--- Context menu choices
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-
 -- Internal state, indexed by 1-based output channel.
 -- noteOfChannel[c]     = incoming note currently sounding on output channel c (-1 = free).
 -- sentNoteOfChannel[c] = the note number actually sent there (may differ from the incoming one).
@@ -276,15 +272,14 @@ rack.onLoad = function()
     -- Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type = "options",
-        label = "Input channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel+all Input",
         onGetValue = function()
             return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx
+        onChange = function(value, label)
+            config.channel = value
             rack.setConfig("channel", config.channel)
-            rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+            rack.log("Input channel: ", label)
         end
     })
 

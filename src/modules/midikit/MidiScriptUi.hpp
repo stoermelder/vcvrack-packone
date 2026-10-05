@@ -133,7 +133,13 @@ struct ScriptContextMenuItems : ui::MenuEntry {
 		Widget* anchor = this;
 		for (const MidiScript::ScriptMenuItem& spec : ctx->specs) {
 			Widget* item;
-			if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
+			if (spec.type == MidiScript::ScriptMenuItem::Type::Separator) {
+				item = new MenuSeparator;
+			}
+			else if (spec.type == MidiScript::ScriptMenuItem::Type::Label) {
+				item = createMenuLabel(spec.label);
+			}
+			else if (spec.type == MidiScript::ScriptMenuItem::Type::Boolean) {
 				item = createMenuItem(spec.label, CHECKMARK(spec.checked), [m, spec]() {
 					m->host.getActiveEngine()->invokeContextMenuCallback(spec.callbackId, spec.checked ? 0 : 1);
 				});

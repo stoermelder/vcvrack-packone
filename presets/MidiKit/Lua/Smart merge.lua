@@ -36,9 +36,6 @@ local config = {
     numInputs = rack.getConfig("numInputs", 2)
 }
 
--- Context menu choices
-local INPUT_COUNT_LABELS = { "2", "3", "4" }
-
 -- Internal state.
 -- active: number (1-based) of the input currently routed to the output.
 -- inputs[i] is what input i has sent so far:
@@ -137,18 +134,18 @@ end
 -- Registering a label that already exists replaces that menu item, which is how
 -- the list follows a change of config.numInputs.
 local function registerActiveInputMenu()
-    local labels = {}
-    for i = 1, config.numInputs do labels[i] = "Input " .. i end
+    local inputs = {}
+    for i = 1, config.numInputs do inputs[i] = { "Input " .. i, i } end
 
     rack.registerContextMenu({
         type = "options",
         label = "Active input",
-        options = labels,
+        options = inputs,
         onGetValue = function()
-            return state.active - 1
+            return state.active
         end,
-        onChange = function(idx)
-            switchTo(idx + 1)
+        onChange = function(input)
+            switchTo(input)
         end
     })
 end
@@ -173,12 +170,12 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Number of inputs",
-        options = INPUT_COUNT_LABELS,
+        options = { {"2", 2}, {"3", 3}, {"4", 4} },
         onGetValue = function()
-            return config.numInputs - 2
+            return config.numInputs
         end,
-        onChange = function(idx)
-            config.numInputs = idx + 2
+        onChange = function(count)
+            config.numInputs = count
             rack.setConfig("numInputs", config.numInputs)
             midi.enablePorts(config.numInputs)
             -- The active input may be gone now
