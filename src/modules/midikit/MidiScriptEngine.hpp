@@ -210,7 +210,7 @@ struct MidiScriptEngine {
 	static std::string messageText(const ScriptMessage& s) {
 		MidiText::Fields f;
 		if (s.isNrpn || s.isCc14bit) {
-			if (s.in.paramNumber < 0 && !s.isRpn) return MidiText::format(f);   // not set yet
+			if (s.in.paramNumber < 0) return MidiText::format(f);   // not set yet
 			MessageEx m(s.in.msg);
 			m.type = s.isCc14bit ? MessageEx::Type::CC_14BIT : s.isRpn ? MessageEx::Type::RPN : MessageEx::Type::NRPN;
 			m.paramNumber = isRpnNull(s) ? int16_t(-1) : s.in.paramNumber;
