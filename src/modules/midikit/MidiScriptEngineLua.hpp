@@ -1241,6 +1241,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (lua_gettop(L) < 1 || !lua_istable(L, 1)) {
 			return luaL_error(L, "registerContextMenu: expected a table");
 		}
+		// Extra arguments would shift the absolute indices below.
+		lua_settop(L, 1);
 
 		// luaL_error longjmps past C++ destructors (see sendEntry()), so nothing with
 		// a destructor may be alive across it: every check runs first, on the Lua

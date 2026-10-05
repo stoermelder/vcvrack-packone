@@ -263,6 +263,33 @@ TEST_CASE("registerContextMenu with an existing label replaces the item", "[Midi
 	REQUIRE(luaClick.log.find("old") == std::string::npos);
 }
 
+// Extra arguments after the table are ignored: JS always did, Lua read its fields
+// by absolute stack index and failed with "type must be a string".
+static const char* JS_REGISTER_EXTRA_ARG = R"(/**
+ * @engine QuickJs@v1
+ */
+rack.registerContextMenu({ type: "boolean", label: "X", onChange: function() {} }, null);
+rack.registerContextMenu({ type: "options", label: "Y", options: ["a", "b"], onChange: function() {} }, 1, "z");
+)";
+
+static const char* LUA_REGISTER_EXTRA_ARG = R"(--[[
+@engine minilua@v1
+--]]
+rack.registerContextMenu({ type = "boolean", label = "X", onChange = function() end }, nil)
+rack.registerContextMenu({ type = "options", label = "Y", options = {"a", "b"}, onChange = function() end }, 1, "z")
+)";
+
+TEST_CASE("registerContextMenu ignores extra arguments after the table", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(JS_REGISTER_EXTRA_ARG);
+	MenuResult lua = runMenu(LUA_REGISTER_EXTRA_ARG);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	REQUIRE(js.specs.size() == 2);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(lua.specs[0].label == "X");
+	REQUIRE(lua.specs[1].options == std::vector<std::string>{"a", "b"});
+}
+
 // rack.unregisterContextMenu(label) removes the item and reports whether one
 // existed; the remaining items keep their order.
 static const char* JS_REGISTER_UNREGISTER = R"(/**
