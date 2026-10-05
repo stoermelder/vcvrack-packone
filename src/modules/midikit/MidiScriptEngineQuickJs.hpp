@@ -1037,6 +1037,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			JS_FreeValue(ctx, labelV);
 			if (label.empty()) return jsThrow(ctx, "registerContextMenu: label must be a non-empty string");
 			spec.label = label;
+			spec.key = spec.label;
 		}
 		// A preset menu brings its own options; the script's are not looked at.
 		const char* presetSuffix = "";
@@ -1147,7 +1148,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// reference (see invokeContextMenuCallback()).
 		// A separator has no label to be found by, so it is always added.
 		for (auto& kv : e->contextMenus) {
-			if (spec.type == ScriptMenuItem::Type::Separator || kv.second.spec.label != spec.label) continue;
+			if (spec.type == ScriptMenuItem::Type::Separator || kv.second.spec.key != spec.key) continue;
 			JS_FreeValue(ctx, kv.second.callbackFn);
 			JS_FreeValue(ctx, kv.second.onGetValueFn);
 			spec.callbackId = kv.first;
@@ -1180,7 +1181,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 		assert(e->onWorkerThread());
 		for (auto it = e->contextMenus.begin(); it != e->contextMenus.end(); ++it) {
-			if (it->second.spec.type == ScriptMenuItem::Type::Separator || it->second.spec.label != label) continue;
+			if (it->second.spec.type == ScriptMenuItem::Type::Separator || it->second.spec.key != label) continue;
 			JS_FreeValue(ctx, it->second.callbackFn);
 			JS_FreeValue(ctx, it->second.onGetValueFn);
 			e->contextMenus.erase(it);

@@ -1348,6 +1348,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		ScriptMenuItem spec;
 		spec.type = type;
 		spec.label.assign(label, labelLen);
+		spec.key = spec.label;
 		if (type == ScriptMenuItem::Type::Options && !preset) {
 			spec.options.resize(static_cast<size_t>(optionCount));
 			if (pairs) spec.optionValues.resize(static_cast<size_t>(optionCount));
@@ -1390,7 +1391,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		// the Lua stack (see invokeContextMenuCallback()), so it stays alive.
 		// A separator has no label to be found by, so it is always added.
 		for (auto& kv : e->contextMenus) {
-			if (type == ScriptMenuItem::Type::Separator || kv.second.spec.label != spec.label) continue;
+			if (type == ScriptMenuItem::Type::Separator || kv.second.spec.key != spec.key) continue;
 			luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
 			if (kv.second.onGetValueRef != LUA_NOREF) {
 				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.onGetValueRef);
@@ -1429,7 +1430,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		assert(e->onWorkerThread());
 		for (auto it = e->contextMenus.begin(); it != e->contextMenus.end(); ++it) {
-			if (it->second.spec.type == ScriptMenuItem::Type::Separator || it->second.spec.label != label) continue;
+			if (it->second.spec.type == ScriptMenuItem::Type::Separator || it->second.spec.key != label) continue;
 			luaL_unref(L, LUA_REGISTRYINDEX, it->second.callbackRef);
 			if (it->second.onGetValueRef != LUA_NOREF) {
 				luaL_unref(L, LUA_REGISTRYINDEX, it->second.onGetValueRef);

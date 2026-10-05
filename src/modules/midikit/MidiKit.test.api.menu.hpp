@@ -986,6 +986,35 @@ TEST_CASE("#midichannel is a plain label on other item types", "[MidiKit][CrossE
 	REQUIRE(lua.specs[0].label == "#midichannel");
 }
 
+TEST_CASE("Preset menus are keyed by the registered label, not the display text", "[MidiKit][CrossEngine]") {
+	const std::string jsReg =
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel\", onChange: function() {} });\n"
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel+all\", onChange: function() {} });\n"
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel Out\", onChange: function() {} });\n"
+		"rack.registerContextMenu({ type: \"boolean\", label: \"MIDI channel\", onChange: function() {} });\n"
+		"rack.log(\"u=\" + rack.unregisterContextMenu(\"#midichannel Out\") + rack.unregisterContextMenu(\"#midichannel Out\"));";
+	const std::string luaReg =
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel\", onChange = function() end })\n"
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel+all\", onChange = function() end })\n"
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel Out\", onChange = function() end })\n"
+		"rack.registerContextMenu({ type = \"boolean\", label = \"MIDI channel\", onChange = function() end })\n"
+		"rack.log(\"u=\" .. tostring(rack.unregisterContextMenu(\"#midichannel Out\")) .. tostring(rack.unregisterContextMenu(\"#midichannel Out\")))";
+	MenuResult js = runMenu(jsMenu(jsReg));
+	MenuResult lua = runMenu(luaMenu(luaReg));
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	// "#midichannel", "#midichannel+all" and the plain "MIDI channel" item stay apart;
+	// "#midichannel Out" was removed by the label it was registered with.
+	REQUIRE(js.specs.size() == 3);
+	REQUIRE(js.specs[0].label == "MIDI channel");
+	REQUIRE(js.specs[1].label == "MIDI channel");
+	REQUIRE(js.specs[1].options[0] == "All");
+	REQUIRE(js.specs[2].type == ScriptMenuItem::Type::Boolean);
+	REQUIRE(js.loadLog.find("u=truefalse") != std::string::npos);
+	REQUIRE(lua.loadLog.find("u=truefalse") != std::string::npos);
+}
+
 TEST_CASE("#midichannel takes a suffix for the label", "[MidiKit][CrossEngine]") {
 	MenuResult js = runMenu(jsMenu(
 		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel Output\", onChange: function() {} });\n"

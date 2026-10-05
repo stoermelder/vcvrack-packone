@@ -152,6 +152,9 @@ struct ScriptMenuItem {
 	enum class Type { Boolean, Options, Action, FileOpen, Separator, Label } type = Type::Boolean;
 	static const size_t fileMaxBytes = 8192;
 	std::string label;
+	// The label as the script registered it, before a preset turned it into display text.
+	// Registering again and unregisterContextMenu() match on this, never on `label`.
+	std::string key;
 	// Options variant: selectable labels and the current selection index (-1: none).
 	// optionValues is empty for a plain list of labels, where an option stands for its
 	// index; with [label, value] pairs it holds one value per label.
