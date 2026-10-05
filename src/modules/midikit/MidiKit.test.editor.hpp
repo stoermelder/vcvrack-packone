@@ -205,6 +205,32 @@ TEST_CASE("Editor: Apply & Close keeps the editor open when the script fails to 
 	REQUIRE(e.overlay->requestedDelete);
 }
 
+TEST_CASE("Editor: Apply is ignored until the previous apply has come back", "[MidiKit][Editor]") {
+	// SyncWorker loads at once, but the outcome only reaches the editor through the log
+	// pump in the next frame.
+	EditorRig h(EditorRig::SyncWorker);
+	OpenEditor e = openEditorOn(h, h.mw);
+	const std::string good = "/**\n * @engine QuickJs@v1\n */\nrack.log(\"ok\");\n";
+	const std::string bad = "/**\n * @engine QuickJs@v1\n */\nthis is not javascript(\n";
+
+	e.field->setText(good);
+	e.dialog->apply();
+	e.field->setText(bad);
+	e.dialog->applyAndClose();
+	REQUIRE(h.m->host.script == good);   // the second click did nothing
+
+	h.dspStep();
+	h.uiFrames(2);
+	REQUIRE_FALSE(e.overlay->requestedDelete);
+
+	// Back: the next apply goes through, and closes on its own outcome.
+	e.field->setText(good);
+	e.dialog->applyAndClose();
+	h.dspStep();
+	h.uiFrames(2);
+	REQUIRE(e.overlay->requestedDelete);
+}
+
 TEST_CASE("Editor: Apply & Close of an empty script closes", "[MidiKit][Editor]") {
 	EditorRig h(EditorRig::SyncWorker);
 	OpenEditor e = openEditorOn(h, h.mw);

@@ -969,9 +969,10 @@ struct ScriptEditorHost {
 
 	// Apply the buffer: make the owner run this text. Called for Apply and Apply & Close.
 	// The owner loads asynchronously and calls `done(ok)` (when given) once the script has
-	// loaded (true) or failed to (false), from the UI thread. It never calls it for an
-	// apply that a later apply superseded. Apply & Close closes the editor on true only; on
-	// a failure the editor stays open, with the error in the log area.
+	// loaded (true) or failed to (false), from the UI thread. The dialog does not call
+	// apply() again until `done` has come back, so there is never a superseded apply.
+	// Apply & Close closes the editor on true only; on a failure the editor stays open,
+	// with the error in the log area.
 	virtual void apply(const std::string& text, std::function<void(bool)> done) = 0;
 
 	// The text the owner is running right now. Revert reloads the buffer from it.
@@ -1719,6 +1720,9 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		APP->event->setSelectedWidget(field);
 	}
 
+	// An apply is waiting for the owner's outcome.
+	bool applying = false;
+
 	void apply() {
 		applyText(nullptr);
 	}
@@ -1731,8 +1735,17 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 	}
 
 	void applyText(std::function<void(bool)> done) {
+		// One apply at a time: a second click before the first has loaded is ignored, so
+		// `done` always belongs to the apply that produced the outcome.
+		if (applying) return;
 		std::string text = field->text;
-		if (host) host->apply(text, std::move(done));
+		if (host) {
+			applying = true;
+			host->apply(text, [this, done](bool ok) {
+				applying = false;
+				if (done) done(ok);
+			});
+		}
 		baseline = text;
 		updateDirty();
 		focusField();
