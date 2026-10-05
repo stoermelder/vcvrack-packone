@@ -466,6 +466,8 @@ end
 
 `midi.setRaw()` covers message types without their own setter, such as an MTC quarter frame (status `f1`).
 
+`setRaw()` does **no validation** beyond an even number of hex digits and the length limit. It does not check the status byte, the number of data bytes, the `00` to `7f` range of data bytes, or that a SysEx ends with `f7`. The bytes are sent as given, so the script is responsible for building a valid MIDI message. For SysEx use `midi.setSysEx()`, which adds `f0` / `f7` and checks the data bytes.
+
 ```js
 midi.onMessage = function(midiPort, msg, msgType) {
    if (msgType === midi.NOTE_ON) {
@@ -1119,7 +1121,7 @@ Setters fill or change a message. Most take the channel as the second argument.
 | `midi.setChannel(msg, ch)` | change only the channel. On a group handle: every message of the group |
 | `midi.setValue(msg, value)` | change only the data value (velocity, CC value), 0 to 127. On a group handle: the combined 14-bit value, 0 to 16383 |
 | `midi.setSysEx(msg, hex)` | payload only: `f0` / `f7` are added for you, so pass `"43104c0000"`, not `"f043104c0000f7"`. Every byte must be `00` to `7f`, at most 8192 bytes |
-| `midi.setRaw(msg, hex)` | the exact bytes, nothing added, for example `"f11a"` for an MTC quarter frame. At most 8194 bytes |
+| `midi.setRaw(msg, hex)` | the exact bytes, nothing added and no validation of the content (see [Send raw bytes](#send-raw-bytes)), for example `"f11a"` for an MTC quarter frame. At most 8194 bytes |
 | `midi.setNRPN(handle, ch, number, value)` | see [NRPN, RPN and 14-bit CC](#nrpn-rpn-and-14-bit-cc) |
 | `midi.setRPN(handle, ch, number, value)` | |
 | `midi.setCc14bit(handle, ch, cc, value)` | |
@@ -1929,7 +1931,7 @@ Every limit a script can run into, and what happens there. Anything not listed i
 | Output queue | 2048 messages per module, handed on 128 at a time every 8 samples | the message is dropped and logged |
 | Scheduled by time | 256 per output (`sendAfterMs()`, `sendAtFrame()`) | the message is sent at once, logged once per script |
 | Scheduled by trigger | 32 per trigger input channel (`sendAfterTrigger()`) | the message is sent at once, logged once per script |
-| SysEx | 8192 payload bytes (8194 with `f0` / `f7`), only bytes `00` to `7f`. That's about 2.6 s on a classic 5-pin MIDI cable | `midi.setSysEx()` and `midi.setRaw()` raise an error. A longer incoming message is dropped whole and "MIDI input: message(s) longer than 8194 bytes dropped" is logged, so whatever a script receives it can also forward or clone |
+| SysEx | 8192 payload bytes (8194 with `f0` / `f7`); `setSysEx()` accepts only bytes `00` to `7f`, `setRaw()` does not check the bytes. That's about 2.6 s on a classic 5-pin MIDI cable | `midi.setSysEx()` and `midi.setRaw()` raise an error. A longer incoming message is dropped whole and "MIDI input: message(s) longer than 8194 bytes dropped" is logged, so whatever a script receives it can also forward or clone |
 | Tipsy | 256 bytes of data, MIME type at most 255 characters | nothing is sent, and "Tipsy: invalid parameters" or "Tipsy: mime type too long" is logged. A received stream that is too long is reported as malformed |
 | Saved settings | 64 KB in total, values nested at most 4 levels, keys at most 64 characters | the change is rejected and logged |
 | Broadcasts | 4 KB per value, topic at most 64 bytes, 16 waiting per receiver | the broadcast is rejected (sender) or dropped (receiver) and logged |
