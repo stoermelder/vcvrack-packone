@@ -161,6 +161,9 @@ struct EightFaceModule : Module {
 	}
 
 	~EightFaceModule() {
+		// dispatch's workers can still be inside applyPreset() reading presetSlot; this body runs
+		// before any member is destroyed, so stop them before freeing the JSON below.
+		dispatch.stopWorkers();
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
