@@ -62,6 +62,14 @@ struct MessageEx {
 
     MessageEx(const rack::midi::Message& msg);
 
+    // Fills `out` for a message that needs no state to decode: its type and, for
+    // pitch bend and song position, the 14-bit value. Everything MessageEx has a Type
+    // for except the assembled NRPN/RPN/14-bit CC. False for any other message
+    // (also the system messages without a Type, and an empty one), leaving `out` as
+    // constructed. Used by MidiDecoder, and by anyone who needs the type of a single
+    // message without a decoder.
+    static bool decodeBasic(const rack::midi::Message& msg, MessageEx& out);
+
     uint8_t getChannel() const;
     uint8_t getNote() const;
     int16_t getValue() const;
