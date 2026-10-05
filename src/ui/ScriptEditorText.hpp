@@ -210,6 +210,33 @@ inline bool looksLikeError(const std::string& line) {
 	return lower.find("error") != std::string::npos || lower.find("exception") != std::string::npos;
 }
 
+// The script line a log line points to, or 0: the number after the first "script:" that
+// is followed by digits. That is how both engines name the script in an error (Lua
+// "script:6: attempt to ...", QuickJS "at f (script:6:7)"). "Error loading script: " has
+// the word too, without a number, and is skipped.
+inline int scriptLineOf(const std::string& logLine) {
+	static const std::string key = "script:";
+	size_t pos = 0;
+	while ((pos = logLine.find(key, pos)) != std::string::npos) {
+		bool boundary = pos == 0;
+		if (!boundary) {
+			unsigned char prev = (unsigned char)logLine[pos - 1];
+			boundary = !(std::isalnum(prev) || prev == '_' || prev == '.');
+		}
+		size_t d = pos + key.size();
+		long n = 0;
+		size_t digits = 0;
+		while (d < logLine.size() && std::isdigit((unsigned char)logLine[d]) && digits < 8) {
+			n = n * 10 + (logLine[d] - '0');
+			d++;
+			digits++;
+		}
+		if (boundary && digits > 0 && n >= 1) return (int)n;
+		pos += key.size();
+	}
+	return 0;
+}
+
 // ── Find ──
 
 inline std::string asciiLower(const std::string& s) {
