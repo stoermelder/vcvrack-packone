@@ -305,13 +305,13 @@ struct BrowserSearchField : ui::TextField {
 	void onSelectKey(const event::SelectKey& e) override {
 		bool propagate = !e.getTarget();
 
-		if (handlers.dispatch(e.key, e.mods, e.action)) {
+		if (handlers.dispatch(e.key, e.mods, e.action, e.keyName)) {
 			propagate = false;
 			e.consume(this);
 		}
 
 		// Keep the hovered-module toggles out of the text field.
-		const std::string& id = keymap->lookup(e.key, e.mods, e.action, {"ModelBox"});
+		const std::string& id = keymap->lookup(e.key, e.mods, e.action, {"ModelBox"}, e.keyName);
 		propagate = propagate && id != "modelbox.favorite.toggle" && id != "modelbox.hidden.toggle";
 
 		if (propagate) {

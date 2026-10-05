@@ -211,11 +211,11 @@ struct BrowserSearchField : ui::TextField {
 		dropDown = openDropdown();
 
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			if (handlers.dispatch(e.key, e.mods, e.action)) {
+			if (handlers.dispatch(e.key, e.mods, e.action, e.keyName)) {
 				e.consume(this);
 				return;
 			}
-			if (!dropDown && selectedModelHandlers.dispatch(e.key, e.mods, e.action)) {
+			if (!dropDown && selectedModelHandlers.dispatch(e.key, e.mods, e.action, e.keyName)) {
 				e.consume(this);
 				return;
 			}

@@ -168,9 +168,28 @@ KeyCombo::KeyCombo(const char* spec) {
 	mods = m;
 }
 
-bool KeyCombo::matches(int eventKey, int eventMods) const {
+// The letter a layout-aware key name stands for, or 0 if it is not a single ASCII letter.
+static int layoutLetter(const std::string& keyName) {
+	if (keyName.size() != 1) return 0;
+	char c = keyName[0];
+	if (c >= 'a' && c <= 'z') return c - 'a' + 'A';
+	if (c >= 'A' && c <= 'Z') return c;
+	return 0;
+}
+
+static bool comboMatchesKey(const KeyCombo& c, int fixedKey, const std::string& keyName) {
+	if (c.key >= GLFW_KEY_A && c.key <= GLFW_KEY_Z) {
+		// GLFW_KEY_A..Z equal the ASCII capitals.
+		int letter = layoutLetter(keyName);
+		if (letter) return letter == c.key;
+	}
+	return c.key == fixedKey;
+}
+
+bool KeyCombo::matches(int eventKey, int eventMods, const std::string& eventKeyName) const {
 	if (!valid()) return false;
-	return StoermelderPackOne::keyFix(eventKey) == key && (eventMods & RACK_MOD_MASK) == mods;
+	return comboMatchesKey(*this, StoermelderPackOne::keyFix(eventKey), eventKeyName)
+		&& (eventMods & RACK_MOD_MASK) == mods;
 }
 
 std::string KeyCombo::toString() const {
@@ -268,7 +287,8 @@ void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
 	}
 }
 
-const std::string& Keymap::lookup(int key, int mods, int action, const Contexts& contexts) const {
+const std::string& Keymap::lookup(int key, int mods, int action, const Contexts& contexts,
+                                   const std::string& keyName) const {
 	int fixedKey = StoermelderPackOne::keyFix(key);
 	int maskedMods = mods & RACK_MOD_MASK;
 	for (const auto& a : actions_) {
@@ -278,7 +298,7 @@ const std::string& Keymap::lookup(int key, int mods, int action, const Contexts&
 		if (action == GLFW_REPEAT && a.trigger != GLFW_REPEAT) continue;
 		if (!contexts.empty() && std::find(contexts.begin(), contexts.end(), a.context) == contexts.end()) continue;
 		for (const auto& c : a.combos) {
-			if (c.valid() && c.key == fixedKey && c.mods == maskedMods) return a.id;
+			if (c.valid() && c.mods == maskedMods && comboMatchesKey(c, fixedKey, keyName)) return a.id;
 		}
 	}
 	return EMPTY;
@@ -579,7 +599,7 @@ void KeymapHandlers::onTry(const std::string& id, Predicate when, TryHandler h) 
 	entries_.push_back(Entry{id, std::move(when), std::move(h)});
 }
 
-bool KeymapHandlers::dispatch(int key, int mods, int action) const {
+bool KeymapHandlers::dispatch(int key, int mods, int action, const std::string& keyName) const {
 	if (!keymap) return false;
 
 	bool exclusiveActive = false;
@@ -587,7 +607,7 @@ bool KeymapHandlers::dispatch(int key, int mods, int action) const {
 		if (gate()) { exclusiveActive = true; break; }
 	}
 
-	const std::string& id = keymap->lookup(key, mods, action, contexts);
+	const std::string& id = keymap->lookup(key, mods, action, contexts, keyName);
 	if (id.empty()) return exclusiveActive;   // even an unbound key is swallowed by a picker
 
 	// Pass 1: predicated entries, in registration order.

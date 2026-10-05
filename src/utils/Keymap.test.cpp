@@ -56,6 +56,30 @@ static const char* SLUG = "TestModule";
 
 // KeyCombo grammar
 
+
+TEST_CASE("KeyCombo letter bindings follow the layout-aware key name", "[Keymap]") {
+	KeyCombo z("Ctrl+Z");
+	// QWERTZ: the key labelled Z sits at the US Y position, and the US Z position is labelled Y.
+	CHECK(z.matches(GLFW_KEY_Y, RACK_MOD_CTRL, "z"));
+	CHECK_FALSE(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, "y"));
+	// No name, or a non-Latin letter: physical key code.
+	CHECK(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL));
+	CHECK(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, "\xD1\x8F"));
+	// Non-letters are always physical, whatever the name says.
+	KeyCombo one("Ctrl+1");
+	CHECK(one.matches(GLFW_KEY_1, RACK_MOD_CTRL, "&"));
+	CHECK_FALSE(one.matches(GLFW_KEY_2, RACK_MOD_CTRL, "1"));
+}
+
+TEST_CASE("Keymap::lookup resolves letters by layout name when given", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.undo", "Undo", "ctx", "Ctrl+Z");
+	CHECK(km->lookup(GLFW_KEY_Y, RACK_MOD_CTRL, GLFW_PRESS, {}, "z") == "a.undo");
+	CHECK(km->lookup(GLFW_KEY_Z, RACK_MOD_CTRL, GLFW_PRESS, {}, "y") == "");
+	CHECK(km->lookup(GLFW_KEY_Z, RACK_MOD_CTRL, GLFW_PRESS) == "a.undo");
+}
+
 TEST_CASE("KeyCombo round-trips every table entry through toString/parse", "[Keymap]") {
 	const char* specs[] = {
 		"Space", "Escape", "Enter", "Tab", "Backspace", "Up", "Down", "Left", "Right",

@@ -68,7 +68,11 @@ widget. Behaviour goes into a `KeymapHandlers` owned by the widget, which is des
 
 ## dispatch(): how a key finds its handler
 
-`dispatch(key, mods, action)` does two things in order:
+`dispatch(key, mods, action, keyName)` does two things in order. `keyName` is optional: pass the
+event's `e.keyName` and letter bindings (A-Z) follow the key *labelled* so on the current layout
+(Ctrl+Z is the "Z" key on QWERTZ, not the US-position one); without it, or when it is not a
+single ASCII letter, matching falls back to the physical GLFW key code. Non-letters always match
+by key code.
 
 1. **Resolve the key to one action id** with `Keymap::lookup()`. Only actions in the handlers'
    `contexts` are considered (all if none were given). The **first registered** match wins.
