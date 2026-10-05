@@ -522,3 +522,36 @@ TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") 
 
 	Test::destroyWidget(widget);
 }
+
+TEST_CASE("Log display: the lines scroll once they outgrow the area, and a view scrolled back stays put", "[MidiMon][Log]") {
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
+	auto widget = Test::createWidget<MidiMonWidget>(module);
+	rack::ui::ScrollWidget* scroll = widget->logScroll;
+	auto push = [&]() {
+		RawEntry r;
+		r.kind = RawEntry::Kind::DATE;
+		r.frame = 0;
+		module->midiLogMessages.push(r);
+		widget->step();
+		widget->logDisplay->step();
+	};
+
+	// The two header entries of the construction: nothing to scroll.
+	push();
+	REQUIRE(widget->logDisplay->box.size.y == scroll->box.size.y);
+
+	for (int i = 0; i < 100; i++) push();
+	REQUIRE(widget->logDisplay->box.size.y > scroll->box.size.y);
+
+	// Scrolled back, a new line does not move what is on screen; a clear starts over.
+	scroll->offset.y = 50.f;
+	push();
+	REQUIRE(scroll->offset.y == 50.f + widget->logDisplay->fontSize);
+	widget->resetLog();
+	widget->logDisplay->step();
+	REQUIRE(scroll->offset.y == 0.f);
+	REQUIRE(widget->logDisplay->box.size.y == scroll->box.size.y);
+
+	Test::destroyWidget(widget);
+}

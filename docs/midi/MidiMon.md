@@ -30,3 +30,4 @@ Each log entry is prefixed with a timing indicator in square brackets. By defaul
     - Increased buffered message count from 512 to 4096
 - v2.7.0
     - Improved performance (no memory allocation on dsp, lock-free MIDI-input)
+    - Added scrollbar to display widget

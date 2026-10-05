@@ -38,6 +38,7 @@
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - Module [MIDI-MON](./docs/midi/MidiMon.md)
     - Improved performance (no memory allocation on dsp, lock-free MIDI-input)
+    - Added scrollbar to display widget
 - Module [SIREN](./docs/siren/Siren.md)
     - Fixed a background worker that could stall indefinitely
     - Fixed broken "Cancel tag classification"

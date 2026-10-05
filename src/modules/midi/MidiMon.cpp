@@ -340,10 +340,14 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 };
 
 
+// The log text, newest line first. It is the content of a ScrollWidget, so it is as
+// tall as all its lines and scrolling, clipping and the scrollbar are the ScrollWidget's.
 struct LogDisplay : LedTextDisplay {
 	std::list<LogEntry>* buffer;
 	bool* showFrame = nullptr;
 	bool dirty = true;
+	// At least the height of the ScrollWidget's viewport.
+	float minHeight = 0.f;
 
 	LogDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
@@ -356,31 +360,46 @@ struct LogDisplay : LedTextDisplay {
 		LedTextDisplay::step();
 		if (dirty) {
 			text = "";
-			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize) + 1);
-			size_t i = 0;
+			float lines = 0.f;
 			bool frameMode = showFrame && *showFrame;
 			for (LogEntry s : *buffer) {
-				if (i >= size) break;
 				LOG_FORMAT f = std::get<0>(s);
 				float timestamp = std::get<1>(s);
 				int64_t frame = std::get<2>(s);
 				switch (f) {
 					case LOG_FORMAT::TIMESTAMP:
+						lines += 1.f;
 						if (frameMode)
 							text += string::f("[%9" PRId64 "] %s\n", frame, std::get<3>(s).c_str());
 						else
 							text += string::f("[%9.4f] %s\n", timestamp, std::get<3>(s).c_str());
 						break;
 					case LOG_FORMAT::TEXT:
+						lines += 1.f;
 						text += string::f("%s\n", std::get<3>(s).c_str());
 						break;
 					case LOG_FORMAT::INDENTED:
+						lines += 1.f;
 						text += string::f("     %s\n", std::get<3>(s).c_str());
 						break;
 					default:
 						break;
 				};
 			}
+			// A line is one fontSize high; a long one wraps into more, which only the
+			// font can measure, so without a window the entries are counted.
+			float h = lines * fontSize;
+			if (APP->window && !text.empty()) {
+				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+				NVGcontext* vg = APP->window->vg;
+				nvgFontFaceId(vg, font->handle);
+				nvgFontSize(vg, fontSize);
+				float bounds[4];
+				nvgTextBoxBounds(vg, textOffset.x, textOffset.y + fontSize, box.size.x - 2 * textOffset.x, text.c_str(), NULL, bounds);
+				h = std::max(h, bounds[3] - bounds[1]);
+			}
+			box.size.y = std::max(minHeight, h + 2.f * textOffset.y);
+			dirty = false;
 		}
 	}
 
@@ -393,8 +412,10 @@ struct LogDisplay : LedTextDisplay {
 struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	MidiMonModule* module;
 	LogDisplay* logDisplay;
+	rack::ui::ScrollWidget* logScroll;
 	std::list<LogEntry> buffer;
 	LogDecoder decoder;
+	bool lastFrameMode = false;
 
 	MidiMonWidget(MidiMonModule* module)
 		: ThemedModuleWidget<MidiMonModule>(module, "MidiMon") {
@@ -415,10 +436,20 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		textDisplay->box.size = Vec(240.f, 236.0f);
 		addChild(textDisplay);
 
-		logDisplay = createWidget<LogDisplay>(Vec());
+		// The lines scroll, newest on top; the scrollbar shows once they outgrow the area.
+		logScroll = new rack::ui::ScrollWidget;
+		logScroll->box.pos.y = 3.f;
+		// A narrow scrollbar is drawn partly beyond its box: stay clear of the right edge.
+		logScroll->box.size = Vec(textDisplay->box.size.x - 3.f, textDisplay->box.size.y - 2.f * logScroll->box.pos.y);
+		logScroll->verticalScrollbar->box.size.x = 8.f;
+		logScroll->horizontalScrollbar->hide();
+		textDisplay->addChild(logScroll);
+
+		logDisplay = new LogDisplay;
 		logDisplay->buffer = &buffer;
-		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 4.f));
-		textDisplay->addChild(logDisplay);
+		logDisplay->box.size = Vec(logScroll->box.size.x - logScroll->verticalScrollbar->box.size.x, logScroll->box.size.y);
+		logDisplay->minHeight = logScroll->box.size.y;
+		logScroll->container->addChild(logDisplay);
 
 		if (!module) {
 			// fake data for module browser
@@ -439,15 +470,21 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		ThemedModuleWidget<MidiMonModule>::step();
 		if (!module) return;
 		logDisplay->showFrame = &module->showFrame;
+		bool frameMode = module->showFrame;
+		if (frameMode != lastFrameMode) {
+			lastFrameMode = frameMode;
+			logDisplay->dirty = true;
+		}
 		while (!module->midiLogMessages.empty()) {
 			RawEntry r = module->midiLogMessages.shift();
 			decoder.decode(r, [&](LogEntry&& e) {
 				if (buffer.size() == BUFFERSIZE) buffer.pop_back();
 				buffer.push_front(std::move(e));
+				logDisplay->dirty = true;
+				// A view scrolled back to older lines stays on them as the new one pushes them down.
+				if (logScroll->offset.y > 0.f) logScroll->offset.y += logDisplay->fontSize;
 			});
 		}
-		logDisplay->dirty = true;
-		logDisplay->setSize(Vec(240.f, std::max(236.0f, buffer.size() * 16.f)));
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -486,6 +523,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		buffer.clear();
 		module->logTimestampReset();
 		logDisplay->reset();
+		logScroll->offset = Vec();
 	}
 
 #ifndef METAMODULE
