@@ -57,6 +57,19 @@ static const char* SLUG = "TestModule";
 // KeyCombo grammar
 
 
+TEST_CASE("KeyCombo accepts + as the key", "[Keymap]") {
+	CHECK(KeyCombo("+") == KeyCombo(GLFW_KEY_KP_ADD, 0));
+	CHECK(KeyCombo("Ctrl++") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
+	CHECK(KeyCombo("Ctrl+Shift++") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+	CHECK(KeyCombo("KP +") == KeyCombo(GLFW_KEY_KP_ADD, 0));
+	CHECK(KeyCombo("Ctrl+KP +") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
+	// A trailing separator after a modifier is still invalid.
+	CHECK_FALSE(KeyCombo("Ctrl+").valid());
+	CHECK_FALSE(KeyCombo("Ctrl+++").valid());
+	// Round-trips through the canonical spelling.
+	CHECK(KeyCombo(KeyCombo("Ctrl++").toString()) == KeyCombo("Ctrl++"));
+}
+
 TEST_CASE("KeyCombo letter bindings follow the layout-aware key name", "[Keymap]") {
 	KeyCombo z("Ctrl+Z");
 	// QWERTZ: the key labelled Z sits at the US Y position, and the US Z position is labelled Y.

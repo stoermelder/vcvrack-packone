@@ -72,6 +72,9 @@ static const KeyAlias kKeyAliases[] = {
 	{"PRINT", GLFW_KEY_PRINT_SCREEN},
 	{"KP /", GLFW_KEY_KP_DIVIDE}, {"KP *", GLFW_KEY_KP_MULTIPLY},
 	{"KP -", GLFW_KEY_KP_SUBTRACT}, {"KP +", GLFW_KEY_KP_ADD}, {"KP .", GLFW_KEY_KP_DECIMAL},
+	// GLFW has no plus key (on most layouts it is Shift+= or the numpad key), so a bare "+" names
+	// the numpad one.
+	{"+", GLFW_KEY_KP_ADD},
 	{"W1", GLFW_KEY_WORLD_1}, {"W2", GLFW_KEY_WORLD_2},
 };
 
@@ -152,7 +155,8 @@ KeyCombo::KeyCombo(const char* spec) {
 	size_t pos = 0;
 	while (true) {
 		size_t plus = s.find('+', pos);
-		if (plus == std::string::npos) break;
+		// A '+' with nothing after it is the key itself ("+", "Ctrl++", "KP +"), not a separator.
+		if (plus == std::string::npos || plus + 1 == s.size()) break;
 		std::string tok = toUpper(s.substr(pos, plus - pos));
 		if (tok == "CTRL" || tok == "CMD" || tok == "COMMAND" || tok == "SUPER") m |= RACK_MOD_CTRL;
 		else if (tok == "SHIFT") m |= GLFW_MOD_SHIFT;
