@@ -62,89 +62,54 @@ void MidiDecoder::reset() {
 	}
 }
 
-void MidiDecoder::processMessage(const rack::midi::Message& msg) {
-	uint8_t status = msg.getStatus();
-	MessageEx m = MessageEx(msg);
-	switch (status) {
-		case 0x9:   // note on
-			m.type = MessageEx::Type::NOTE_ON;
-			notify(m);
-			break;
-		case 0x8:   // note off
-			m.type = MessageEx::Type::NOTE_OFF;
-			notify(m);
-			break;
-		case 0xa:   // key pressure
-			m.type = MessageEx::Type::KEY_PRESSURE;
-			notify(m);
-			break;
-		case 0xb:   // cc
-			m.type = MessageEx::Type::CC;
-			// Must be queried before processCc() below, which mutates the state
-			// it reads: for CC 6/38 the question is whether a parameter was
-			// active when this message arrived, not after it landed. Do not
-			// reorder these -- the raw CC deliberately notifies before its
-			// assembled counterpart.
-			m.isComponent = isComponentCc(msg);
-			notify(m);
-			processCc(msg); // extended CC handling
-			break;
-		case 0xc:   // program change
-			m.type = MessageEx::Type::PROGRAM_CHANGE;
-			notify(m);
-			break;
-		case 0xd:   // channel pressure
-			m.type = MessageEx::Type::CHANNEL_PRESSURE;
-			notify(m);
-			break;
-		case 0xe:   // pitch wheel
-			m.type = MessageEx::Type::PITCH_BEND;
-			m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-			notify(m);
-			break;
-		case 0xf: { // system
-			uint8_t sys = msg.getChannel();
-			switch (sys) {
-				case 0x0: // sysex
-					m.type = MessageEx::Type::SYSEX;
-					notify(m);
-					break;
-				case 0x2: // song pointer
-					m.type = MessageEx::Type::SONG_POINTER;
-					m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-					notify(m);
-					break;
-				case 0x3: // song select
-					m.type = MessageEx::Type::SONG_SELECT;
-					notify(m);
-					break;
-				case 0x8: // timing clock
-					m.type = MessageEx::Type::CLOCK;
-					notify(m);
-					break;
-				case 0xa: // start
-					m.type = MessageEx::Type::START;
-					notify(m);
-					break;
-				case 0xb: // continue
-					m.type = MessageEx::Type::CONTINUE;
-					notify(m); 
-					break;
-				case 0xc: // stop
-					m.type = MessageEx::Type::STOP;
-					notify(m);
-					break;
-				case 0xf: // reset
-					m.type = MessageEx::Type::RESET;
-					notify(m);
-					break;
-				default:
-					break;
+bool MessageEx::decodeBasic(const rack::midi::Message& msg, MessageEx& out) {
+	if (msg.getSize() < 1) return false;
+	switch (msg.getStatus()) {
+		case 0x9: out.type = Type::NOTE_ON; return true;
+		case 0x8: out.type = Type::NOTE_OFF; return true;
+		case 0xa: out.type = Type::KEY_PRESSURE; return true;
+		case 0xb: out.type = Type::CC; return true;
+		case 0xc: out.type = Type::PROGRAM_CHANGE; return true;
+		case 0xd: out.type = Type::CHANNEL_PRESSURE; return true;
+		case 0xe:
+			out.type = Type::PITCH_BEND;
+			out.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
+			return true;
+		case 0xf:
+			switch (msg.getChannel()) {
+				case 0x0: out.type = Type::SYSEX; return true;
+				case 0x2:
+					out.type = Type::SONG_POINTER;
+					out.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
+					return true;
+				case 0x3: out.type = Type::SONG_SELECT; return true;
+				case 0x8: out.type = Type::CLOCK; return true;
+				case 0xa: out.type = Type::START; return true;
+				case 0xb: out.type = Type::CONTINUE; return true;
+				case 0xc: out.type = Type::STOP; return true;
+				case 0xf: out.type = Type::RESET; return true;
+				default: return false;
 			}
-			break;
-		}
 		default:
-			break;
+			return false;
+	}
+}
+
+void MidiDecoder::processMessage(const rack::midi::Message& msg) {
+	MessageEx m = MessageEx(msg);
+	if (!MessageEx::decodeBasic(msg, m)) return;
+	if (m.type == MessageEx::Type::CC) {
+		// Must be queried before processCc() below, which mutates the state
+		// it reads: for CC 6/38 the question is whether a parameter was
+		// active when this message arrived, not after it landed. Do not
+		// reorder these -- the raw CC deliberately notifies before its
+		// assembled counterpart.
+		m.isComponent = isComponentCc(msg);
+		notify(m);
+		processCc(msg); // extended CC handling
+	}
+	else {
+		notify(m);
 	}
 }
 

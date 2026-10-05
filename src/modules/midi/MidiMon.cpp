@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <chrono>
 #include "MidiProcessor.hpp"
+#include "MidiText.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiMon {
@@ -28,42 +29,20 @@ using LogEntry = std::tuple<LOG_FORMAT, float, int64_t, std::string>;
  *  assembled from this on the UI thread (LogDecoder). */
 struct RawEntry {
 	enum class Kind : uint8_t {
+		MESSAGE,			// text = the message
 		DATE,				// frame = time_t
-		SAMPLE_RATE,		// x = sample rate
-		NOTE_ON,			// channel, x = note, y = velocity
-		NOTE_OFF,
-		KEY_PRESSURE,
-		CC,					// channel, x = cc, y = value
-		CC_14BIT,
-		RPN_RESET,			// channel
-		RPN_VALUE,			// channel, x = param, y = value
-		RPN_PARAM,			// channel, x = param
-		NRPN_VALUE,
-		NRPN_PARAM,
-		PROGRAM_CHANGE,		// channel, x = program
-		CHANNEL_PRESSURE,	// channel, x = value
-		PITCH_BEND,			// channel, x = value
-		SYSEX,				// x = data bytes
-		SYSEX_DATA,			// bytes[0..count), more = the line continues in the next entry
-		SONG_POINTER,		// x = value
-		SONG_SELECT,		// x = song
-		CLOCK,
-		START,
-		CONTINUE,
-		STOP,
-		RESET
+		SAMPLE_RATE,		// text.x = sample rate
+		SYSEX_DATA			// bytes[0..count), more = the line continues in the next entry
 	};
 	enum { SYSEX_CHUNK = 24 };
 
-	Kind kind = Kind::RESET;
+	Kind kind = Kind::MESSAGE;
 	LOG_FORMAT format = LOG_FORMAT::TIMESTAMP;
 	bool more = false;
-	uint8_t channel = 0;
 	uint8_t count = 0;
+	MidiText::Fields text;
 	float timestamp = 0.f;
 	int64_t frame = 0;
-	int32_t x = 0;
-	int32_t y = 0;
 	uint8_t bytes[SYSEX_CHUNK];
 };
 
@@ -74,9 +53,11 @@ struct LogDecoder {
 	template <typename F>
 	void decode(const RawEntry& r, F emit) {
 		using K = RawEntry::Kind;
-		const int ch = r.channel + 1;
 		std::string s;
 		switch (r.kind) {
+			case K::MESSAGE:
+				s = MidiText::format(r.text);
+				break;
 			case K::DATE: {
 				std::time_t t = (std::time_t)r.frame;
 				char buf[100] = {0};
@@ -84,49 +65,17 @@ struct LogDecoder {
 				s = buf;
 				break;
 			}
-			case K::SAMPLE_RATE:      s = string::f("sample rate %i", r.x); break;
-			case K::NOTE_ON:          s = string::f("ch%02d note on  %i vel %i", ch, r.x, r.y); break;
-			case K::NOTE_OFF:         s = string::f("ch%02d note off %i vel %i", ch, r.x, r.y); break;
-			case K::KEY_PRESSURE:     s = string::f("ch%02d key-pressure %i vel %i", ch, r.x, r.y); break;
-			case K::CC:               s = string::f("ch%02d cc%i=%i", ch, r.x, r.y); break;
-			case K::CC_14BIT:         s = string::f("ch%02d 14-bit cc%i=%i", ch, r.x, r.y); break;
-			case K::RPN_RESET:        s = string::f("ch%02d rpn/nrpn reset", ch); break;
-			case K::RPN_VALUE:        s = string::f("ch%02d rpn param=%i value=%i", ch, r.x, r.y); break;
-			case K::RPN_PARAM:
-				switch (r.x) {
-					case 0: s = string::f("ch%02d rpn param=0 (Pitch Bend Sensitivity)", ch); break;
-					case 1: s = string::f("ch%02d rpn param=1 (Fine Tuning)", ch); break;
-					case 2: s = string::f("ch%02d rpn param=2 (Coarse Tuning)", ch); break;
-					case 3: s = string::f("ch%02d rpn param=3 (Tuning Program Select)", ch); break;
-					case 4: s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", ch); break;
-					default: break;
-				}
+			case K::SAMPLE_RATE:
+				s = string::f("sample rate %i", r.text.x);
 				break;
-			case K::NRPN_VALUE:       s = string::f("ch%02d nrpn param=%i value=%i", ch, r.x, r.y); break;
-			case K::NRPN_PARAM:       s = string::f("ch%02d nrpn param=%i selected", ch, r.x); break;
-			case K::PROGRAM_CHANGE:   s = string::f("ch%02d program=%i", ch, r.x); break;
-			case K::CHANNEL_PRESSURE: s = string::f("ch%02d channel-pressure=%i", ch, r.x); break;
-			case K::PITCH_BEND:       s = string::f("ch%02d pitchbend=%i", ch, r.x); break;
-			case K::SYSEX:            s = string::f("sysex (%i data bytes)", r.x); break;
 			case K::SYSEX_DATA: {
-				std::ostringstream ss;
-				ss << std::hex;
-				for (int i = 0; i < r.count; i++) {
-					ss << std::setw(2) << std::setfill('0') << static_cast<int>(r.bytes[i]) << " ";
-				}
-				sysexLine += ss.str();
+				// Every chunk ends in a space, so the next one continues the line.
+				sysexLine += MidiText::hexBytes(r.bytes, r.count) + " ";
 				if (r.more) return;
 				s = std::move(sysexLine);
 				sysexLine.clear();
 				break;
 			}
-			case K::SONG_POINTER:     s = string::f("song pointer=%i", r.x); break;
-			case K::SONG_SELECT:      s = string::f("song select=%i", r.x); break;
-			case K::CLOCK:            s = "clock tick"; break;
-			case K::START:            s = "start"; break;
-			case K::CONTINUE:         s = "continue"; break;
-			case K::STOP:             s = "stop"; break;
-			case K::RESET:            s = "reset"; break;
 		}
 		emit(LogEntry(r.format, r.timestamp, r.kind == RawEntry::Kind::DATE ? 0LL : r.frame, std::move(s)));
 	}
@@ -238,16 +187,14 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	}
 
 	/** Dsp thread: plain data only, no allocation. */
-	void logMessage(bool showMessage, RawEntry::Kind kind, LOG_FORMAT format, const MessageEx& m, int x = 0, int y = 0) {
+	void logMessage(bool showMessage, LOG_FORMAT format, const MessageEx& m, const MidiText::Fields& text) {
 		if (!showMessage || midiLogMessages.full()) return;
 		RawEntry r;
-		r.kind = kind;
+		r.kind = RawEntry::Kind::MESSAGE;
 		r.format = format;
-		r.channel = m.getChannel();
+		r.text = text;
 		r.timestamp = format == LOG_FORMAT::TIMESTAMP ? float(m.frame) / APP->engine->getSampleRate() : 0.f;
 		r.frame = format == LOG_FORMAT::TIMESTAMP ? m.frame : 0LL;
-		r.x = x;
-		r.y = y;
 		midiLogMessages.push(r);
 	}
 
@@ -259,58 +206,55 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		if (!midiLogMessages.full()) midiLogMessages.push(r);
 		r.kind = RawEntry::Kind::SAMPLE_RATE;
 		r.frame = 0;
-		r.x = int(APP->engine->getSampleRate());
+		r.text.x = int(APP->engine->getSampleRate());
 		if (!midiLogMessages.full()) midiLogMessages.push(r);
 	}
 
 	// MidiProcessorHandler
 	bool processMidi(const MessageEx& m) override {
-		using K = RawEntry::Kind;
+		using K = MidiText::Kind;
 		const LOG_FORMAT TS = LOG_FORMAT::TIMESTAMP;
 		const LOG_FORMAT IND = LOG_FORMAT::INDENTED;
-		switch (m.type) {
-			case MessageEx::Type::NOTE_ON:
-				logMessage(showNoteMsg, K::NOTE_ON, TS, m, m.getNote(), m.getValue());
+		const MidiText::Fields f = MidiText::classify(m);
+		switch (f.kind) {
+			case K::NOTE_ON:
+			case K::NOTE_OFF:
+				logMessage(showNoteMsg, TS, m, f);
 				break;
-			case MessageEx::Type::NOTE_OFF:
-				logMessage(showNoteMsg, K::NOTE_OFF, TS, m, m.getNote(), m.getValue());
+			case K::KEY_PRESSURE:
+				logMessage(showKeyPressure, TS, m, f);
 				break;
-			case MessageEx::Type::KEY_PRESSURE:
-				logMessage(showKeyPressure, K::KEY_PRESSURE, TS, m, m.getNote(), m.getValue());
+			case K::CC:
+				logMessage(showCcMsg, TS, m, f);
 				break;
-			case MessageEx::Type::CC:
-				logMessage(showCcMsg, K::CC, TS, m, m.getNote(), m.getValue());
+			case K::CC_14BIT:
+				logMessage(showCcExMsg, IND, m, f);
 				break;
-			case MessageEx::Type::CC_14BIT:
-				logMessage(showCcExMsg, K::CC_14BIT, IND, m, m.getNote(), m.getValue());
+			case K::RPN_RESET:
+			case K::RPN_VALUE:
+			case K::RPN_PARAM:
+			case K::NRPN_VALUE:
+			case K::NRPN_PARAM:
+				logMessage(showRpnNrpnMsg, IND, m, f);
 				break;
-			case MessageEx::Type::RPN:
-				if (m.getParamNumber() < 0) logMessage(showRpnNrpnMsg, K::RPN_RESET, IND, m);
-				else if (m.hasValue()) logMessage(showRpnNrpnMsg, K::RPN_VALUE, IND, m, m.getParamNumber(), m.getValue());
-				else logMessage(showRpnNrpnMsg, K::RPN_PARAM, IND, m, m.getParamNumber());
+			case K::PROGRAM_CHANGE:
+				logMessage(showProgChangeMsg, TS, m, f);
 				break;
-			case MessageEx::Type::NRPN:
-				if (m.hasValue()) logMessage(showRpnNrpnMsg, K::NRPN_VALUE, IND, m, m.getParamNumber(), m.getValue());
-				else logMessage(showRpnNrpnMsg, K::NRPN_PARAM, IND, m, m.getParamNumber());
+			case K::CHANNEL_PRESSURE:
+				logMessage(showChannelPressurelMsg, TS, m, f);
 				break;
-			case MessageEx::Type::PROGRAM_CHANGE:
-				logMessage(showProgChangeMsg, K::PROGRAM_CHANGE, TS, m, m.getNote());
+			case K::PITCH_BEND:
+				logMessage(showPitchWheelMsg, TS, m, f);
 				break;
-			case MessageEx::Type::CHANNEL_PRESSURE:
-				logMessage(showChannelPressurelMsg, K::CHANNEL_PRESSURE, TS, m, m.getNote());
-				break;
-			case MessageEx::Type::PITCH_BEND:
-				logMessage(showPitchWheelMsg, K::PITCH_BEND, TS, m, m.getValue());
-				break;
-			case MessageEx::Type::SYSEX: {
+			case K::SYSEX: {
 				int size = m.getSysExSize();
 				int chunks = showSysExData ? (size + RawEntry::SYSEX_CHUNK - 1) / RawEntry::SYSEX_CHUNK : 0;
 				// All or nothing: a partial data line would glue onto the next entry.
 				if (midiLogMessages.capacity() < (size_t)(chunks + (showSysExMsg ? 1 : 0))) break;
-				logMessage(showSysExMsg, K::SYSEX, TS, m, size - 2);
+				logMessage(showSysExMsg, TS, m, f);
 				for (int i = 0; i < chunks; i++) {
 					RawEntry r;
-					r.kind = K::SYSEX_DATA;
+					r.kind = RawEntry::Kind::SYSEX_DATA;
 					r.format = LOG_FORMAT::TEXT;
 					r.count = (uint8_t)std::min((int)RawEntry::SYSEX_CHUNK, size - i * (int)RawEntry::SYSEX_CHUNK);
 					r.more = i + 1 < chunks;
@@ -319,26 +263,16 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 				}
 				break;
 			}
-			case MessageEx::Type::SONG_POINTER:
-				logMessage(showSystemMsg, K::SONG_POINTER, TS, m, m.getValue());
+			case K::SONG_POINTER:
+			case K::SONG_SELECT:
+			case K::START:
+			case K::CONTINUE:
+			case K::STOP:
+			case K::RESET:
+				logMessage(showSystemMsg, TS, m, f);
 				break;
-			case MessageEx::Type::SONG_SELECT:
-				logMessage(showSystemMsg, K::SONG_SELECT, TS, m, m.getNote());
-				break;
-			case MessageEx::Type::CLOCK:
-				logMessage(showClockMsg, K::CLOCK, TS, m);
-				break;
-			case MessageEx::Type::START:
-				logMessage(showSystemMsg, K::START, TS, m);
-				break;
-			case MessageEx::Type::CONTINUE:
-				logMessage(showSystemMsg, K::CONTINUE, TS, m);
-				break;
-			case MessageEx::Type::STOP:
-				logMessage(showSystemMsg, K::STOP, TS, m);
-				break;
-			case MessageEx::Type::RESET:
-				logMessage(showSystemMsg, K::RESET, TS, m);
+			case K::CLOCK:
+				logMessage(showClockMsg, TS, m, f);
 				break;
 			default:
 				break;
