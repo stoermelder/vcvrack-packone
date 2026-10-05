@@ -154,7 +154,7 @@ rack.onUnload = function()
     end
 end
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     local ch = midi.getChannel(msg)
 
     if not matchesChannel(ch) then
@@ -162,10 +162,8 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    -- Velocity 0 is the running-status spelling of a Note-Off
-    local isRelease = midi.isNoteRelease(msg)
-
-    if midi.isNoteOn(msg) and not isRelease then
+    -- A Note-On with velocity 0 is a NOTE_OFF, handled below.
+    if msgType == midi.NOTE_ON then
         local note = midi.getNote(msg)
         local vel = midi.getValue(msg)
         local voices = {}
@@ -198,7 +196,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if isRelease then
+    if msgType == midi.NOTE_OFF then
         local note = midi.getNote(msg)
 
         -- Never saw the Note-On (script loaded mid-chord): pass the release

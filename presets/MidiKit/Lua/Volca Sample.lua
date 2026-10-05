@@ -163,12 +163,12 @@ end
 
 -- MIDI processing
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     local ch = midi.getChannel(msg)
     local isPoly = config.polyChannel > 0 and ch == config.polyChannel
 
     -- Pitch bend → CC 44
-    if midi.isPitchWheel(msg) then
+    if msgType == midi.PITCH_WHEEL then
         -- midi.getValue() returns the MSB (0-127) for pitch-bend messages,
         -- matching the Arduino's data[2] byte.
         local msb = midi.getValue(msg)                       -- 0-127
@@ -188,7 +188,7 @@ midi.onMessage = function(midiPort, msg)
     end
 
     -- Note On
-    if midi.isNoteOn(msg) and midi.getValue(msg) > 0 then
+    if msgType == midi.NOTE_ON then
         local note = midi.getNote(msg)
         local velocity = midi.getValue(msg)
 
@@ -220,7 +220,7 @@ midi.onMessage = function(midiPort, msg)
     end
 
     -- Note Off
-    if midi.isNoteRelease(msg) then
+    if msgType == midi.NOTE_OFF then
         local note = midi.getNote(msg)
 
         if isPoly then

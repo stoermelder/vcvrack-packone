@@ -190,7 +190,7 @@ static const char* JS_FLAGS = R"(/**
 midi.enableNrpnIn(1);
 
 midi.onNrpn = function(midiPort, msg) {
-    rack.log("P:flags:" + midi.isNrpn(msg) + ":" + midi.isRpn(msg) + ":" + midi.isCc14bit(msg));
+    rack.log("P:flags:" + (midi.getType(msg) === midi.NRPN) + ":" + (midi.getType(msg) === midi.RPN) + ":" + (midi.getType(msg) === midi.CC14BIT));
 };
 )";
 
@@ -200,7 +200,7 @@ static const char* LUA_FLAGS = R"(--[[
 midi.enableNrpnIn(1)
 
 midi.onNrpn = function(midiPort, msg)
-    rack.log("P:flags:" .. tostring(midi.isNrpn(msg)) .. ":" .. tostring(midi.isRpn(msg)) .. ":" .. tostring(midi.isCc14bit(msg)))
+    rack.log("P:flags:" .. tostring(midi.getType(msg) == midi.NRPN) .. ":" .. tostring(midi.getType(msg) == midi.RPN) .. ":" .. tostring(midi.getType(msg) == midi.CC14BIT))
 end
 )";
 
@@ -224,7 +224,7 @@ midi.onNrpn = function(midiPort, msg) {
 };
 
 midi.onMessage = function(midiPort, msg) {
-    rack.log("P:msg:" + midi.isNrpn(msg) + ":" + midi.isRpn(msg) + ":" + midi.isCc14bit(msg) + ":" + midi.getValue(msg) + ":" + midi.getNote(msg));
+    rack.log("P:msg:" + (midi.getType(msg) === midi.NRPN) + ":" + (midi.getType(msg) === midi.RPN) + ":" + (midi.getType(msg) === midi.CC14BIT) + ":" + midi.getValue(msg) + ":" + midi.getNote(msg));
 };
 )";
 
@@ -238,7 +238,7 @@ midi.onNrpn = function(midiPort, msg)
 end
 
 midi.onMessage = function(midiPort, msg)
-    rack.log("P:msg:" .. tostring(midi.isNrpn(msg)) .. ":" .. tostring(midi.isRpn(msg)) .. ":" .. tostring(midi.isCc14bit(msg)) .. ":" .. midi.getValue(msg) .. ":" .. midi.getNote(msg))
+    rack.log("P:msg:" .. tostring(midi.getType(msg) == midi.NRPN) .. ":" .. tostring(midi.getType(msg) == midi.RPN) .. ":" .. tostring(midi.getType(msg) == midi.CC14BIT) .. ":" .. midi.getValue(msg) .. ":" .. midi.getNote(msg))
 end
 )";
 
@@ -951,9 +951,9 @@ static std::string kindScript(bool lua, const GroupKind& k, const std::string& b
 static std::string describe(bool lua, const char* tag, const char* h) {
 	std::string t = tag, m = h;
 	if (lua) {
-		return "rack.log('P:" + t + ":' .. tostring(midi.isNrpn(" + m + ")) .. ':' .. tostring(midi.isRpn(" + m + ")) .. ':' .. tostring(midi.isCc14bit(" + m + ")) .. ':' .. midi.getControl(" + m + ") .. ':' .. midi.getValue(" + m + ") .. ':' .. midi.getChannel(" + m + ") .. ':' .. midi.getNote(" + m + "))";
+		return "rack.log('P:" + t + ":' .. tostring((midi.getType(" + m + ") == midi.NRPN)) .. ':' .. tostring((midi.getType(" + m + ") == midi.RPN)) .. ':' .. tostring((midi.getType(" + m + ") == midi.CC14BIT)) .. ':' .. midi.getControl(" + m + ") .. ':' .. midi.getValue(" + m + ") .. ':' .. midi.getChannel(" + m + ") .. ':' .. midi.getNote(" + m + "))";
 	}
-	return "rack.log('P:" + t + ":' + midi.isNrpn(" + m + ") + ':' + midi.isRpn(" + m + ") + ':' + midi.isCc14bit(" + m + ") + ':' + midi.getControl(" + m + ") + ':' + midi.getValue(" + m + ") + ':' + midi.getChannel(" + m + ") + ':' + midi.getNote(" + m + "));";
+	return "rack.log('P:" + t + ":' + (midi.getType(" + m + ") === midi.NRPN) + ':' + (midi.getType(" + m + ") === midi.RPN) + ':' + (midi.getType(" + m + ") === midi.CC14BIT) + ':' + midi.getControl(" + m + ") + ':' + midi.getValue(" + m + ") + ':' + midi.getChannel(" + m + ") + ':' + midi.getNote(" + m + "));";
 }
 
 TEST_CASE("Received group: every accessor matches a created and set group", "[MidiKit][MidiProcessor][CrossEngine]") {
@@ -1034,11 +1034,11 @@ TEST_CASE("Received group: a following plain message and group start clean", "[M
  */
 midi.enableNrpnIn(1);
 midi.onNrpn = function(port, msg) {
-    rack.log("P:g:" + midi.isNrpn(msg) + ":" + midi.getControl(msg) + ":" + midi.getValue(msg));
+    rack.log("P:g:" + (midi.getType(msg) === midi.NRPN) + ":" + midi.getControl(msg) + ":" + midi.getValue(msg));
 };
 midi.onMessage = function(port, msg) {
     let h = midi.create();
-    rack.log("P:m:" + midi.isNrpn(msg) + ":" + midi.getControl(msg) + ":" + midi.isNrpn(h) + ":" + midi.getValue(h));
+    rack.log("P:m:" + (midi.getType(msg) === midi.NRPN) + ":" + midi.getControl(msg) + ":" + (midi.getType(h) === midi.NRPN) + ":" + midi.getValue(h));
 };
 )";
 	static const char* lua = R"(--[[
@@ -1046,11 +1046,11 @@ midi.onMessage = function(port, msg) {
 --]]
 midi.enableNrpnIn(1)
 midi.onNrpn = function(port, msg)
-    rack.log("P:g:" .. tostring(midi.isNrpn(msg)) .. ":" .. midi.getControl(msg) .. ":" .. midi.getValue(msg))
+    rack.log("P:g:" .. tostring(midi.getType(msg) == midi.NRPN) .. ":" .. midi.getControl(msg) .. ":" .. midi.getValue(msg))
 end
 midi.onMessage = function(port, msg)
     local h = midi.create()
-    rack.log("P:m:" .. tostring(midi.isNrpn(msg)) .. ":" .. midi.getControl(msg) .. ":" .. tostring(midi.isNrpn(h)) .. ":" .. midi.getValue(h))
+    rack.log("P:m:" .. tostring(midi.getType(msg) == midi.NRPN) .. ":" .. midi.getControl(msg) .. ":" .. tostring(midi.getType(h) == midi.NRPN) .. ":" .. midi.getValue(h))
 end
 )";
 	std::vector<midi::Message> in = nrpnQuad(0, 4, 5, 20, 2);
@@ -1277,7 +1277,7 @@ TEST_CASE("enableNrpnIn: switching the mode from a callback applies to the follo
  */
 midi.enableNrpnIn(1);
 midi.onMessage = function(port, msg) {
-    if (midi.isNoteOn(msg)) midi.enableNrpnIn(1, null, "msb");
+    if (midi.getType(msg) === midi.NOTE_ON) midi.enableNrpnIn(1, null, "msb");
 };
 midi.onNrpn = function(port, msg) { rack.log("P:n:" + midi.getControl(msg) + ":" + midi.getValue(msg)); };
 )";
@@ -1286,7 +1286,7 @@ midi.onNrpn = function(port, msg) { rack.log("P:n:" + midi.getControl(msg) + ":"
 --]]
 midi.enableNrpnIn(1)
 midi.onMessage = function(port, msg)
-    if midi.isNoteOn(msg) then midi.enableNrpnIn(1, nil, "msb") end
+    if midi.getType(msg) == midi.NOTE_ON then midi.enableNrpnIn(1, nil, "msb") end
 end
 midi.onNrpn = function(port, msg) rack.log("P:n:" .. midi.getControl(msg) .. ":" .. midi.getValue(msg)) end
 )";

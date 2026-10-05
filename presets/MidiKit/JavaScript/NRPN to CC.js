@@ -98,8 +98,8 @@ rack.onLoad = function() {
 // Callbacks
 
 // Called when a MIDI message is received
-midi.onMessage = function(midiPort, msg) {
-    if (!midi.isCc(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+    if (msgType !== midi.CC) {
         return;
     }
 

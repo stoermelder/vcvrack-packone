@@ -95,7 +95,6 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 
 	const char* kConstructors = "Constructors";
 	const char* kGetters = "Getters";
-	const char* kPredicates = "Type predicates";
 	const char* kSetters = "Setters";
 	const char* kExtended = "Extended input";
 	api.push_back(ApiGroup("midi", {
@@ -109,7 +108,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("getChanPressure", kGetters, {{"msg", MSG}}),
 		ApiFunction("getControl", kGetters, {{"msg", "message handle, on an NRPN, RPN or 14-bit CC group handle the parameter number or MSB controller"}}),
 		ApiFunction("getNote", kGetters, {{"msg", "message handle, on a group handle the lead message's controller (CC 99, 101 or the MSB controller)"}}),
-		ApiFunction("getValue", kGetters, {{"msg", "message handle, on an NRPN, RPN or 14-bit CC group handle the combined value 0-16383"}}),
+		ApiFunction("getValue", kGetters, {{"msg", "message handle, on an NRPN, RPN or 14-bit CC group handle the combined value 0-16383, on Song Position (F2) the position 0-16383, on MTC quarter frame (F1) and Song Select (F3) the data byte"}}),
 		ApiFunction("getLength", kGetters, {{"msg", MSG}}),
 		ApiFunction("getPitchWheel", kGetters, {{"msg", MSG}}),
 		ApiFunction("getProgramChange", kGetters, {{"msg", MSG}}),
@@ -117,23 +116,8 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("getSysExLength", kGetters, {{"msg", MSG}}),
 		ApiFunction("getRaw", kGetters, {{"msg", MSG}}),
 		ApiFunction("toString", kGetters, {{"msg", MSG}}),
+		ApiFunction("getType", kGetters, {{"msg", "message handle, returns midi.NOTE_ON, midi.NOTE_OFF (also a Note-On with velocity 0), midi.CC, midi.CLOCK, ... or midi.UNKNOWN"}}),
 
-		ApiFunction("isCc", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isNoteOn", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isNoteOff", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isNoteRelease", kPredicates, {{"msg", "message handle, true for a Note-Off or a Note-On with velocity 0"}}),
-		ApiFunction("isKeyPressure", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isChanPressure", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isProgramChange", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isPitchWheel", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isSysEx", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isClock", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isStart", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isContinue", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isStop", kPredicates, {{"msg", MSG}}),
-		ApiFunction("isNrpn", kPredicates, {{"msg", "message handle, true for an NRPN group handle"}}),
-		ApiFunction("isRpn", kPredicates, {{"msg", "message handle, true for an RPN group handle"}}),
-		ApiFunction("isCc14bit", kPredicates, {{"msg", "message handle, true for a 14-bit CC group handle"}}),
 
 		ApiFunction("setCc", kSetters, {{"msg", MSG}, {"ch", CH}, {"cc", "controller number 0-127"}, {"value", "value 0-127"}}),
 		ApiFunction("setCc14bit", kSetters, {{"cc14", "handle from midi.createCc14bit()"}, {"ch", CH}, {"cc", "MSB controller 0-31, the LSB is cc + 32"}, {"value", "14-bit value 0-16383, MSB is value / 128"}}),
@@ -149,7 +133,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("setProgramChange", kSetters, {{"msg", MSG}, {"ch", CH}, {"program", "program number 0-127"}}),
 		ApiFunction("setSysEx", kSetters, {{"msg", MSG}, {"hexString", "payload as hex, without f0/f7 framing"}}),
 		ApiFunction("setRaw", kSetters, {{"msg", MSG}, {"hexString", "exact bytes as hex, no framing added"}}),
-		ApiFunction("setValue", kSetters, {{"msg", MSG}, {"value", "data byte 0-127, on an NRPN, RPN or 14-bit CC handle the combined value 0-16383"}}),
+		ApiFunction("setValue", kSetters, {{"msg", MSG}, {"value", "data byte 0-127, on an NRPN, RPN or 14-bit CC handle the combined value 0-16383, on Song Position (F2) the position 0-16383, on MTC quarter frame (F1) and Song Select (F3) the data byte"}}),
 
 		ApiFunction("enablePorts", "", {{"n", "deliver MIDI inputs 1-n, n is 1-4"}}),
 		ApiFunction("enableNrpnIn", kExtended, {{"midiPort", PORT}, {"channel", CHANNEL_OPT, true}, {"dataEntry", "\"lsb\" (default) fires on CC 38, \"msb\" also on CC 6 for 7-bit devices", true}}),

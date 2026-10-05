@@ -54,7 +54,7 @@ static const char* JS_TOPLEVEL_SYSEX = R"(/**
  */
 let msg = midi.create();
 midi.setSysEx(msg, "43104c0000");
-rack.log("PROBE:" + (midi.isSysEx(msg) ? "yes" : "no"));
+rack.log("PROBE:" + (midi.getType(msg) === midi.SYSEX ? "yes" : "no"));
 )";
 
 static const char* LUA_TOPLEVEL_SYSEX = R"(--[[
@@ -62,7 +62,7 @@ static const char* LUA_TOPLEVEL_SYSEX = R"(--[[
 --]]
 msg = midi.create()
 midi.setSysEx(msg, "43104c0000")
-rack.log("PROBE:" .. (midi.isSysEx(msg) and "yes" or "no"))
+rack.log("PROBE:" .. (midi.getType(msg) == midi.SYSEX and "yes" or "no"))
 )";
 
 TEST_CASE("midi.create at top level fails the load identically", "[MidiKit][CrossEngine]") {

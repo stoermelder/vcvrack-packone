@@ -164,12 +164,12 @@ rack.onUnload = function() {
 
 // MIDI processing
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let ch = midi.getChannel(msg);
     let isPoly = config.polyChannel > 0 && ch === config.polyChannel;
 
     // Pitch bend → CC 44
-    if (midi.isPitchWheel(msg)) {
+    if (msgType === midi.PITCH_WHEEL) {
         // midi.getValue() returns the MSB (0-127) for pitch-bend messages,
         // matching the Arduino's Midi::data[2] byte.
         let msb = midi.getValue(msg);                          // 0-127
@@ -188,7 +188,7 @@ midi.onMessage = function(midiPort, msg) {
     }
 
     // Note On
-    if (midi.isNoteOn(msg) && midi.getValue(msg) > 0) {
+    if (msgType === midi.NOTE_ON) {
         let note = midi.getNote(msg);
         let velocity = midi.getValue(msg);
 
@@ -220,7 +220,7 @@ midi.onMessage = function(midiPort, msg) {
     }
 
     // Note Off
-    if (midi.isNoteRelease(msg)) {
+    if (msgType === midi.NOTE_OFF) {
         let note = midi.getNote(msg);
 
         if (isPoly) {

@@ -96,8 +96,8 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-midi.onMessage = function(midiPort, msg)
-    if not midi.isCc(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+    if msgType ~= midi.CC then
         return
     end
 

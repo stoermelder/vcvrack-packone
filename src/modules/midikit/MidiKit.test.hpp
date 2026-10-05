@@ -1149,6 +1149,7 @@ static const PresetInfo PRESETS[] = {
 	{"", "NRPN Generator", true},
 	{"basic/", "Copy Ch1 CC to Ch2", true},
 	{"basic/", "Rewrite Ch1 to Ch2", true},
+	{"basic/", "Monitor", true},
 	{"basic/", "Delay NoteOn Ch1 for two 1500ms", false},   // channel 1 only; the smoke traffic sends on channels 2 and 3
 	{"basic/", "Delay NoteOn Ch1 for two clock ticks", false},   // same
 	{"", "Micro scale", true},

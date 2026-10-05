@@ -91,13 +91,13 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let ch = midi.getChannel(msg);
 
     // Control CC: switch the active preset when a CC whose number matches one
     // of the presets arrives with value > 0, then consume it so it never
     // reaches the synths.
-    if (midi.isCc(msg) && (config.controlChannel === 0 || ch === config.controlChannel)) {
+    if (msgType === midi.CC && (config.controlChannel === 0 || ch === config.controlChannel)) {
         let cc = midi.getControl(msg);
         for (let i = 0; i < config.presets.length; i++) {
             if (config.presets[i].cc === cc) {
@@ -111,10 +111,10 @@ midi.onMessage = function(midiPort, msg) {
         }
     }
 
-    let vel = midi.isNoteOn(msg) ? midi.getValue(msg) : 0;
-    let isOn = midi.isNoteOn(msg) && vel > 0;
-    // Velocity 0 is the running-status spelling of a Note-Off.
-    let isOff = midi.isNoteRelease(msg);
+    // A Note-On with velocity 0 is a NOTE_OFF.
+    let isOn = msgType === midi.NOTE_ON;
+    let isOff = msgType === midi.NOTE_OFF;
+    let vel = isOn ? midi.getValue(msg) : 0;
 
     if (isOn || isOff) {
         let note = midi.getNote(msg);

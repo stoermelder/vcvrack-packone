@@ -316,7 +316,7 @@ inline uint8_t addressType(const Message& m) {
 }
 
 // Whether `m` releases a note: a Note-Off, or a Note-On with velocity 0, which is
-// how most keyboards send a release. midi.isNoteRelease(); the same folding as
+// how most keyboards send a release. midi.getType() reports it as noteOff; the same folding as
 // the address rules of midiOut.cancel(). False for anything without a status byte.
 inline bool isNoteRelease(const Message& m) {
 	if (m.bytes.empty() || m.bytes[0] < 0x80) return false;

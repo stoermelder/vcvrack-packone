@@ -97,15 +97,15 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-midi.onMessage = function(midiPort, msg)
-    if midi.isClock(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+    if msgType == midi.CLOCK then
         state.tickCount = state.tickCount + 1
         if state.tickCount >= config.ticksPerStep then
             state.tickCount = 0
             advanceValue()
             sendNrpn()
         end
-    elseif midi.isStart(msg) or midi.isContinue(msg) then
+    elseif msgType == midi.START or msgType == midi.CONTINUE then
         state.tickCount = 0
     end
 end

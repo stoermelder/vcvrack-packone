@@ -98,8 +98,8 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-midi.onMessage = function(midiPort, msg) {
-    if (midi.isClock(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+    if (msgType === midi.CLOCK) {
         state.tickCount++;
         if (state.tickCount >= config.ticksPerStep) {
             state.tickCount = 0;
@@ -107,7 +107,7 @@ midi.onMessage = function(midiPort, msg) {
             sendNrpn();
         }
     }
-    else if (midi.isStart(msg) || midi.isContinue(msg)) {
+    else if (msgType === midi.START || msgType === midi.CONTINUE) {
         state.tickCount = 0;
     }
 };

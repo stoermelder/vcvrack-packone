@@ -70,22 +70,22 @@ function removeKey(list, key) {
 };
 
 // Updates the tracked state of input `idx` with one incoming message.
-function track(idx, msg) {
+function track(idx, msg, msgType) {
     let input = state.inputs[idx];
 
-    if (midi.isNoteOn(msg) && midi.getValue(msg) > 0) {
+    if (msgType === midi.NOTE_ON) {
         let key = keyOf(midi.getChannel(msg), midi.getNote(msg));
         // A re-press while held only updates the velocity, not the position.
         if (input.noteVel[key] === undefined) input.noteOrder.push(key);
         input.noteVel[key] = midi.getValue(msg);
     }
-    else if (midi.isNoteOff(msg) || midi.isNoteOn(msg)) {
-        // Note-Off, or the Note-On with velocity 0 that stands for one
+    else if (msgType === midi.NOTE_OFF) {
+        // A Note-Off, also the Note-On with velocity 0 that stands for one
         let key = keyOf(midi.getChannel(msg), midi.getNote(msg));
         delete input.noteVel[key];
         removeKey(input.noteOrder, key);
     }
-    else if (midi.isCc(msg)) {
+    else if (msgType === midi.CC) {
         let key = keyOf(midi.getChannel(msg), midi.getControl(msg));
         // Later changes update the value; the position stays where the CC was first seen.
         if (input.ccValue[key] === undefined) input.ccOrder.push(key);
@@ -208,12 +208,12 @@ trig.onTrigger = function(trigPort, channel) {
     switchTo((state.active + 1) % config.numInputs);
 };
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let idx = midiPort - 1;
     if (idx >= config.numInputs) return;
 
     // Every input is tracked, only the active one is forwarded
-    track(idx, msg);
+    track(idx, msg, msgType);
     if (idx === state.active) {
         midiOut.send(msg);
     }

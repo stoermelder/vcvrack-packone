@@ -295,7 +295,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			}
 
 			if (JS_IsUndefined(onMessageFn)) {
-				handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+				handler->writeLog("No midi.onMessage(midiPort, msg, msgType) function defined — incoming MIDI is ignored", false);
 			}
 
 			// Before onLoad(), so broadcasts sent from other modules' onLoad() during
@@ -440,10 +440,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			// and is cheaper on this per-dispatch path.
 			if (!JS_IsUndefined(onMessageFn)) {
 				beginScriptExecution();
-				JSValue args[2] = { JS_NewInt32(ctx, midiPort + 1), JS_NewFloat64(ctx, double(slotToHandle(0))) };
-				JSValue r = JS_Call(ctx, onMessageFn, midiObj, 2, args);
+				JSValue args[3] = { JS_NewInt32(ctx, midiPort + 1), JS_NewFloat64(ctx, double(slotToHandle(0))), JS_NewString(ctx, messageType(msgStore[0])) };
+				JSValue r = JS_Call(ctx, onMessageFn, midiObj, 3, args);
 				JS_FreeValue(ctx, args[0]);
 				JS_FreeValue(ctx, args[1]);
+				JS_FreeValue(ctx, args[2]);
 				inCallback = false;
 				if (JS_IsException(r)) {
 					JS_FreeValue(ctx, r);
@@ -858,26 +859,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "getProgramChange", JS_NewCFunction(ctx, js_midi_getProgramChange, "getProgramChange", 1));
 		JS_SetPropertyStr(ctx, _midi, "getRaw", JS_NewCFunction(ctx, js_midi_getRaw, "getRaw", 1));
 		JS_SetPropertyStr(ctx, _midi, "toString", JS_NewCFunction(ctx, js_midi_toString, "toString", 1));
+		JS_SetPropertyStr(ctx, _midi, "getType", JS_NewCFunction(ctx, js_midi_getType, "getType", 1));
 		JS_SetPropertyStr(ctx, _midi, "getSysEx", JS_NewCFunction(ctx, js_midi_getSysEx, "getSysEx", 1));
 		JS_SetPropertyStr(ctx, _midi, "getSysExLength", JS_NewCFunction(ctx, js_midi_getSysExLength, "getSysExLength", 1));
 		JS_SetPropertyStr(ctx, _midi, "getValue", JS_NewCFunction(ctx, js_midi_getValue, "getValue", 1));
 		JS_SetPropertyStr(ctx, _midi, "getControl", JS_NewCFunction(ctx, js_midi_getControl, "getControl", 1));
-		JS_SetPropertyStr(ctx, _midi, "isCc", JS_NewCFunction(ctx, js_midi_isCc, "isCc", 1));
-		JS_SetPropertyStr(ctx, _midi, "isCc14bit", JS_NewCFunction(ctx, js_midi_isCc14bit, "isCc14bit", 1));
-		JS_SetPropertyStr(ctx, _midi, "isNrpn", JS_NewCFunction(ctx, js_midi_isNrpn, "isNrpn", 1));
-		JS_SetPropertyStr(ctx, _midi, "isRpn", JS_NewCFunction(ctx, js_midi_isRpn, "isRpn", 1));
-		JS_SetPropertyStr(ctx, _midi, "isChanPressure", JS_NewCFunction(ctx, js_midi_isChanPressure, "isChanPressure", 1));
-		JS_SetPropertyStr(ctx, _midi, "isClock", JS_NewCFunction(ctx, js_midi_isClock, "isClock", 1));
-		JS_SetPropertyStr(ctx, _midi, "isContinue", JS_NewCFunction(ctx, js_midi_isContinue, "isContinue", 1));
-		JS_SetPropertyStr(ctx, _midi, "isKeyPressure", JS_NewCFunction(ctx, js_midi_isKeyPressure, "isKeyPressure", 1));
-		JS_SetPropertyStr(ctx, _midi, "isNoteOff", JS_NewCFunction(ctx, js_midi_isNoteOff, "isNoteOff", 1));
-		JS_SetPropertyStr(ctx, _midi, "isNoteRelease", JS_NewCFunction(ctx, js_midi_isNoteRelease, "isNoteRelease", 1));
-		JS_SetPropertyStr(ctx, _midi, "isNoteOn", JS_NewCFunction(ctx, js_midi_isNoteOn, "isNoteOn", 1));
-		JS_SetPropertyStr(ctx, _midi, "isProgramChange", JS_NewCFunction(ctx, js_midi_isProgramChange, "isProgramChange", 1));
-		JS_SetPropertyStr(ctx, _midi, "isPitchWheel", JS_NewCFunction(ctx, js_midi_isPitchWheel, "isPitchWheel", 1));
-		JS_SetPropertyStr(ctx, _midi, "isStart", JS_NewCFunction(ctx, js_midi_isStart, "isStart", 1));
-		JS_SetPropertyStr(ctx, _midi, "isStop", JS_NewCFunction(ctx, js_midi_isStop, "isStop", 1));
-		JS_SetPropertyStr(ctx, _midi, "isSysEx", JS_NewCFunction(ctx, js_midi_isSysEx, "isSysEx", 1));
 		JS_SetPropertyStr(ctx, _midi, "setCc", JS_NewCFunction(ctx, js_midi_setCc, "setCc", 4));
 		JS_SetPropertyStr(ctx, _midi, "setCc14bit", JS_NewCFunction(ctx, js_midi_setCc14bit, "setCc14bit", 5));
 		JS_SetPropertyStr(ctx, _midi, "setChannel", JS_NewCFunction(ctx, js_midi_setChannel, "setChannel", 2));
@@ -896,6 +882,10 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "enableNrpnIn", JS_NewCFunction(ctx, js_midi_enableNrpnIn, "enableNrpnIn", 3));
 		JS_SetPropertyStr(ctx, _midi, "enableRpnIn", JS_NewCFunction(ctx, js_midi_enableRpnIn, "enableRpnIn", 3));
 		JS_SetPropertyStr(ctx, _midi, "enablePorts", JS_NewCFunction(ctx, js_midi_enablePorts, "enablePorts", 1));
+		// Type constants: non-writable, so a script cannot reassign midi.CC.
+		for (const TypeConstant& c : typeConstants()) {
+			JS_DefinePropertyValueStr(ctx, _midi, c.name, JS_NewString(ctx, c.value), JS_PROP_ENUMERABLE);
+		}
 		JS_SetPropertyStr(ctx, _midi, "enableCc14bitIn", JS_NewCFunction(ctx, js_midi_enableCc14bitIn, "enableCc14bitIn", 3));
 
 		// midiOut
@@ -1729,13 +1719,6 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_UNDEFINED;
 	}
 
-	static JSValue js_midi_isType(JSContext* ctx, int argc, JSValueConst* argv, uint8_t t, const char* n) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, string::f("midi.%s: invalid msg", n).c_str());
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		return JS_NewBool(ctx, s.in.msg.getStatus() == t);
-	}
-
 	// Raises "<fn>: message store full (N handles; ...)".
 	static JSValue jsStoreFull(JSContext* ctx, const char* fn) {
 		char buf[192];
@@ -1940,16 +1923,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		return JS_NewStringLen(ctx, str.c_str(), str.length());
 	}
 
-	// Type-aware, like StoermelderPackOne::MessageEx::getValue(): the combined
-	// 0-16383 quantity on an assembled NRPN/RPN/14-bit CC, the raw 7-bit data
-	// byte on everything else. Assembled messages are new, so no existing script
-	// can be relying on the old answer for one.
+	// Type-aware, like StoermelderPackOne::MessageEx::getValue(); see messageValue().
 	static JSValue js_midi_getValue(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getValue: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		if (isAssembled(s)) return JS_NewFloat64(ctx, s.in.extraValue);
-		return JS_NewFloat64(ctx, s.in.msg.getValue());
+		return JS_NewFloat64(ctx, messageValue(getEngine(ctx)->msgStore[idx]));
 	}
 
 	// Which controller/parameter the message addresses: the controller number of
@@ -1979,90 +1957,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		}
 	}
 
-	static JSValue js_midi_isAssembledType(JSContext* ctx, int argc, JSValueConst* argv,
-			StoermelderPackOne::MessageEx::Type want, const char* name) {
+	// midi.getType(msg): one of the midi.NOTE_ON, midi.CC, ... constants.
+	static JSValue js_midi_getType(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, std::string(name) + ": invalid msg");
-		return JS_NewBool(ctx, getEngine(ctx)->msgStore[idx].in.type == want);
-	}
-
-	static JSValue js_midi_isNrpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isAssembledType(ctx, argc, argv, StoermelderPackOne::MessageEx::Type::NRPN, "midi.isNrpn");
-	}
-	static JSValue js_midi_isRpn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isAssembledType(ctx, argc, argv, StoermelderPackOne::MessageEx::Type::RPN, "midi.isRpn");
-	}
-	static JSValue js_midi_isCc14bit(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isAssembledType(ctx, argc, argv, StoermelderPackOne::MessageEx::Type::CC_14BIT, "midi.isCc14bit");
-	}
-
-	static JSValue js_midi_isCc(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0xb, "isCc");
-	}
-
-	static JSValue js_midi_isChanPressure(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0xd, "isChannelPressure");
-	}
-
-	static JSValue js_midi_isClock(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isClock: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		return JS_NewBool(ctx, s.in.msg.getStatus() == 0xf && s.in.msg.getChannel() == 0x8);
-	}
-
-	static JSValue js_midi_isContinue(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isContinue: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		return JS_NewBool(ctx, s.in.msg.getStatus() == 0xf && s.in.msg.getChannel() == 0xb);
-	}
-
-	static JSValue js_midi_isKeyPressure(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0xa, "isKeyPressure");
-	}
-
-	static JSValue js_midi_isNoteOff(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0x8, "isNoteOff");
-	}
-
-	static JSValue js_midi_isNoteRelease(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isNoteRelease: invalid msg");
-		return JS_NewBool(ctx, isNoteRelease(getEngine(ctx)->msgStore[idx].in.msg));
-	}
-
-	static JSValue js_midi_isNoteOn(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0x9, "isNoteOn");
-	}
-
-	static JSValue js_midi_isPitchWheel(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0xe, "isPitchWheel");
-	}
-
-	static JSValue js_midi_isProgramChange(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		return js_midi_isType(ctx, argc, argv, 0xc, "isProgramChange");
-	}
-
-	static JSValue js_midi_isStart(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isStart: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		return JS_NewBool(ctx, s.in.msg.getStatus() == 0xf && s.in.msg.getChannel() == 0xa);
-	}
-
-	static JSValue js_midi_isStop(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isStop: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		return JS_NewBool(ctx, s.in.msg.getStatus() == 0xf && s.in.msg.getChannel() == 0xc);
-	}
-
-	static JSValue js_midi_isSysEx(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
-		size_t idx;
-		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.isSysEx: invalid msg");
-		ScriptMessage& s = getEngine(ctx)->msgStore[idx];
-		return JS_NewBool(ctx, s.in.msg.getStatus() == 0xf && s.in.msg.getChannel() == 0x0);
+		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getType: invalid msg");
+		return JS_NewString(ctx, messageType(getEngine(ctx)->msgStore[idx]));
 	}
 
 	static JSValue js_midi_setCc(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

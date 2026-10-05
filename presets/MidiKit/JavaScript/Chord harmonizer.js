@@ -134,7 +134,7 @@ rack.onUnload = function() {
     }
 };
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {
@@ -142,41 +142,37 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteOn(msg)) {
+    // A Note-On with velocity 0 is a NOTE_OFF, handled below.
+    if (msgType === midi.NOTE_ON) {
         let note = midi.getNote(msg);
         let vel = midi.getValue(msg);
+        let voices = [];
 
-        // Velocity 0 is a Note-Off in disguise; let the Note-Off branch below
-        // handle it by falling through rather than starting new voices.
-        if (vel > 0) {
-            let voices = [];
+        for (let i = 0; i < config.intervals.length; i++) {
+            let offset = config.intervals[i];
+            let target = note + offset;
+            if (target < 0 || target > 127) continue;
 
-            for (let i = 0; i < config.intervals.length; i++) {
-                let offset = config.intervals[i];
-                let target = note + offset;
-                if (target < 0 || target > 127) continue;
+            // Only actually sound the note if nothing else is holding it.
+            // Otherwise just take a reference - the note is already down.
+            if (state.refCount[target] === 0) {
+                let v = offset === 0 ? vel : Math.floor(vel * config.harmonyVelocity + 0.5);
+                if (v < 1) v = 1;
 
-                // Only actually sound the note if nothing else is holding it.
-                // Otherwise just take a reference - the note is already down.
-                if (state.refCount[target] === 0) {
-                    let v = offset === 0 ? vel : Math.floor(vel * config.harmonyVelocity + 0.5);
-                    if (v < 1) v = 1;
-
-                    let on = midi.create();
-                    midi.setNoteOn(on, ch, target, v);
-                    midiOut.send(on);
-                }
-                state.refCount[target] = state.refCount[target] + 1;
-                voices[voices.length] = target;
+                let on = midi.create();
+                midi.setNoteOn(on, ch, target, v);
+                midiOut.send(on);
             }
-
-            state.voicesOf[note] = voices;
-
-            return;
+            state.refCount[target] = state.refCount[target] + 1;
+            voices[voices.length] = target;
         }
+
+        state.voicesOf[note] = voices;
+
+        return;
     }
 
-    if (midi.isNoteRelease(msg)) {
+    if (msgType === midi.NOTE_OFF) {
         let note = midi.getNote(msg);
         let voices = state.voicesOf[note];
 

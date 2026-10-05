@@ -128,8 +128,8 @@ param.onValueText = function(i)
     return number.toString(param.getValue(i))
 end
 
-midi.onMessage = function(midiPort, msg)
-    if midi.isNoteOn(msg) and midi.getValue(msg) > 0 then
+midi.onMessage = function(midiPort, msg, msgType)
+    if msgType == midi.NOTE_ON then
         local ch = midi.getChannel(msg)
         local note = midi.getNote(msg)
         local vel = midi.getValue(msg)

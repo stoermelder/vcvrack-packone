@@ -152,7 +152,7 @@ rack.registerContextMenu({
     end
 })
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     local ch = midi.getChannel(msg)
 
     -- Master channel and anything outside the zone passes through untouched
@@ -161,8 +161,8 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    -- A Note-On with velocity 0 is how most keyboards send a release.
-    if midi.isNoteOn(msg) and not midi.isNoteRelease(msg) then
+    -- A Note-On with velocity 0 is a NOTE_OFF, handled by the release branch below.
+    if msgType == midi.NOTE_ON then
         local note = midi.getNote(msg)
         -- A Note-On resets the channel's bend: MPE senders emit the bend for a
         -- new note after the Note-On, so carrying the previous note's bend over
@@ -182,7 +182,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isNoteRelease(msg) then
+    if msgType == midi.NOTE_OFF then
         -- Release the note that is actually sounding on this channel, not the
         -- one in the incoming message: the fold may have shifted it, and the
         -- receiver only knows the shifted note.
@@ -213,7 +213,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isPitchWheel(msg) then
+    if msgType == midi.PITCH_WHEEL then
         local semis = bendToSemitones(midi.getPitchWheel(msg))
         local steps = math.floor(semis + 0.5)
         local prevSteps = math.floor(state.bendOfChannel[ch] + 0.5)
@@ -246,7 +246,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isChanPressure(msg) then
+    if msgType == midi.CHAN_PRESSURE then
         if not config.forwardPressure or not isActiveChannel(ch) then return end
         local out = midi.create()
         -- Channel pressure is a 2-byte message - the pressure value lives in
@@ -257,7 +257,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isCc(msg) and midi.getControl(msg) == 74 then
+    if msgType == midi.CC and midi.getControl(msg) == 74 then
         if not config.forwardTimbre or not isActiveChannel(ch) then return end
         local out = midi.create()
         midi.setCc(out, config.outChannel, 74, midi.getValue(msg))
@@ -266,7 +266,7 @@ midi.onMessage = function(midiPort, msg)
     end
 
     -- Any other CC on a member channel is forwarded on the output channel
-    if midi.isCc(msg) then
+    if msgType == midi.CC then
         local out = midi.create()
         midi.setCc(out, config.outChannel, midi.getControl(msg), midi.getValue(msg))
         midiOut.send(out)

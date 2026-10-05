@@ -38,8 +38,8 @@ local active = 1
 local held = {}
 
 -- Keeps `held` in step with the notes sent to the active output.
-local function trackHeld(msg)
-    if not (midi.isNoteOn(msg) or midi.isNoteOff(msg)) then return end
+local function trackHeld(msg, msgType)
+    if msgType ~= midi.NOTE_ON and msgType ~= midi.NOTE_OFF then return end
     local ch, note = midi.getChannel(msg), midi.getNote(msg)
     for i = 1, #held do
         if held[i][1] == ch and held[i][2] == note then
@@ -47,7 +47,7 @@ local function trackHeld(msg)
             break
         end
     end
-    if midi.isNoteOn(msg) and midi.getValue(msg) > 0 then
+    if msgType == midi.NOTE_ON then
         held[#held + 1] = { ch, note }
     end
 end
@@ -140,8 +140,8 @@ trig.onTrigger = function(trigPort, channel)
     switchTo(active % config.numOutputs + 1)
 end
 
-midi.onMessage = function(midiPort, msg)
-    trackHeld(msg)
+midi.onMessage = function(midiPort, msg, msgType)
+    trackHeld(msg, msgType)
     midiOut.selectPort(active)
     midiOut.send(msg)
 end

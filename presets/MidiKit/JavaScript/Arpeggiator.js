@@ -208,10 +208,10 @@ rack.onUnload = function() {
     releaseSounding();
 };
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let ch = midi.getChannel(msg);
 
-    if (midi.isNoteOn(msg) && matchesChannel(ch) && midi.getValue(msg) > 0) {
+    if (msgType === midi.NOTE_ON && matchesChannel(ch)) {
         let note = midi.getNote(msg);
         // Ignore duplicates - a note already held stays in its original
         // press-order slot rather than jumping to the end.
@@ -226,7 +226,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteRelease(msg) && matchesChannel(ch)) {
+    if (msgType === midi.NOTE_OFF && matchesChannel(ch)) {
         let note = midi.getNote(msg);
         let filtered = [];
         for (let i = 0; i < state.held.length; i++) {

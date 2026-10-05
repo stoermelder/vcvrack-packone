@@ -206,10 +206,10 @@ rack.onUnload = function()
     releaseSounding()
 end
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     local ch = midi.getChannel(msg)
 
-    if midi.isNoteOn(msg) and matchesChannel(ch) and midi.getValue(msg) > 0 then
+    if msgType == midi.NOTE_ON and matchesChannel(ch) then
         local note = midi.getNote(msg)
         -- Ignore duplicates - a note already held stays in its original
         -- press-order slot rather than jumping to the end.
@@ -224,7 +224,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isNoteRelease(msg) and matchesChannel(ch) then
+    if msgType == midi.NOTE_OFF and matchesChannel(ch) then
         local note = midi.getNote(msg)
         local filtered = {}
         for i = 1, #state.held do

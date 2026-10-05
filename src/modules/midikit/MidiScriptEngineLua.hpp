@@ -345,7 +345,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_pop(L, 1); // pop trig table (or whatever "trig" turned out to be)
 
 		if (onMessageRef == LUA_NOREF) {
-			handler->writeLog("No midi.onMessage(midiPort, msg) function defined — incoming MIDI is ignored", false);
+			handler->writeLog("No midi.onMessage(midiPort, msg, msgType) function defined — incoming MIDI is ignored", false);
 		}
 
 		// Before onLoad(), so broadcasts sent from other modules' onLoad() during the
@@ -817,9 +817,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		lua_rawgeti(L, LUA_REGISTRYINDEX, onMessageRef);
 		lua_pushinteger(L, midiPort + 1);
 		lua_pushinteger(L, static_cast<lua_Integer>(slotToHandle(0)));
+		lua_pushstring(L, messageType(msgStore[0]));
 		inCallback = true;
 		beginScriptExecution();
-		int status = lua_pcall(L, 2, 0, 0);
+		int status = lua_pcall(L, 3, 0, 0);
 		inCallback = false;
 		if (status != LUA_OK) {
 			const char* err = lua_tostring(L, -1);
@@ -1112,26 +1113,11 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getProgramChange",lua_midi_getProgramChange);
 		setTableFunc("getRaw",          lua_midi_getRaw);
 		setTableFunc("toString",        lua_midi_toString);
+		setTableFunc("getType",         lua_midi_getType);
 		setTableFunc("getSysEx",        lua_midi_getSysEx);
 		setTableFunc("getSysExLength",  lua_midi_getSysExLength);
 		setTableFunc("getControl",      lua_midi_getControl);
 		setTableFunc("getValue",        lua_midi_getValue);
-		setTableFunc("isCc",            lua_midi_isCc);
-		setTableFunc("isCc14bit",       lua_midi_isCc14bit);
-		setTableFunc("isNrpn",          lua_midi_isNrpn);
-		setTableFunc("isRpn",           lua_midi_isRpn);
-		setTableFunc("isChanPressure",  lua_midi_isChanPressure);
-		setTableFunc("isClock",         lua_midi_isClock);
-		setTableFunc("isContinue",      lua_midi_isContinue);
-		setTableFunc("isKeyPressure",   lua_midi_isKeyPressure);
-		setTableFunc("isNoteOff",       lua_midi_isNoteOff);
-		setTableFunc("isNoteRelease",   lua_midi_isNoteRelease);
-		setTableFunc("isNoteOn",        lua_midi_isNoteOn);
-		setTableFunc("isPitchWheel",    lua_midi_isPitchWheel);
-		setTableFunc("isProgramChange", lua_midi_isProgramChange);
-		setTableFunc("isStart",         lua_midi_isStart);
-		setTableFunc("isStop",          lua_midi_isStop);
-		setTableFunc("isSysEx",         lua_midi_isSysEx);
 		setTableFunc("setCc",           lua_midi_setCc);
 		setTableFunc("setCc14bit",      lua_midi_setCc14bit);
 		setTableFunc("setChannel",      lua_midi_setChannel);
@@ -1147,6 +1133,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("setRaw",          lua_midi_setRaw);
 		setTableFunc("setSysEx",        lua_midi_setSysEx);
 		setTableFunc("setValue",        lua_midi_setValue);
+		for (const TypeConstant& c : typeConstants()) {
+			lua_pushstring(L, c.value);
+			lua_setfield(L, -2, c.name);
+		}
 		setTableFunc("enableNrpnIn",    lua_midi_enableNrpnIn);
 		setTableFunc("enableRpnIn",     lua_midi_enableRpnIn);
 		setTableFunc("enableCc14bitIn", lua_midi_enableCc14bitIn);
@@ -1990,14 +1980,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
-	// Type-aware, like StoermelderPackOne::MessageEx::getValue(): the combined
-	// 0-16383 quantity on an assembled NRPN/RPN/14-bit CC, the raw 7-bit data
-	// byte on everything else. Assembled messages are new, so no existing script
-	// can be relying on the old answer for one.
+	// Type-aware, like StoermelderPackOne::MessageEx::getValue(); see messageValue().
 	static int lua_midi_getValue(lua_State* L) {
 		ScriptMessage* m = getMsg(L, 1);
-		if (isAssembled(m)) lua_pushinteger(L, m->in.extraValue);
-		else lua_pushinteger(L, m->in.msg.getValue());
+		lua_pushinteger(L, messageValue(*m));
 		return 1;
 	}
 
@@ -2027,86 +2013,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 	}
 
-	static int lua_midi_isNrpn(lua_State* L) {
+	// midi.getType(msg): one of the midi.NOTE_ON, midi.CC, ... constants.
+	static int lua_midi_getType(lua_State* L) {
 		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.type == StoermelderPackOne::MessageEx::Type::NRPN);
-		return 1;
-	}
-	static int lua_midi_isRpn(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.type == StoermelderPackOne::MessageEx::Type::RPN);
-		return 1;
-	}
-	static int lua_midi_isCc14bit(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.type == StoermelderPackOne::MessageEx::Type::CC_14BIT);
-		return 1;
-	}
-
-	// is-type helpers
-	static int lua_midi_isCc(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xb);
-		return 1;
-	}
-	static int lua_midi_isChanPressure(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xd);
-		return 1;
-	}
-	static int lua_midi_isClock(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0x8);
-		return 1;
-	}
-	static int lua_midi_isContinue(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0xb);
-		return 1;
-	}
-	static int lua_midi_isKeyPressure(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xa);
-		return 1;
-	}
-	static int lua_midi_isNoteOff(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0x8);
-		return 1;
-	}
-	static int lua_midi_isNoteRelease(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, isNoteRelease(m->in.msg));
-		return 1;
-	}
-	static int lua_midi_isNoteOn(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0x9);
-		return 1;
-	}
-	static int lua_midi_isPitchWheel(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xe);
-		return 1;
-	}
-	static int lua_midi_isProgramChange(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xc);
-		return 1;
-	}
-	static int lua_midi_isStart(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0xa);
-		return 1;
-	}
-	static int lua_midi_isStop(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0xc);
-		return 1;
-	}
-	static int lua_midi_isSysEx(lua_State* L) {
-		ScriptMessage* m = getMsg(L, 1);
-		lua_pushboolean(L, m->in.msg.getStatus() == 0xf && m->in.msg.getChannel() == 0x0);
+		lua_pushstring(L, messageType(*m));
 		return 1;
 	}
 

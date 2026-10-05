@@ -157,7 +157,7 @@ rack.registerContextMenu({
     }
 });
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let ch = midi.getChannel(msg);
 
     // Master channel and anything outside the zone passes through untouched
@@ -166,8 +166,8 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    // A Note-On with velocity 0 is how most keyboards send a release.
-    if (midi.isNoteOn(msg) && !midi.isNoteRelease(msg)) {
+    // A Note-On with velocity 0 is a NOTE_OFF, handled by the release branch below.
+    if (msgType === midi.NOTE_ON) {
         let note = midi.getNote(msg);
         // A Note-On resets the channel's bend: MPE senders emit the bend for a
         // new note after the Note-On, so carrying the previous note's bend over
@@ -187,7 +187,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isNoteRelease(msg)) {
+    if (msgType === midi.NOTE_OFF) {
         // Release the note that is actually sounding on this channel, not the
         // one in the incoming message: the fold may have shifted it, and the
         // receiver only knows the shifted note.
@@ -218,7 +218,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isPitchWheel(msg)) {
+    if (msgType === midi.PITCH_WHEEL) {
         let semis = bendToSemitones(midi.getPitchWheel(msg));
         let steps = roundToInt(semis);
         let prevSteps = roundToInt(state.bendOfChannel[ch]);
@@ -251,7 +251,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isChanPressure(msg)) {
+    if (msgType === midi.CHAN_PRESSURE) {
         if (!config.forwardPressure || !isActiveChannel(ch)) return;
         let out = midi.create();
         // Channel pressure is a 2-byte message - the pressure value lives in
@@ -262,7 +262,7 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isCc(msg) && midi.getControl(msg) === 74) {
+    if (msgType === midi.CC && midi.getControl(msg) === 74) {
         if (!config.forwardTimbre || !isActiveChannel(ch)) return;
         let out = midi.create();
         midi.setCc(out, config.outChannel, 74, midi.getValue(msg));
@@ -271,7 +271,7 @@ midi.onMessage = function(midiPort, msg) {
     }
 
     // Any other CC on a member channel is forwarded on the output channel
-    if (midi.isCc(msg)) {
+    if (msgType === midi.CC) {
         let out = midi.create();
         midi.setCc(out, config.outChannel, midi.getControl(msg), midi.getValue(msg));
         midiOut.send(out);

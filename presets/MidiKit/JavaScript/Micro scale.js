@@ -319,7 +319,7 @@ rack.onUnload = function() {
     midiOut.panic();
 };
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     let ch = midi.getChannel(msg);
 
     if (!matchesChannel(ch)) {
@@ -327,10 +327,10 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    let vel = midi.isNoteOn(msg) ? midi.getValue(msg) : 0;
-    let isOn = midi.isNoteOn(msg) && vel > 0;
-    // Velocity 0 is the running-status spelling of a Note-Off.
-    let isOff = midi.isNoteRelease(msg);
+    // A Note-On with velocity 0 is a NOTE_OFF.
+    let isOn = msgType === midi.NOTE_ON;
+    let isOff = msgType === midi.NOTE_OFF;
+    let vel = isOn ? midi.getValue(msg) : 0;
 
     if (isOn) {
         let note = midi.getNote(msg);

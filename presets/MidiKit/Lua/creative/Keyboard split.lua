@@ -93,13 +93,13 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     local ch = midi.getChannel(msg)
 
     -- Control CC: switch the active preset when a CC whose number matches one
     -- of the presets arrives with value > 0, then consume it so it never
     -- reaches the synths.
-    if midi.isCc(msg) and (config.controlChannel == 0 or ch == config.controlChannel) then
+    if msgType == midi.CC and (config.controlChannel == 0 or ch == config.controlChannel) then
         local cc = midi.getControl(msg)
         for i = 1, #config.presets do
             if config.presets[i].cc == cc then
@@ -113,11 +113,11 @@ midi.onMessage = function(midiPort, msg)
         end
     end
 
+    -- A Note-On with velocity 0 is a NOTE_OFF.
+    local isOn = msgType == midi.NOTE_ON
+    local isOff = msgType == midi.NOTE_OFF
     local vel = 0
-    if midi.isNoteOn(msg) then vel = midi.getValue(msg) end
-    local isOn = midi.isNoteOn(msg) and vel > 0
-    -- Velocity 0 is the running-status spelling of a Note-Off.
-    local isOff = midi.isNoteRelease(msg)
+    if isOn then vel = midi.getValue(msg) end
 
     if isOn or isOff then
         local note = midi.getNote(msg)

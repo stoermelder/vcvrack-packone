@@ -158,11 +158,11 @@ rack.onUnload = function()
     end
 end
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     local ch = midi.getChannel(msg)
 
-    -- A Note-On with velocity 0 is how most keyboards send a release.
-    if midi.isNoteOn(msg) and not midi.isNoteRelease(msg) and matchesChannel(ch) then
+    -- A Note-On with velocity 0 is a NOTE_OFF, handled by the release branch below.
+    if msgType == midi.NOTE_ON and matchesChannel(ch) then
         local note = midi.getNote(msg)
 
         -- Cancel the note's pending scheduled Note-Off on every Note-On, so that
@@ -188,7 +188,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isNoteRelease(msg) and matchesChannel(ch) then
+    if msgType == midi.NOTE_OFF and matchesChannel(ch) then
         -- Dropped on purpose: the scheduled Note-Off is what ends the note.
         -- state.sounding is not cleared here: the note keeps sounding until
         -- that scheduled release fires, however early the key is lifted, and

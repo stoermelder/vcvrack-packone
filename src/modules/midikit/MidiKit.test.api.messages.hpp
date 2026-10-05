@@ -257,7 +257,7 @@ static const char* JS_CC_REROUTE = R"(/**
  * @description CC number +1 passthrough
  */
 midi.onMessage = function(port, msg) {
-    if (midi.isCc(msg)) {
+    if (midi.getType(msg) === midi.CC) {
         midi.setNote(msg, midi.getNote(msg) + 1);
         midiOut.send(msg);
     }
@@ -269,7 +269,7 @@ static const char* LUA_CC_REROUTE = R"(--[[
 @description CC number +1 passthrough
 --]]
 midi.onMessage = function(port, msg)
-    if midi.isCc(msg) then
+    if midi.getType(msg) == midi.CC then
         midi.setNote(msg, midi.getNote(msg) + 1)
         midiOut.send(msg)
     end
@@ -793,16 +793,16 @@ TEST_CASE("setRPN with 16383 sends only the RPN null select, NRPN 16383 stays a 
 TEST_CASE("The RPN null handle has a number but no value, and its setters and clone follow", "[MidiKit][CrossEngine]") {
 	// isRpn, control, value, channel; then the same after setChannel, setValue and a clone.
 	std::string js = "let g = midi.createRPN(); midi.setRPN(g, 2, 16383, 1000);"
-		"rack.log('A:' + [midi.isRpn(g), midi.getControl(g), midi.getValue(g), midi.getChannel(g)].join(' '));"
+		"rack.log('A:' + [(midi.getType(g) === midi.RPN), midi.getControl(g), midi.getValue(g), midi.getChannel(g)].join(' '));"
 		"midi.setChannel(g, 5); midi.setValue(g, 77);"
 		"let c = midi.clone(g);"
-		"rack.log('B:' + [midi.isRpn(c), midi.getControl(c), midi.getValue(c), midi.getChannel(c)].join(' '));"
+		"rack.log('B:' + [(midi.getType(c) === midi.RPN), midi.getControl(c), midi.getValue(c), midi.getChannel(c)].join(' '));"
 		"midiOut.send(c);";
 	std::string lua = "local g = midi.createRPN(); midi.setRPN(g, 2, 16383, 1000);"
-		"rack.log('A:' .. table.concat({tostring(midi.isRpn(g)), midi.getControl(g), midi.getValue(g), midi.getChannel(g)}, ' '));"
+		"rack.log('A:' .. table.concat({tostring(midi.getType(g) == midi.RPN), midi.getControl(g), midi.getValue(g), midi.getChannel(g)}, ' '));"
 		"midi.setChannel(g, 5); midi.setValue(g, 77);"
 		"local c = midi.clone(g);"
-		"rack.log('B:' .. table.concat({tostring(midi.isRpn(c)), midi.getControl(c), midi.getValue(c), midi.getChannel(c)}, ' '));"
+		"rack.log('B:' .. table.concat({tostring(midi.getType(c) == midi.RPN), midi.getControl(c), midi.getValue(c), midi.getChannel(c)}, ' '));"
 		"midiOut.send(c)";
 	EngineRun r1 = run(jsOnMessage(js));
 	EngineRun r2 = run(luaOnMessage(lua));
@@ -1251,24 +1251,24 @@ TEST_CASE("midi.clone of a group needs room for the whole group", "[MidiKit][Cro
 // A created group answers the type-aware accessors like a received one: its
 // type is set by the constructor, its number and value by the setter.
 
-TEST_CASE("A created group handle answers isNrpn, getControl and getValue", "[MidiKit][CrossEngine]") {
+TEST_CASE("A created group handle answers getType, getControl and getValue", "[MidiKit][CrossEngine]") {
 	struct Case { const char* name; const char* js; const char* lua; const char* unset; const char* set; };
 	const Case cases[] = {
-		{ "NRPN", "let g = midi.createNRPN();", "local g = midi.createNRPN()", "true false false -1 -1",
+		{ "NRPN", "let g = midi.createNRPN();", "local g = midi.createNRPN()", "false false false -1 -1",
 		  "midi.setNRPN(g, 2, 300, 1000);" },
-		{ "RPN", "let g = midi.createRPN();", "local g = midi.createRPN()", "false true false -1 -1",
+		{ "RPN", "let g = midi.createRPN();", "local g = midi.createRPN()", "false false false -1 -1",
 		  "midi.setRPN(g, 2, 300, 1000);" },
-		{ "14-bit CC", "let g = midi.createCc14bit();", "local g = midi.createCc14bit()", "false false true -1 -1",
+		{ "14-bit CC", "let g = midi.createCc14bit();", "local g = midi.createCc14bit()", "false false false -1 -1",
 		  "midi.setCc14bit(g, 2, 300, 12864);" },
 	};
 	const char* setExpected[] = { "true false false 300 1000 2", "false true false 300 1000 2", "false false true 31 12864 2" };
 	// 14-bit CC: cc 300 clamps to 31, value 100.5 -> MSB 100, LSB 64 -> 100 * 128 + 64.
-	const char* jsLog = "rack.log([midi.isNrpn(g), midi.isRpn(g), midi.isCc14bit(g), midi.getControl(g), midi.getValue(g), midi.getChannel(g)].join(' '));";
-	const char* luaLog = "rack.log(table.concat({tostring(midi.isNrpn(g)), tostring(midi.isRpn(g)), tostring(midi.isCc14bit(g)), midi.getControl(g), midi.getValue(g), midi.getChannel(g)}, ' '))";
+	const char* jsLog = "rack.log([(midi.getType(g) === midi.NRPN), (midi.getType(g) === midi.RPN), (midi.getType(g) === midi.CC14BIT), midi.getControl(g), midi.getValue(g), midi.getChannel(g)].join(' '));";
+	const char* luaLog = "rack.log(table.concat({tostring(midi.getType(g) == midi.NRPN), tostring(midi.getType(g) == midi.RPN), tostring(midi.getType(g) == midi.CC14BIT), midi.getControl(g), midi.getValue(g), midi.getChannel(g)}, ' '))";
 	size_t i = 0;
 	for (const Case& c : cases) {
 		CATCH_INFO(c.name);
-		// Fresh handle: the type is known, the number and value are not yet.
+		// Fresh handle: type none until the setter has run, and no number or value yet.
 		EngineRun js = run(jsOnMessage(std::string(c.js) + " " + jsLog));
 		EngineRun lua = run(luaOnMessage(std::string(c.lua) + "; " + luaLog));
 		CATCH_INFO(js.log);
@@ -1338,8 +1338,8 @@ TEST_CASE("setValue on a group sets the combined 14-bit value and keeps number a
 }
 
 TEST_CASE("A clone of a set group keeps its number and value, and is independent", "[MidiKit][CrossEngine]") {
-	const char* js = "let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); let c = midi.clone(g); midi.setValue(c, 7); rack.log([midi.isNrpn(c), midi.getControl(c), midi.getValue(c), midi.getValue(g)].join(' '));";
-	const char* lua = "local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); local c = midi.clone(g); midi.setValue(c, 7); rack.log(table.concat({tostring(midi.isNrpn(c)), midi.getControl(c), midi.getValue(c), midi.getValue(g)}, ' '))";
+	const char* js = "let g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); let c = midi.clone(g); midi.setValue(c, 7); rack.log([(midi.getType(c) === midi.NRPN), midi.getControl(c), midi.getValue(c), midi.getValue(g)].join(' '));";
+	const char* lua = "local g = midi.createNRPN(); midi.setNRPN(g, 1, 300, 1000); local c = midi.clone(g); midi.setValue(c, 7); rack.log(table.concat({tostring(midi.getType(c) == midi.NRPN), midi.getControl(c), midi.getValue(c), midi.getValue(g)}, ' '))";
 	EngineRun rjs = run(jsOnMessage(js));
 	EngineRun rlua = run(luaOnMessage(lua));
 	CATCH_INFO(rjs.log);
@@ -1520,126 +1520,131 @@ TEST_CASE("NRPN quads are sent in send() order, not handle-creation order, in bo
 // same PROBE_PREFIX log channel used for the number.* tests above instead of
 // engine-internal js_eval/lua_getglobal readbacks.
 
-static const char* JS_IS_TYPES = R"(/**
+// ── midi.getType and the type constants ─────────────────────────────────────
+// One table for both engines: each case builds a message, logs "T:<type>:<value>"
+// (getType and getValue) and the test looks for the expected text. A case with no
+// value in `expected` ends at the colon, for messages whose data byte is not defined.
+
+TEST_CASE("midi.getType and getValue answer for every message type", "[MidiKit][CrossEngine]") {
+	struct Case { const char* js; const char* lua; const char* expected; };
+	const Case cases[] = {
+		{"let m = midi.create(); midi.setRaw(m, \"903c64\");", "local m = midi.create() midi.setRaw(m, \"903c64\")", "T:noteOn:100"},
+		{"let m = midi.create(); midi.setRaw(m, \"903c00\");", "local m = midi.create() midi.setRaw(m, \"903c00\")", "T:noteOff:0"},
+		{"let m = midi.create(); midi.setRaw(m, \"803c40\");", "local m = midi.create() midi.setRaw(m, \"803c40\")", "T:noteOff:64"},
+		{"let m = midi.create(); midi.setRaw(m, \"903c\");", "local m = midi.create() midi.setRaw(m, \"903c\")", "T:noteOn:"},
+		{"let m = midi.create(); midi.setRaw(m, \"a03c28\");", "local m = midi.create() midi.setRaw(m, \"a03c28\")", "T:keyPressure:40"},
+		{"let m = midi.create(); midi.setCc(m, 1, 7, 100);", "local m = midi.create() midi.setCc(m, 1, 7, 100)", "T:cc:100"},
+		{"let m = midi.create(); midi.setProgramChange(m, 1, 5);", "local m = midi.create() midi.setProgramChange(m, 1, 5)", "T:programChange:"},
+		{"let m = midi.create(); midi.setChanPressure(m, 1, 64);", "local m = midi.create() midi.setChanPressure(m, 1, 64)", "T:chanPressure:"},
+		{"let m = midi.create(); midi.setPitchWheel(m, 1, 8192);", "local m = midi.create() midi.setPitchWheel(m, 1, 8192)", "T:pitchWheel:"},
+		{"let m = midi.create(); midi.setSysEx(m, \"43104c0000\");", "local m = midi.create() midi.setSysEx(m, \"43104c0000\")", "T:sysEx:"},
+		// System common: F1 and F3 answer their data byte, F2 the 14-bit position (LSB first on the wire).
+		{"let m = midi.create(); midi.setRaw(m, \"f137\");", "local m = midi.create() midi.setRaw(m, \"f137\")", "T:mtcQuarterFrame:55"},
+		{"let m = midi.create(); midi.setRaw(m, \"f20102\");", "local m = midi.create() midi.setRaw(m, \"f20102\")", "T:songPosition:257"},
+		{"let m = midi.create(); midi.setRaw(m, \"f27f7f\");", "local m = midi.create() midi.setRaw(m, \"f27f7f\")", "T:songPosition:16383"},
+		{"let m = midi.create(); midi.setRaw(m, \"f303\");", "local m = midi.create() midi.setRaw(m, \"f303\")", "T:songSelect:3"},
+		{"let m = midi.create(); midi.setRaw(m, \"f6\");", "local m = midi.create() midi.setRaw(m, \"f6\")", "T:tuneRequest:"},
+		{"let m = midi.create(); midi.setRaw(m, \"f8\");", "local m = midi.create() midi.setRaw(m, \"f8\")", "T:clock:"},
+		{"let m = midi.create(); midi.setRaw(m, \"fa\");", "local m = midi.create() midi.setRaw(m, \"fa\")", "T:start:"},
+		{"let m = midi.create(); midi.setRaw(m, \"fb\");", "local m = midi.create() midi.setRaw(m, \"fb\")", "T:continue:"},
+		{"let m = midi.create(); midi.setRaw(m, \"fc\");", "local m = midi.create() midi.setRaw(m, \"fc\")", "T:stop:"},
+		{"let m = midi.create(); midi.setRaw(m, \"fe\");", "local m = midi.create() midi.setRaw(m, \"fe\")", "T:activeSensing:"},
+		{"let m = midi.create(); midi.setRaw(m, \"ff\");", "local m = midi.create() midi.setRaw(m, \"ff\")", "T:reset:"},
+		{"let m = midi.create(); midi.setRaw(m, \"f4\");", "local m = midi.create() midi.setRaw(m, \"f4\")", "T:unknown:"},
+		{"let m = midi.create(); midi.setRaw(m, \"fd\");", "local m = midi.create() midi.setRaw(m, \"fd\")", "T:unknown:"},
+		// Nothing set yet.
+		{"let m = midi.create();", "local m = midi.create()", "T:none:"},
+		// Groups answer for the group, never as CC.
+		{"let m = midi.createNRPN(); midi.setNRPN(m, 1, 300, 1000);", "local m = midi.createNRPN() midi.setNRPN(m, 1, 300, 1000)", "T:nrpn:1000"},
+		{"let m = midi.createRPN(); midi.setRPN(m, 1, 0, 256);", "local m = midi.createRPN() midi.setRPN(m, 1, 0, 256)", "T:rpn:256"},
+		{"let m = midi.createCc14bit(); midi.setCc14bit(m, 1, 7, 12345);", "local m = midi.createCc14bit() midi.setCc14bit(m, 1, 7, 12345)", "T:cc14bit:12345"},
+		{"let m = midi.createNRPN();", "local m = midi.createNRPN()", "T:none:"},
+	};
+	for (const Case& c : cases) {
+		for (bool lua : {false, true}) {
+			Kit<> kit;
+			MidiKitModule* m = kit.m;
+			std::string body = lua ? c.lua : c.js;
+			m->loadScript(lua
+				? "--[[\n@engine minilua@v1\n--]]\nrack.onLoad = function()\n" + body + "\nrack.log('T:' .. midi.getType(m) .. ':' .. midi.getValue(m))\nend\n"
+				: "/**\n * @engine QuickJs@v1\n */\nrack.onLoad = function() {\n" + body + "\nrack.log('T:' + midi.getType(m) + ':' + midi.getValue(m));\n};\n");
+			std::string log = drainLog(m);
+			CATCH_INFO(std::string(lua ? "Lua: " : "JS: ") + c.expected + "\n" + log);
+			REQUIRE(log.find(c.expected) != std::string::npos);
+		}
+	}
+}
+
+// A Note-On with velocity 0 is a noteOff but its bytes do not change, so forwarding
+// it still sends 9n nn 00.
+static const char* JS_TYPE_CONSTANTS = R"(/**
  * @engine QuickJs@v1
  */
 rack.onLoad = function() {
-    let msgNoteOn = midi.create();
-    midi.setNoteOn(msgNoteOn, 1, 60, 100);
-    let msgCc = midi.create();
-    midi.setCc(msgCc, 1, 10, 64);
-    let msgSysEx = midi.create();
-    midi.setSysEx(msgSysEx, "43104c0000");
-
-    let bits = "" +
-        (midi.isNoteOn(msgNoteOn) ? "1" : "0") +
-        (midi.isNoteOff(msgNoteOn) ? "1" : "0") +
-        (midi.isCc(msgNoteOn) ? "1" : "0") +
-        (midi.isCc(msgCc) ? "1" : "0") +
-        (midi.isSysEx(msgCc) ? "1" : "0") +
-        (midi.isSysEx(msgSysEx) ? "1" : "0") +
-        (midi.isClock(msgNoteOn) ? "1" : "0") +
-        (midi.isStart(msgNoteOn) ? "1" : "0") +
-        (midi.isStop(msgNoteOn) ? "1" : "0") +
-        (midi.isContinue(msgNoteOn) ? "1" : "0");
-    rack.log("PROBE:" + bits);
+    let m = midi.create(); midi.setNoteOn(m, 1, 60, 0);
+    rack.log("PROBE:" + (midi.getType(m) === midi.NOTE_OFF) + ":" + midi.getRaw(m));
+    midi.CC = "changed";
+    rack.log("PROBE:" + midi.CC + ":" + midi.NOTE_ON + ":" + midi.CC14BIT + ":" + midi.ACTIVE_SENSING + ":" + midi.NONE);
+    rack.log("PROBE:" + (midi.isNoteOn === undefined) + ":" + (midi.isNoteRelease === undefined) + ":" + (midi.isCc === undefined) + ":" + (midi.isClock === undefined));
 };
 )";
 
-static const char* LUA_IS_TYPES = R"(--[[
+static const char* LUA_TYPE_CONSTANTS = R"(--[[
 @engine minilua@v1
 --]]
 rack.onLoad = function()
-    local function b(v) if v then return "1" else return "0" end end
-
-    local msgNoteOn = midi.create()
-    midi.setNoteOn(msgNoteOn, 1, 60, 100)
-    local msgCc = midi.create()
-    midi.setCc(msgCc, 1, 10, 64)
-    local msgSysEx = midi.create()
-    midi.setSysEx(msgSysEx, "43104c0000")
-
-    local bits =
-        b(midi.isNoteOn(msgNoteOn)) ..
-        b(midi.isNoteOff(msgNoteOn)) ..
-        b(midi.isCc(msgNoteOn)) ..
-        b(midi.isCc(msgCc)) ..
-        b(midi.isSysEx(msgCc)) ..
-        b(midi.isSysEx(msgSysEx)) ..
-        b(midi.isClock(msgNoteOn)) ..
-        b(midi.isStart(msgNoteOn)) ..
-        b(midi.isStop(msgNoteOn)) ..
-        b(midi.isContinue(msgNoteOn))
-    rack.log("PROBE:" .. bits)
+    local m = midi.create(); midi.setNoteOn(m, 1, 60, 0)
+    rack.log("PROBE:" .. tostring(midi.getType(m) == midi.NOTE_OFF) .. ":" .. midi.getRaw(m))
+    rack.log("PROBE:" .. midi.CC .. ":" .. midi.NOTE_ON .. ":" .. midi.CC14BIT .. ":" .. midi.ACTIVE_SENSING .. ":" .. midi.NONE)
+    rack.log("PROBE:" .. tostring(midi.isNoteOn == nil) .. ":" .. tostring(midi.isNoteRelease == nil) .. ":" .. tostring(midi.isCc == nil) .. ":" .. tostring(midi.isClock == nil))
 end
 )";
 
-TEST_CASE("midi.is* predicates agree on every message type", "[MidiKit][CrossEngine]") {
-	requireLoggedValues(JS_IS_TYPES, LUA_IS_TYPES, {"1001010000"});
+TEST_CASE("midi type constants are strings, JS ones are read-only, the is* predicates are gone", "[MidiKit][CrossEngine]") {
+	requireLoggedValues(JS_TYPE_CONSTANTS, LUA_TYPE_CONSTANTS, {"true:903c00", "cc:noteOn:cc14bit:activeSensing:none", "true:true:true:true"});
 }
 
-
-// midi.isNoteRelease: a Note-Off, or a Note-On with velocity 0 (how most keyboards
-// release a key). isNoteOn/isNoteOff keep reading the status only.
-// Per message the bits are isNoteOn, isNoteOff, isNoteRelease.
-static const char* JS_IS_NOTE_RELEASE = R"(/**
+static const char* JS_GET_TYPE_BAD = R"(/**
  * @engine QuickJs@v1
  */
-rack.onLoad = function() {
-    let on = midi.create(); midi.setNoteOn(on, 1, 60, 100);
-    let on0 = midi.create(); midi.setNoteOn(on0, 1, 60, 0);
-    let off = midi.create(); midi.setNoteOff(off, 1, 60, 64);
-    let cc = midi.create(); midi.setCc(cc, 1, 10, 0);
-    let short = midi.create(); midi.setRaw(short, "903c");
-    let sysex = midi.create(); midi.setSysEx(sysex, "43104c0000");
-    let all = [on, on0, off, cc, short, sysex];
-    let bits = "";
-    for (let i = 0; i < all.length; i++) {
-        bits += (midi.isNoteOn(all[i]) ? "1" : "0") + (midi.isNoteOff(all[i]) ? "1" : "0") + (midi.isNoteRelease(all[i]) ? "1" : "0");
-    }
-    rack.log("PROBE:" + bits);
-};
+midi.onMessage = function(port, msg) { midi.getType(); };
 )";
 
-static const char* LUA_IS_NOTE_RELEASE = R"(--[[
+static const char* LUA_GET_TYPE_BAD = R"(--[[
 @engine minilua@v1
 --]]
-rack.onLoad = function()
-    local function b(v) if v then return "1" else return "0" end end
-    local on = midi.create(); midi.setNoteOn(on, 1, 60, 100)
-    local on0 = midi.create(); midi.setNoteOn(on0, 1, 60, 0)
-    local off = midi.create(); midi.setNoteOff(off, 1, 60, 64)
-    local cc = midi.create(); midi.setCc(cc, 1, 10, 0)
-    local short = midi.create(); midi.setRaw(short, "903c")
-    local sysex = midi.create(); midi.setSysEx(sysex, "43104c0000")
-    local all = { on, on0, off, cc, short, sysex }
-    local bits = ""
-    for i = 1, #all do
-        bits = bits .. b(midi.isNoteOn(all[i])) .. b(midi.isNoteOff(all[i])) .. b(midi.isNoteRelease(all[i]))
-    end
-    rack.log("PROBE:" .. bits)
-end
+midi.onMessage = function(port, msg) midi.getType() end
 )";
 
-TEST_CASE("midi.isNoteRelease folds a velocity-0 Note-On into a release, in both engines", "[MidiKit][CrossEngine]") {
-	// on(100): 100, on(0): 101, off: 011, cc: 000, 2-byte Note-On: 100, sysex: 000
-	requireLoggedValues(JS_IS_NOTE_RELEASE, LUA_IS_NOTE_RELEASE, {"100101011000100000"});
+TEST_CASE("midi.getType rejects a missing message", "[MidiKit][CrossEngine]") {
+	requireEquivalentLog(JS_GET_TYPE_BAD, LUA_GET_TYPE_BAD, "getType", true);
 }
 
-static const char* JS_IS_NOTE_RELEASE_BAD = R"(/**
- * @engine QuickJs@v1
- */
-midi.onMessage = function(port, msg) { midi.isNoteRelease(); };
-)";
-
-static const char* LUA_IS_NOTE_RELEASE_BAD = R"(--[[
-@engine minilua@v1
---]]
-midi.onMessage = function(port, msg) midi.isNoteRelease() end
-)";
-
-TEST_CASE("midi.isNoteRelease rejects a missing message", "[MidiKit][CrossEngine]") {
-	requireEquivalentLog(JS_IS_NOTE_RELEASE_BAD, LUA_IS_NOTE_RELEASE_BAD, "isNoteRelease", true);
+// midi.onMessage gets the type of the incoming message as its third argument.
+TEST_CASE("midi.onMessage passes the message type as third argument", "[MidiKit][CrossEngine]") {
+	struct Case { std::vector<uint8_t> bytes; const char* expected; };
+	const Case cases[] = {
+		{ {0x90, 60, 100}, "T:noteOn:noteOn" },
+		{ {0x90, 60, 0}, "T:noteOff:noteOff" },
+		{ {0xb0, 7, 64}, "T:cc:cc" },
+		{ {0xfe}, "T:activeSensing:activeSensing" },
+	};
+	for (const Case& c : cases) {
+		for (bool lua : {false, true}) {
+			Kit<> kit;
+			MidiKitModule* m = kit.m;
+			m->loadScript(lua
+				? "--[[\n@engine minilua@v1\n--]]\nmidi.onMessage = function(port, msg, msgType)\nrack.log('T:' .. msgType .. ':' .. midi.getType(msg))\nend\n"
+				: "/**\n * @engine QuickJs@v1\n */\nmidi.onMessage = function(port, msg, msgType) {\nrack.log('T:' + msgType + ':' + midi.getType(msg));\n};\n");
+			midi::Message msg;
+			msg.bytes = c.bytes;
+			m->host.getActiveEngine()->processInMessage(0, QueuedMessage(msg));
+			m->host.getActiveEngine()->process();
+			std::string log = drainLog(m);
+			CATCH_INFO(std::string(lua ? "Lua: " : "JS: ") + c.expected + "\n" + log);
+			REQUIRE(log.find(c.expected) != std::string::npos);
+		}
+	}
 }
 
 

@@ -38,11 +38,11 @@ let active = 1;
 let held = [];
 
 // Keeps `held` in step with the notes sent to the active output.
-function trackHeld(msg) {
-    if (!(midi.isNoteOn(msg) || midi.isNoteOff(msg))) return;
+function trackHeld(msg, msgType) {
+    if (msgType !== midi.NOTE_ON && msgType !== midi.NOTE_OFF) return;
     const ch = midi.getChannel(msg), note = midi.getNote(msg);
     held = held.filter(function(n) { return n[0] !== ch || n[1] !== note; });
-    if (midi.isNoteOn(msg) && midi.getValue(msg) > 0) held.push([ch, note]);
+    if (msgType === midi.NOTE_ON) held.push([ch, note]);
 }
 
 // Releases the notes held on the active output.
@@ -133,8 +133,8 @@ trig.onTrigger = function(trigPort, channel) {
     switchTo(active % config.numOutputs + 1);
 };
 
-midi.onMessage = function(midiPort, msg) {
-    trackHeld(msg);
+midi.onMessage = function(midiPort, msg, msgType) {
+    trackHeld(msg, msgType);
     midiOut.selectPort(active);
     midiOut.send(msg);
 };

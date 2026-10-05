@@ -98,15 +98,15 @@ rack.onLoad = function()
 end
 
 -- Callbacks
-midi.onMessage = function(midiPort, msg)
-    if midi.isStart(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+    if msgType == midi.START then
         resetPhase()
         state.running = true
         midiOut.send(msg)
         return
     end
 
-    if midi.isContinue(msg) then
+    if msgType == midi.CONTINUE then
         -- Continue resumes mid-bar, but restarting the phase here keeps the
         -- divided clock aligned to the resume point rather than to a stale count.
         resetPhase()
@@ -115,13 +115,13 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isStop(msg) then
+    if msgType == midi.STOP then
         state.running = false
         midiOut.send(msg)
         return
     end
 
-    if midi.isClock(msg) then
+    if msgType == midi.CLOCK then
         state.tickCount = state.tickCount + 1
         if state.tickCount < config.divisor then
             -- Swallowed - this is the division itself

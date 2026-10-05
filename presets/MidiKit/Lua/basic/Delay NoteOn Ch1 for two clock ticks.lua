@@ -9,7 +9,7 @@
 -- waits for a number of rising edges on a trigger input (default: trigger input 1,
 -- channel 1), so the delay follows the tempo of a clock patched into it. Only
 -- notes on channel 1 are delayed, Note-Offs along with their Note-Ons so no note
--- hangs (a Note-On with velocity 0 counts as a Note-On); everything else is dropped.
+-- hangs (a Note-On with velocity 0 counts as a Note-Off); everything else is dropped.
 
 rack.onLoad = function()
     -- The delayed notes are counted in ticks of the trigger input's clock, so
@@ -18,8 +18,8 @@ rack.onLoad = function()
     trig.enableIn(1, 1)
 end
 
-midi.onMessage = function(midiPort, msg)
-    if midi.isNoteOn(msg) or midi.isNoteOff(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+    if msgType == midi.NOTE_ON or msgType == midi.NOTE_OFF then
         if midi.getChannel(msg) == 1 then
             midiOut.sendAfterTrigger(msg, 2)
         end

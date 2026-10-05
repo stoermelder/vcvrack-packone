@@ -236,7 +236,7 @@ rack.onUnload = function()
     end
 end
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     if not matchesChannel(midi.getChannel(msg)) then
         midiOut.send(msg)
         return
@@ -244,7 +244,7 @@ midi.onMessage = function(midiPort, msg)
 
     -- A Note-On with velocity 0 is how most keyboards send a release, so it
     -- must take the release path below and use state.playedAs.
-    if midi.isNoteOn(msg) and not midi.isNoteRelease(msg) then
+    if msgType == midi.NOTE_ON then
         local note = midi.getNote(msg)
         local snapped = quantise(note)
         state.playedAs[note] = snapped
@@ -255,7 +255,7 @@ midi.onMessage = function(midiPort, msg)
         return
     end
 
-    if midi.isNoteRelease(msg) then
+    if msgType == midi.NOTE_OFF then
         local note = midi.getNote(msg)
         -- Release whatever was actually sent for this key. If the note was
         -- never seen (script loaded mid-chord), fall back to the raw number.

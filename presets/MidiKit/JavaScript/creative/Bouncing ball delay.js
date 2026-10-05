@@ -126,8 +126,8 @@ param.onValueText = function(i) {
     return number.toString(param.getValue(i));
 };
 
-midi.onMessage = function(midiPort, msg) {
-    if (midi.isNoteOn(msg) && midi.getValue(msg) > 0) {
+midi.onMessage = function(midiPort, msg, msgType) {
+    if (msgType === midi.NOTE_ON) {
         let ch = midi.getChannel(msg);
         let note = midi.getNote(msg);
         let vel = midi.getValue(msg);

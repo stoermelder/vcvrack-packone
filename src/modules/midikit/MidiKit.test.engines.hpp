@@ -180,7 +180,7 @@ TEST_CASE("Garbage-generating callbacks do not grow RAM usage", "[MidiKit][Engin
 	m->loadScript(Pair{QJS_GC_SCRATCH, LUA_GC_SCRATCH}.get(lang));
 	REQUIRE(scriptLoaded(m, lang));
 
-	feedNotes(m, 200);
+	feedNotes(m, 1000);
 	size_t used0 = heapUsed(m, lang);
 	feedNotes(m, 5000);
 	size_t total1;
@@ -768,7 +768,7 @@ static const char* QJS_MIDI_ROUNDTRIP = R"(/**
  * @engine QuickJs@v1
  */
 midi.onMessage = function(port, m) {
-	if (midi.isCc(m)) {
+	if (midi.getType(m) === midi.CC) {
 		let out = midi.clone(m);
 		midi.setChannel(out, 2);
 		midiOut.selectPort(1);

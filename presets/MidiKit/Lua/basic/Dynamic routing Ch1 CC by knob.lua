@@ -14,8 +14,8 @@ rack.onLoad = function()
     param.enable(1)
 end
 
-midi.onMessage = function(midiPort, msg)
-    if midi.isCc(msg) and midi.getChannel(msg) == 1 then
+midi.onMessage = function(midiPort, msg, msgType)
+    if msgType == midi.CC and midi.getChannel(msg) == 1 then
         -- 0..1 -> channel 1-16
         local ch = math.ceil(param.getValue(1) * 16)
         midi.setChannel(msg, ch)

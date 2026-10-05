@@ -1329,10 +1329,9 @@ TEST_CASE("Round trip: a script receives the releases another script creates", "
 				  "let c = midi.create(); midi.setNoteOn(c, 1, 60, 100); midiOut.send(c);\n};\n";
 			std::string recv = recvLua
 				? "--[[\n@engine minilua@v1\n--]]\nmidi.onMessage = function(port, msg)\n"
-				  "local function b(v) if v then return '1' else return '0' end end\n"
-				  "rack.log('P:' .. b(midi.isNoteOn(msg)) .. b(midi.isNoteOff(msg)) .. b(midi.isNoteRelease(msg)))\nend\n"
+				  "rack.log('P:' .. midi.getType(msg))\nend\n"
 				: "/**\n * @engine QuickJs@v1\n */\nmidi.onMessage = function(port, msg) {\n"
-				  "rack.log('P:' + (midi.isNoteOn(msg) ? '1' : '0') + (midi.isNoteOff(msg) ? '1' : '0') + (midi.isNoteRelease(msg) ? '1' : '0'));\n};\n";
+				  "rack.log('P:' + midi.getType(msg));\n};\n";
 
 			TimingRig sender(send.c_str());
 			sender.inject(noteOn(0, 60, 100), 8);
@@ -1354,8 +1353,8 @@ TEST_CASE("Round trip: a script receives the releases another script creates", "
 				if (log.compare(pos, 2, "P:") == 0) probes.push_back(log.substr(pos + 2, nl - pos - 2));
 				pos = nl + 1;
 			}
-			// isNoteOn, isNoteOff, isNoteRelease: the Note-Off, the velocity-0 Note-On, a real Note-On.
-			REQUIRE(probes == std::vector<std::string>({ "011", "101", "100" }));
+			// The Note-Off, the velocity-0 Note-On (also a release), a real Note-On.
+			REQUIRE(probes == std::vector<std::string>({ "noteOff", "noteOff", "noteOn" }));
 		}
 	}
 }

@@ -113,13 +113,100 @@ struct MidiScriptEngine {
 		return s.isNrpn && s.isRpn && s.in.paramNumber == rpnNull;
 	}
 
+	// The midi.NOTE_ON, midi.CC, ... constants and the strings midi.getType() returns.
+	// A script compares against the constant and never writes the string. Fixed for
+	// @engine ...@v1: constants are only added, never renamed or changed.
+	struct TypeConstant {
+		const char* name;
+		const char* value;
+	};
+	static const std::vector<TypeConstant>& typeConstants() {
+		static const std::vector<TypeConstant> table = {
+			{"NOTE_ON", "noteOn"}, {"NOTE_OFF", "noteOff"}, {"KEY_PRESSURE", "keyPressure"},
+			{"CC", "cc"}, {"PROGRAM_CHANGE", "programChange"}, {"CHAN_PRESSURE", "chanPressure"},
+			{"PITCH_WHEEL", "pitchWheel"}, {"NRPN", "nrpn"}, {"RPN", "rpn"}, {"CC14BIT", "cc14bit"},
+			{"SYSEX", "sysEx"}, {"MTC_QUARTER_FRAME", "mtcQuarterFrame"}, {"SONG_POSITION", "songPosition"},
+			{"SONG_SELECT", "songSelect"}, {"TUNE_REQUEST", "tuneRequest"}, {"CLOCK", "clock"},
+			{"START", "start"}, {"CONTINUE", "continue"}, {"STOP", "stop"},
+			{"ACTIVE_SENSING", "activeSensing"}, {"RESET", "reset"}, {"UNKNOWN", "unknown"}, {"NONE", "none"}
+		};
+		return table;
+	}
+
+	// A handle nothing was set on: a default message is size 3 with zero bytes, so
+	// "empty" is a first byte that is not a status byte.
+	static bool isEmptyMessage(const Message& m) {
+		return m.getSize() < 1 || m.bytes[0] < 0x80;
+	}
+
+	// midi.getType(): the type string (a typeConstants() value) of a handle's message.
+	// A group handle (NRPN/RPN/14-bit CC) is its group type, never CC, and "none" until
+	// its setter has run. A velocity-0 Note-On is "noteOff" (the bytes stay as they are);
+	// a Note-On without a velocity byte is "noteOn". Never an error.
+	static const char* messageType(const ScriptMessage& s) {
+		if (s.isNrpn || s.isCc14bit) {
+			if (s.in.paramNumber < 0) return "none";
+			return s.isCc14bit ? "cc14bit" : s.isRpn ? "rpn" : "nrpn";
+		}
+		if (isEmptyMessage(s.in.msg)) return "none";
+		using K = MidiText::Kind;
+		switch (MidiText::classify(s.in.msg).kind) {
+			case K::NOTE_ON:           return isNoteRelease(s.in.msg) ? "noteOff" : "noteOn";
+			case K::NOTE_OFF:          return "noteOff";
+			case K::KEY_PRESSURE:      return "keyPressure";
+			case K::CC:                return "cc";
+			case K::PROGRAM_CHANGE:    return "programChange";
+			case K::CHANNEL_PRESSURE:  return "chanPressure";
+			case K::PITCH_BEND:        return "pitchWheel";
+			case K::SYSEX:             return "sysEx";
+			case K::SONG_POINTER:      return "songPosition";
+			case K::SONG_SELECT:       return "songSelect";
+			case K::CLOCK:             return "clock";
+			case K::START:             return "start";
+			case K::CONTINUE:          return "continue";
+			case K::STOP:              return "stop";
+			case K::RESET:             return "reset";
+			case K::MTC_QUARTER_FRAME: return "mtcQuarterFrame";
+			case K::TUNE_REQUEST:      return "tuneRequest";
+			case K::ACTIVE_SENSING:    return "activeSensing";
+			case K::UNKNOWN:           return "unknown";
+			default:                   return "none";
+		}
+	}
+
+	// midi.getValue(): the combined 0-16383 quantity of an assembled or created
+	// NRPN/RPN/14-bit CC, the data byte of an MTC quarter frame (F1) and a Song Select
+	// (F3), the 14-bit position of a Song Position (F2), the raw 7-bit data byte of
+	// everything else.
+	static int messageValue(const ScriptMessage& s) {
+		switch (s.in.type) {
+			case MessageEx::Type::NRPN:
+			case MessageEx::Type::RPN:
+			case MessageEx::Type::CC_14BIT:
+				return s.in.extraValue;
+			default:
+				break;
+		}
+		const Message& m = s.in.msg;
+		if (m.getSize() >= 1 && m.getStatus() == 0xf) {
+			int lsb = m.getSize() >= 2 ? m.bytes[1] : 0;
+			int msb = m.getSize() >= 3 ? m.bytes[2] : 0;
+			switch (m.getChannel()) {
+				case 0x1: case 0x3: return lsb;
+				case 0x2: return (msb << 7) | lsb;
+				default: break;
+			}
+		}
+		return m.getValue();
+	}
+
 	// How many payload bytes midi.toString() shows of a SysEx message.
 	static const int toStringSysExBytes = 32;
 
 	// The one-line text of a handle's message for midi.toString(), in the wording of
 	// MIDI-MON (see MidiText). A group handle (NRPN/RPN/14-bit CC) is one message
 	// whose parts are the decode fields of its lead. A velocity-0 Note-On reads as a
-	// Note-Off, as midi.getType() will treat it. For display only, never an error.
+	// Note-Off, as midi.getType() treats it. For display only, never an error.
 	static std::string messageText(const ScriptMessage& s) {
 		MidiText::Fields f;
 		if (s.isNrpn || s.isCc14bit) {
@@ -130,9 +217,9 @@ struct MidiScriptEngine {
 			m.extraValue = s.in.extraValue;
 			f = MidiText::classify(m);
 		}
-		else {
+		else if (!isEmptyMessage(s.in.msg)) {
 			f = MidiText::classify(s.in.msg);
-			if (f.kind == MidiText::Kind::NOTE_ON && f.y == 0) f.kind = MidiText::Kind::NOTE_OFF;
+			if (f.kind == MidiText::Kind::NOTE_ON && isNoteRelease(s.in.msg)) f.kind = MidiText::Kind::NOTE_OFF;
 		}
 		std::string text = MidiText::format(f);
 		if (f.kind == MidiText::Kind::SYSEX && f.x > 0) {
@@ -168,7 +255,7 @@ struct MidiScriptEngine {
 	}
 
 	// Writes a group into msgStore[slot..]: the wire bytes of its messages and, on
-	// the lead, the decode fields (type, number, value) that midi.isNrpn(),
+	// the lead, the decode fields (type, number, value) that midi.getType(),
 	// getControl() and getValue() answer from. Bytes and decode fields are always
 	// written together, so every accessor agrees. The chain flags are set when the
 	// handle is created. kind NRPN/RPN: number and value 0-16383, 4 messages
@@ -267,7 +354,7 @@ struct MidiScriptEngine {
 		msgStore[dst].isNrpn = msgStore[src].isNrpn;
 		msgStore[dst].isRpn = msgStore[src].isRpn;
 		msgStore[dst].isCc14bit = msgStore[src].isCc14bit;
-		// A group's decode fields are part of its state (they are what isNrpn(),
+		// A group's decode fields are part of its state (they are what midi.getType(),
 		// getControl() and getValue() answer from), unlike a plain message's.
 		if (n > 1) {
 			msgStore[dst].in.type = msgStore[src].in.type;

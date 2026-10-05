@@ -110,17 +110,10 @@ param.onValueText = function(port) {
     return "";
 };
 
-midi.onMessage = function(midiPort, msg) {
-    if (midi.isNoteOn(msg) && matchesChannel(midi.getChannel(msg))) {
-        let vel = midi.getValue(msg);
-
-        // Velocity 0 is a Note-Off in disguise - pass it through untouched
-        if (vel === 0) {
-            midiOut.send(msg);
-            return;
-        }
-
-        let shaped = shapeVelocity(vel);
+midi.onMessage = function(midiPort, msg, msgType) {
+    // A Note-On with velocity 0 is a NOTE_OFF here and passes through untouched.
+    if (msgType === midi.NOTE_ON && matchesChannel(midi.getChannel(msg))) {
+        let shaped = shapeVelocity(midi.getValue(msg));
         midi.setValue(msg, shaped);
     }
 

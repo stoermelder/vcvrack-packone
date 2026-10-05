@@ -108,17 +108,10 @@ param.onValueText = function(port)
     return ""
 end
 
-midi.onMessage = function(midiPort, msg)
-    if midi.isNoteOn(msg) and matchesChannel(midi.getChannel(msg)) then
-        local vel = midi.getValue(msg)
-
-        -- Velocity 0 is a Note-Off in disguise - pass it through untouched
-        if vel == 0 then
-            midiOut.send(msg)
-            return
-        end
-
-        local shaped = shapeVelocity(vel)
+midi.onMessage = function(midiPort, msg, msgType)
+    -- A Note-On with velocity 0 is a NOTE_OFF here and passes through untouched.
+    if msgType == midi.NOTE_ON and matchesChannel(midi.getChannel(msg)) then
+        local shaped = shapeVelocity(midi.getValue(msg))
         midi.setValue(msg, shaped)
     end
 

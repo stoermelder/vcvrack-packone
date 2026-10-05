@@ -98,15 +98,15 @@ rack.onLoad = function() {
 };
 
 // Callbacks
-midi.onMessage = function(midiPort, msg) {
-    if (midi.isStart(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+    if (msgType === midi.START) {
         resetPhase();
         state.running = true;
         midiOut.send(msg);
         return;
     }
 
-    if (midi.isContinue(msg)) {
+    if (msgType === midi.CONTINUE) {
         // Continue resumes mid-bar, but restarting the phase here keeps the
         // divided clock aligned to the resume point rather than to a stale count.
         resetPhase();
@@ -115,13 +115,13 @@ midi.onMessage = function(midiPort, msg) {
         return;
     }
 
-    if (midi.isStop(msg)) {
+    if (msgType === midi.STOP) {
         state.running = false;
         midiOut.send(msg);
         return;
     }
 
-    if (midi.isClock(msg)) {
+    if (msgType === midi.CLOCK) {
         state.tickCount++;
         if (state.tickCount < config.divisor) {
             // Swallowed - this is the division itself

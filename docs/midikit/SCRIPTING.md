@@ -95,7 +95,7 @@ A script is a single text file with two kinds of code:
 
 | Callback | Runs ... | Needs |
 | --- | --- | --- |
-| `midi.onMessage(midiPort, msg)` | on every incoming MIDI message | nothing |
+| `midi.onMessage(midiPort, msg, msgType)` | on every incoming MIDI message; `msgType` is `midi.getType(msg)` | nothing |
 | `midi.onNrpn(midiPort, msg)`, `midi.onRpn(...)`, `midi.onCc14bit(...)` | on every completed NRPN, RPN or 14-bit CC parameter change | `midi.enableNrpnIn()`, `enableRpnIn()`, `enableCc14bitIn()` |
 | `trig.onTrigger(trigPort, channel)` | on every rising edge of an *enabled* trigger channel | `trig.enableIn()` |
 | `trig.onTipsyMessage(data, mimeType)` | on every complete [Tipsy](#tipsy) message decoded from trigger input 1 | `trig.enableTipsyIn()` |
@@ -105,7 +105,7 @@ A script is a single text file with two kinds of code:
 
 Rules for callbacks:
 
-- Assign each hook once, at the top level, as a plain field on its object: `midi.onMessage = function(midiPort, msg) {...}` in JS, `function midi.onMessage(midiPort, msg) ... end` in Lua. See [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time) for why.
+- Assign each hook once, at the top level, as a plain field on its object: `midi.onMessage = function(midiPort, msg, msgType) {...}` in JS, `function midi.onMessage(midiPort, msg, msgType) ... end` in Lua. See [Hooks and predefined objects are resolved once, at load time](#hooks-and-predefined-objects-are-resolved-once-at-load-time) for why.
 - A script without `midi.onMessage` loads but ignores all MIDI (logged once at load). No other hook warns when missing.
 - `trig.onTrigger` needs `trig.enableIn(trigPort, [channel])`. Until then that port and channel is not processed at all: no ticks counted, no `sendAfterTrigger` messages drained, no callback.
 - **The return value of `midi.onMessage` is ignored and reserved.** Nothing is dropped, consumed or forwarded because of it. A future version may give it a meaning (for example "consumed"), so don't return something by accident, such as `return midiOut.send(msg)` or an implicit return from a helper. End the callback with a bare `return` or no `return`. Messages are passed on only through the `midiOut.send*` calls.
@@ -115,7 +115,7 @@ Rules for callbacks:
 **Conventions in the examples**
 
 - Channels are 1..16. Parameter and input indices are 1..4 (1..2 on MIDI-µKIT, see [Module variants](#module-variants)). Trigger input and output indices are 1..2.
-- The main entry point is `midi.onMessage(midiPort, msg)`, where `midiPort` is the 1-based MIDI input the message arrived on.
+- The main entry point is `midi.onMessage(midiPort, msg, msgType)`, where `midiPort` is the 1-based MIDI input the message arrived on and `msgType` is the message's type, the same value as `midi.getType(msg)` (see [Message type](#message-type)). Most scripts branch on it, so it is passed in; a script that does not need it leaves the parameter out.
 - Only MIDI input and output 1 are enabled by default, see [Enabling MIDI ports](#enabling-midi-ports).
 
 The examples build up from simplest to most involved:
@@ -168,8 +168,8 @@ The script routes incoming CC messages on MIDI channel 2 to MIDI channel 3. All 
 
 JavaScript:
 ```js
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.CC && midi.getChannel(msg) === 2) {
       midi.setChannel(msg, 3);
    }
    midiOut.send(msg);
@@ -178,8 +178,8 @@ midi.onMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-midi.onMessage = function(midiPort, msg)
-   if midi.isCc(msg) and midi.getChannel(msg) == 2 then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.CC and midi.getChannel(msg) == 2 then
       midi.setChannel(msg, 3)
    end
    midiOut.send(msg)
@@ -193,8 +193,8 @@ JavaScript:
 ```js
 param.enable(1);
 
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.CC && midi.getChannel(msg) === 2) {
       let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
    }
@@ -206,8 +206,8 @@ Lua:
 ```lua
 param.enable(1)
 
-midi.onMessage = function(midiPort, msg)
-   if midi.isCc(msg) and midi.getChannel(msg) == 2 then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.CC and midi.getChannel(msg) == 2 then
       local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
    end
@@ -232,8 +232,8 @@ param.onValueText = function(port) {
     return number.toString(param.getValue(port));
 };
 
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isCc(msg) && midi.getChannel(msg) === 2) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.CC && midi.getChannel(msg) === 2) {
       let ch = Math.ceil(param.getValue(1) * 16);
       midi.setChannel(msg, ch);
    }
@@ -256,8 +256,8 @@ param.onValueText = function(port)
     return number.toString(param.getValue(port))
 end
 
-midi.onMessage = function(midiPort, msg)
-   if midi.isCc(msg) and midi.getChannel(msg) == 2 then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.CC and midi.getChannel(msg) == 2 then
       local ch = math.ceil(param.getValue(1) * 16)
       midi.setChannel(msg, ch)
    end
@@ -269,8 +269,8 @@ end
 
 JavaScript:
 ```js
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isNoteOn(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.NOTE_ON) {
       let nrpn1 = midi.createNRPN();
       midi.setNRPN(nrpn1, 1, 12345, 13456);
       midiOut.send(nrpn1);
@@ -280,8 +280,8 @@ midi.onMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-midi.onMessage = function(midiPort, msg)
-   if midi.isNoteOn(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.NOTE_ON then
       local nrpn1 = midi.createNRPN()
       midi.setNRPN(nrpn1, 1, 12345, 13456)
       midiOut.send(nrpn1)
@@ -297,8 +297,8 @@ receiver never sees the MSB without its LSB.
 
 JavaScript:
 ```js
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isNoteOn(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.NOTE_ON) {
       let cc14 = midi.createCc14bit();
       midi.setCc14bit(cc14, 1, 1, 12864);  // 100 * 128 + 64: CC 1 = 100 (MSB), CC 33 = 64 (LSB)
       midiOut.send(cc14);
@@ -308,8 +308,8 @@ midi.onMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-midi.onMessage = function(midiPort, msg)
-   if midi.isNoteOn(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.NOTE_ON then
       local cc14 = midi.createCc14bit()
       midi.setCc14bit(cc14, 1, 1, 12864)   -- 100 * 128 + 64: CC 1 = 100 (MSB), CC 33 = 64 (LSB)
       midiOut.send(cc14)
@@ -321,8 +321,8 @@ end
 
 JavaScript:
 ```js
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isNoteOn(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.NOTE_ON) {
       let sysex = midi.create();
       midi.setSysEx(sysex, "ab33010001");
       midiOut.send(sysex);
@@ -332,8 +332,8 @@ midi.onMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-midi.onMessage = function(midiPort, msg)
-   if midi.isNoteOn(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.NOTE_ON then
       local sysex = midi.create()
       midi.setSysEx(sysex, "ab33010001")
       midiOut.send(sysex)
@@ -347,8 +347,8 @@ Use `midi.setRaw()` for message types with no dedicated setter, such as an MTC q
 
 JavaScript:
 ```js
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isNoteOn(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.NOTE_ON) {
       let mtc = midi.create();
       midi.setRaw(mtc, "f11a");
       midiOut.send(mtc);
@@ -358,8 +358,8 @@ midi.onMessage = function(midiPort, msg) {
 
 Lua:
 ```lua
-midi.onMessage = function(midiPort, msg)
-   if midi.isNoteOn(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.NOTE_ON then
       local mtc = midi.create()
       midi.setRaw(mtc, "f11a")
       midiOut.send(mtc)
@@ -377,8 +377,8 @@ The example sends CC 123 (All Notes Off) on all 16 channels with one reused hand
 
 JavaScript:
 ```js
-midi.onMessage = function(midiPort, msg) {
-   if (midi.isNoteOn(msg)) {
+midi.onMessage = function(midiPort, msg, msgType) {
+   if (msgType === midi.NOTE_ON) {
       midiOut.send(msg);
    }
 };
@@ -394,8 +394,8 @@ rack.onUnload = function() {
 
 Lua:
 ```lua
-midi.onMessage = function(midiPort, msg)
-   if midi.isNoteOn(msg) then
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.NOTE_ON then
       midiOut.send(msg)
    end
 end
@@ -1291,7 +1291,7 @@ Messages are opaque **handles** into an internal message store. Create one with 
 
 #### Entry points
 
-- `midi.onMessage(midiPort, msg)` — the incoming-MIDI entry point (see
+- `midi.onMessage(midiPort, msg, msgType)` — the incoming-MIDI entry point (see
   [Script structure](#script-structure)): called with each incoming message
   that nothing else claimed (see
   [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)
@@ -1337,7 +1337,8 @@ Messages are opaque **handles** into an internal message store. Create one with 
 | `getChanPressure(msg)` | channel-pressure value |
 | `getControl(msg)` | see [Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc) for the type-aware behavior on group handles |
 | `getNote(msg)` | note number (or, on a plain CC, the controller number — the older spelling of `getControl`). On a group handle: the lead message's controller (CC 99, CC 101 for an RPN, or the MSB controller of a 14-bit CC) |
-| `getValue(msg)` | type-aware: raw 7-bit data byte, or the combined 14-bit value (0-16383) on an NRPN/RPN/14-bit CC group handle. `setCc14bit`, `setNRPN` and `setValue` take the same 0-16383 |
+| `getValue(msg)` | type-aware: the raw 7-bit data byte; the combined 14-bit value (0-16383) on an NRPN/RPN/14-bit CC group handle (`setCc14bit`, `setNRPN` and `setValue` take the same 0-16383); the 14-bit position (0-16383, in MIDI beats, sixteenth notes) of a Song Position (`F2`); the data byte (0-127) of a Song Select (`F3`) and of an MTC quarter frame (`F1`, piece `v >> 4`, nibble `v & 15`; in Lua `v // 16` and `v % 16`) |
+| `getType(msg)` | what the message is: one of the `midi.NOTE_ON`, `midi.CC`, ... constants, see [Message type](#message-type) |
 | `getLength(msg)` | size of the message in bytes (a SysEx message counts its `f0`/`f7` framing; compare `getSysExLength`) |
 | `getPitchWheel(msg)` | pitch-wheel value, 0-16383 (centre 8192) |
 | `getProgramChange(msg)` | program number |
@@ -1346,41 +1347,82 @@ Messages are opaque **handles** into an internal message store. Create one with 
 | `getRaw(msg)` | hex string of the message's raw bytes, exactly as sent/received — no framing added or removed |
 | `toString(msg)` | one line of text for a log, in the wording of [MIDI-MON](../midi/MidiMon.md): `ch01 note on  60 vel 100`, `ch02 cc7=100`, `ch01 nrpn param=1234 value=16383`, `clock tick`, `sysex (12 data bytes) 43 10 4c …` (payload only, the first 32 bytes). A Note-On with velocity 0 reads as `note off`. The text is meant for display and may get more detail later, so do not parse it; use `getRaw()` or the getters for that. It has no port and no time, and never raises an error for a valid handle |
 
-#### Type predicates
+#### Message type
 
-`isCc`, `isNoteOn`, `isNoteOff`, `isKeyPressure`, `isChanPressure`,
-`isProgramChange`, `isPitchWheel`, `isSysEx`, `isClock`, `isStart`,
-`isContinue`, `isStop` — all `is*(msg)`. Plus `isNrpn`, `isRpn`, `isCc14bit`,
-true for a received NRPN, RPN or 14-bit CC (see
-[Assembled extended input](#assembled-extended-input-nrpn--rpn--14-bit-cc)) and
-for handles from `midi.createNRPN()`, `midi.createRPN()` and
-`midi.createCc14bit()`, from the moment they are created.
-
-`isNoteOn` and `isNoteOff` read only the status: a Note-On with velocity 0 is a
-Note-On for them. Most keyboards send a key release that way (with running
-status), so a script that tracks held notes would treat the release as a new
-note. **`midi.isNoteRelease(msg)`** is true for a Note-Off *and* for a Note-On
-with velocity 0, as the MIDI specification defines a release. Test it first:
+`midi.getType(msg)` returns one of the constants below, and a script compares
+against the constant. `midi.onMessage` gets the type of the incoming message as its
+third argument, `msgType`, so it does not have to call `getType()` itself:
 
 ```js
-if (midi.isNoteRelease(msg)) {
-   // a key was released, whichever way the device sent it
-} else if (midi.isNoteOn(msg)) {
-   // a real Note-On (velocity > 0)
-}
+midi.onMessage = function(midiPort, msg, msgType) {
+   switch (msgType) {
+      case midi.NOTE_ON:  /* a key goes down */ break;
+      case midi.NOTE_OFF: /* a key goes up, either encoding */ break;
+      case midi.CC:       /* ... */ break;
+      case midi.ACTIVE_SENSING: break;    // drop
+      default: midiOut.send(msg);
+   }
+};
 ```
 
 ```lua
-if midi.isNoteRelease(msg) then
-   -- a key was released, whichever way the device sent it
-elseif midi.isNoteOn(msg) then
-   -- a real Note-On (velocity > 0)
+midi.onMessage = function(midiPort, msg, msgType)
+   if msgType == midi.NOTE_ON then
+      -- a key goes down
+   elseif msgType == midi.NOTE_OFF then
+      -- a key goes up, either encoding
+   elseif msgType ~= midi.ACTIVE_SENSING then
+      midiOut.send(msg)
+   end
 end
 ```
 
-It is the rule `midiOut.cancel()` uses for a Note-Off address. A 2-byte Note-On
-has no velocity and stays a Note-On. Releases a script creates with
-`midi.setNoteOff()` (0x80) are recognised as well.
+| Constant | Message |
+| --- | --- |
+| `midi.NOTE_ON` | `9n` with velocity > 0, or a 2-byte `9n` without velocity |
+| `midi.NOTE_OFF` | `8n`, **and `9n` with velocity 0** |
+| `midi.KEY_PRESSURE` | `An` |
+| `midi.CC` | `Bn` that is not part of an NRPN, RPN or 14-bit CC group |
+| `midi.PROGRAM_CHANGE` | `Cn` |
+| `midi.CHAN_PRESSURE` | `Dn` |
+| `midi.PITCH_WHEEL` | `En` |
+| `midi.NRPN`, `midi.RPN`, `midi.CC14BIT` | a group handle, received or created (see [Group handles](#setters)) |
+| `midi.SYSEX` | `F0` |
+| `midi.MTC_QUARTER_FRAME` | `F1` |
+| `midi.SONG_POSITION` | `F2` |
+| `midi.SONG_SELECT` | `F3` |
+| `midi.TUNE_REQUEST` | `F6` |
+| `midi.CLOCK` | `F8` |
+| `midi.START`, `midi.CONTINUE`, `midi.STOP` | `FA`, `FB`, `FC` |
+| `midi.ACTIVE_SENSING` | `FE` |
+| `midi.RESET` | `FF` |
+| `midi.UNKNOWN` | `F4`, `F5`, `F9`, `FD`, a lone `F7` |
+| `midi.NONE` | a handle nothing was set on (a fresh `midi.create()`, or a group handle whose setter has not run) |
+
+- **A Note-On with velocity 0 is `midi.NOTE_OFF`.** This is how the MIDI
+  specification defines a release, and most keyboards send a key release that way
+  (with running status). `case midi.NOTE_ON` therefore only sees notes that start,
+  which is what a script that tracks held notes wants. The bytes do not change:
+  forwarding the message still sends `9n nn 00`, and `getRaw()` shows it. It is
+  the rule `midiOut.cancel()` uses for a Note-Off address. A 2-byte Note-On has no
+  velocity and stays `midi.NOTE_ON`. Releases a script creates with
+  `midi.setNoteOff()` (`8n`) are `midi.NOTE_OFF` as well.
+- **Groups have their own type.** A received or created NRPN, RPN or 14-bit CC is
+  `midi.NRPN`, `midi.RPN` or `midi.CC14BIT`, never `midi.CC`, the same as
+  `getValue()` and `getControl()` answer for the group. A component CC that was
+  not assembled (CC 6/38/98-101 while assembly is off) is a plain `midi.CC`. A
+  group handle from `midi.createNRPN()` and the other constructors is
+  `midi.NONE` until its setter has run.
+- **The constants are strings** (`"noteOn"`, `"cc"`, ...), so a type is readable in
+  `rack.log()` and in `rack.setConfig()`. Always compare against the constant and
+  never write the string.
+- **They are fixed for `@engine ...@v1`.** Constants are only added, for status
+  bytes that do not have one yet. They are never renamed and their values never
+  change, so handle a type you do not know with `default` / `else`. In JavaScript
+  the constants are read-only properties of `midi`; in Lua they are plain fields,
+  and overwriting one is as unsupported as overwriting `midi.create`.
+- `midi.getType()` never raises an error for a valid handle. A handle from another
+  callback raises the same error as every other getter.
 
 #### Setters
 
@@ -1410,7 +1452,7 @@ JavaScript. `NaN` clamps to the lower bound.
 | `setRaw(msg, hexString)` | writes the exact bytes with no framing added, e.g. `"f11a"` for an MTC quarter-frame — use for message types with no dedicated setter; at most 8194 bytes (8192 payload plus framing) |
 | `setValue(msg, value)` | on an NRPN, RPN or 14-bit CC handle whose setter has run: the combined 14-bit value, 0-16383, keeping its channel and number (the mirror of `getValue`). On such a handle that has not been set yet it raises an error |
 
-**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()`, and the `msg` of `midi.onNrpn`, `midi.onRpn` and `midi.onCc14bit`, stands for a whole group of messages. It answers `midi.isNrpn()`, `isRpn()` or `isCc14bit()` from the moment it is created. After its setter has run (`setNRPN`, `setRPN`, `setCc14bit`), `midi.getControl()` returns the parameter number (the MSB controller for a 14-bit CC) and `midi.getValue()` the combined 14-bit value (0-16383, the same range `setCc14bit` and `setValue` take); before that both return -1. Besides its own setter, `setChannel` sets the channel of every message in the group and `setValue` sets the combined value. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
+**Group handles.** A handle from `midi.createNRPN()`, `midi.createRPN()` or `midi.createCc14bit()`, and the `msg` of `midi.onNrpn`, `midi.onRpn` and `midi.onCc14bit`, stands for a whole group of messages. `midi.getType()` answers `midi.NRPN`, `midi.RPN` or `midi.CC14BIT` once its setter has run (`midi.NONE` before that). After its setter has run (`setNRPN`, `setRPN`, `setCc14bit`), `midi.getControl()` returns the parameter number (the MSB controller for a 14-bit CC) and `midi.getValue()` the combined 14-bit value (0-16383, the same range `setCc14bit` and `setValue` take); before that both return -1. Besides its own setter, `setChannel` sets the channel of every message in the group and `setValue` sets the combined value. Any other setter writes just one message of the group and would leave a broken group on the wire, so it raises a script error and leaves the handle unchanged, for example `midi.setNote: message is an NRPN; use midi.setNRPN()` (an RPN names `midi.setRPN()`, a 14-bit CC `midi.setCc14bit()`). The same goes for the five-argument `setCc14bit` with a group handle as either message.
 
 Both `setCc14bit` forms take `value` as one 14-bit number, 0-16383 (MSB = `value >> 7`,
 LSB = `value & 127`), rounded and clamped like `setNRPN`'s value, so a received 14-bit value
@@ -1430,7 +1472,7 @@ can be passed straight on — see the `NRPN to CC` preset
 | `midi.enableRpnIn(midiPort [, channel] [, dataEntry])` | same, for RPN (kind 1) into `midi.onRpn` |
 | `midi.enableCc14bitIn(midiPort [, cc] [, channel])` | assemble 14-bit CC pairs on `midiPort` into `midi.onCc14bit` calls. `cc` is the MSB controller number 0-31 (its LSB is implicitly `cc + 32`); omit it to enable every 14-bit CC |
 | `midi.onNrpn(midiPort, msg)` / `midi.onRpn(midiPort, msg)` / `midi.onCc14bit(midiPort, msg)` | called once per completed, enabled parameter change, with `msg` a group handle (see [Group handles](#setters)) read through the usual accessors |
-| `midi.isNrpn(msg)` / `midi.isRpn(msg)` / `midi.isCc14bit(msg)` | true for a received message of that kind, and for a handle created with `midi.createNRPN()`, `createRPN()` or `createCc14bit()`; useful when a handle is passed to a helper or inspected later — redundant inside the matching callback, but makes the handle self-describing |
+| `midi.getType(msg)` | `midi.NRPN`, `midi.RPN` or `midi.CC14BIT` for a received message of that kind, and for a handle created with `midi.createNRPN()`, `createRPN()` or `createCc14bit()` once its setter has run; useful when a handle is passed to a helper or inspected later. Redundant inside the matching callback, but makes the handle self-describing |
 
 **Enabling a kind without defining its callback is a mistake.** The message then reaches nothing at all, and its component CCs are withheld from `midi.onMessage` (see Consumption below), so the script sees strictly less MIDI than before.
 
@@ -1632,7 +1674,7 @@ With a message, only its *address* is compared, never its value:
 | NRPN or RPN handle | the whole NRPN/RPN with the same channel and parameter number |
 | 14-bit CC handle | the whole 14-bit CC with the same channel and MSB controller |
 
-- Note-On and Note-Off are different addresses: cancelling both takes two calls. A Note-On with velocity 0 counts as a Note-Off here, as in the MIDI specification and for `midi.isNoteRelease()`, but `midi.isNoteOff()` does not: it only checks the Note-Off status.
+- Note-On and Note-Off are different addresses: cancelling both takes two calls. A Note-On with velocity 0 counts as a Note-Off here, as in the MIDI specification and for `midi.getType()`, which reports it as `midi.NOTE_OFF`.
 - A message received in `midi.onNrpn`, `midi.onRpn` or `midi.onCc14bit` is a group handle, so it cancels the scheduled group with the same channel and number: `midi.onNrpn = function(port, msg) { midiOut.cancel(msg); ... }`.
 - A group is never split. `midiOut.cancel(cc)` with a plain CC 99 leaves a scheduled NRPN whole, and only a handle of the same NRPN removes it. Without an argument, groups are removed whole too.
 - It never touches `midiOut.send()`, not even with `midiOut.enableTiming()`, and nothing that has already left.
@@ -1855,9 +1897,11 @@ as not using timing.
 | NoteOff, NoteOn, KeyPressure | `0x8`, `0x9`, `0xa` |
 | CC, ProgramChange, ChanPressure, PitchWheel | `0xb`, `0xc`, `0xd`, `0xe` |
 | SysEx | `0xf0` ... `0xf7` |
+| MTC quarter frame, Song Position, Song Select, Tune Request | `0xF1`, `0xF2`, `0xF3`, `0xF6` |
 | Clock, Start, Continue, Stop | `0xF8`, `0xFA`, `0xFB`, `0xFC` |
+| Active Sensing, Reset | `0xFE`, `0xFF` |
 
-Realtime messages are encoded as status `0xf` with a "channel" nibble of `0x8`, `0xa`, `0xb` and `0xc`. Use the `is*` predicates instead of decoding this by hand.
+System messages are encoded as status `0xf` with a "channel" nibble that selects the message (`0x8` for clock, `0xa`, `0xb` and `0xc` for start, continue and stop, ...). Use `midi.getType()` instead of decoding this by hand; for a message it has no constant for, `midi.getRaw()` shows the bytes.
 
 ## Part 4 — Gotchas
 
@@ -1866,6 +1910,11 @@ Realtime messages are encoded as status `0xf` with a "channel" nibble of `0x8`, 
 - A handle is valid only within the callback that got or created it. The store resets on every callback.
 - Creating a message at top level, or in `param.onTooltip`, `input.onTooltip` or `onGetValue`, is an error (at top level the load fails with the script line). Using a handle from an earlier callback is an error too. Build messages inside the callback that sends them.
 - `rack.onLoad()`, `rack.onUnload()`, `trig.onTrigger()` and a context-menu `onChange` are full callbacks in this sense: a message created and sent inside any of them is delivered normally.
+
+**Message types**
+
+- **Active Sensing.** Many keyboards send `FE` about every 300 ms for as long as they are connected, and `midi.onMessage` sees every one of them. A pass-through should forward it. A script that logs, counts or answers every message should skip `midi.ACTIVE_SENSING` (and usually `midi.CLOCK`).
+- A Note-On with velocity 0 is `midi.NOTE_OFF`, see [Message type](#message-type). A script that forwards or rewrites it keeps the Note-On bytes unless it changes them.
 
 **14-bit values and NRPN**
 

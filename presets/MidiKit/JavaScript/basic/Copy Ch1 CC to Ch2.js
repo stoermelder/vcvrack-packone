@@ -11,10 +11,10 @@
 // channel 1 and once on channel 2. A handle can only be sent once per callback,
 // which is why the copy is a separate message.
 
-midi.onMessage = function(midiPort, msg) {
+midi.onMessage = function(midiPort, msg, msgType) {
     if (midi.getChannel(msg) === 1) {
         // Build the copy from the incoming CC's number and value
-        if (midi.isCc(msg)) {
+        if (msgType === midi.CC) {
             let msg2 = midi.create();
             midi.setCc(msg2, 2, midi.getControl(msg), midi.getValue(msg));
             midiOut.send(msg2);

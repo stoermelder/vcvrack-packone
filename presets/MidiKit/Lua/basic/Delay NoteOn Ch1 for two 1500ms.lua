@@ -8,12 +8,12 @@
 -- midiOut.sendAfterMs(msg, ms) schedules a message instead of sending it right
 -- away. Only notes on channel 1 are delayed - and, since nothing else is sent,
 -- everything else is dropped. Note-Offs are delayed with their Note-Ons, so no
--- note hangs; isNoteOff() does not match a Note-On with velocity 0, but isNoteOn()
--- does, so keyboards that release that way are covered too. Add a midiOut.send(msg)
+-- note hangs; a Note-On with velocity 0 counts as a note-off (midi.NOTE_OFF), so
+-- keyboards that release that way are covered too. Add a midiOut.send(msg)
 -- for the other messages to let them through immediately.
 
-midi.onMessage = function(midiPort, msg)
-    if (midi.isNoteOn(msg) or midi.isNoteOff(msg)) and midi.getChannel(msg) == 1 then
+midi.onMessage = function(midiPort, msg, msgType)
+    if (msgType == midi.NOTE_ON or msgType == midi.NOTE_OFF) and midi.getChannel(msg) == 1 then
         midiOut.sendAfterMs(msg, 1500)
     end
 end

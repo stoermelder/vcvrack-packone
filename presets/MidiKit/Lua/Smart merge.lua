@@ -74,20 +74,20 @@ local function removeKey(list, key)
 end
 
 -- Updates the tracked state of input `idx` with one incoming message.
-local function track(idx, msg)
+local function track(idx, msg, msgType)
     local input = state.inputs[idx]
 
-    if midi.isNoteOn(msg) and midi.getValue(msg) > 0 then
+    if msgType == midi.NOTE_ON then
         local key = keyOf(midi.getChannel(msg), midi.getNote(msg))
         -- A re-press while held only updates the velocity, not the position.
         if input.noteVel[key] == nil then input.noteOrder[#input.noteOrder + 1] = key end
         input.noteVel[key] = midi.getValue(msg)
-    elseif midi.isNoteOff(msg) or midi.isNoteOn(msg) then
-        -- Note-Off, or the Note-On with velocity 0 that stands for one
+    elseif msgType == midi.NOTE_OFF then
+        -- A Note-Off, also the Note-On with velocity 0 that stands for one
         local key = keyOf(midi.getChannel(msg), midi.getNote(msg))
         input.noteVel[key] = nil
         removeKey(input.noteOrder, key)
-    elseif midi.isCc(msg) then
+    elseif msgType == midi.CC then
         local key = keyOf(midi.getChannel(msg), midi.getControl(msg))
         -- Later changes update the value; the position stays where the CC was first seen.
         if input.ccValue[key] == nil then input.ccOrder[#input.ccOrder + 1] = key end
@@ -209,11 +209,11 @@ trig.onTrigger = function(trigPort, channel)
     switchTo(state.active % config.numInputs + 1)
 end
 
-midi.onMessage = function(midiPort, msg)
+midi.onMessage = function(midiPort, msg, msgType)
     if midiPort > config.numInputs then return end
 
     -- Every input is tracked, only the active one is forwarded
-    track(midiPort, msg)
+    track(midiPort, msg, msgType)
     if midiPort == state.active then
         midiOut.send(msg)
     end
