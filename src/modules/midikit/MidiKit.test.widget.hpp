@@ -981,3 +981,59 @@ TEST_CASE("Variant: MidiKitMicro widget works without a log display", "[MidiKit]
 	delete menu;
 	Test::destroyWidget(mw);
 }
+
+TEST_CASE("Dropping a script file on the module loads it, other files are left alone", "[MidiKit][Examples]") {
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+	Kit<> kit;
+	createExampleFixture(kit, &m, &mw);
+
+	static const std::string CONTENT =
+		"/**\n"
+		" * @engine QuickJs@v1\n"
+		" */\n"
+		"rack.log(\"k=\" + rack.getConfig(\"k\", \"default\"));\n"
+		"rack.setConfig(\"k\", \"saved\");\n";
+
+	TempExampleDir d;
+	std::string notes = d.write("notes.txt", "not a script");
+	std::string script = d.write("Dropped.JS", CONTENT);
+
+	// A file that is no script: not consumed, nothing loaded.
+	{
+		std::vector<std::string> paths = {notes};
+		rack::widget::Widget::PathDropEvent e(paths);
+		rack::widget::EventContext context;
+		e.context = &context;
+		mw->onPathDrop(e);
+		REQUIRE_FALSE(e.isConsumed());
+		REQUIRE(m->host.script.empty());
+		REQUIRE(mw->filename.empty());
+	}
+
+	// The first script of the drop is loaded, whatever the case of its extension, and
+	// remembered, so Reload works on it and keeps the saved value.
+	drainLog(m);
+	{
+		std::vector<std::string> paths = {notes, script};
+		rack::widget::Widget::PathDropEvent e(paths);
+		rack::widget::EventContext context;
+		e.context = &context;
+		mw->onPathDrop(e);
+		REQUIRE(e.isConsumed());
+	}
+	REQUIRE(m->host.script == CONTENT);
+	REQUIRE(mw->filename == script);
+	REQUIRE(drainLog(m).find("k=default") != std::string::npos);
+
+	rack::ui::Menu* menu = new rack::ui::Menu;
+	mw->appendScriptItems(menu);
+	rack::ui::MenuItem* reload = findMenuItem(menu, "Reload");
+	REQUIRE(reload != nullptr);
+	REQUIRE_FALSE(reload->disabled);
+	reload->doAction(true);
+	REQUIRE(drainLog(m).find("k=saved") != std::string::npos);
+
+	delete menu;
+	Test::destroyWidget(mw);
+}

@@ -2562,10 +2562,18 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		}
 	}
 
+	// A dropped .js or .lua file is loaded like "Load" does, so Reload works on it. Any
+	// other file (a module preset, a patch) is left to Rack.
 	void onPathDrop(const event::PathDrop& e) override {
-		if (module && e.paths.size() > 0) {
-			loadJs(e.paths[0]);
-			e.consume(this);
+		if (module) {
+			for (const std::string& path : e.paths) {
+				std::string ext = string::lowercase(vcv::fs::getExtension(path));
+				if (ext != ".js" && ext != ".lua") continue;
+				filename = path;
+				loadJs(path);
+				e.consume(this);
+				return;
+			}
 		}
 		BASE::onPathDrop(e);
 	}
