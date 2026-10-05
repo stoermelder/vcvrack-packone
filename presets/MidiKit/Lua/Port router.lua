@@ -31,9 +31,6 @@ local MAX_OUTPUTS = 4
 -- Most messages that can be created in one callback (engine limit)
 local MAX_MESSAGES = 128
 
--- Context menu choices
-local OUTPUT_COUNT_LABELS = { "2", "3", "4" }
-
 -- Internal state.
 -- active: number (1-based) of the output currently receiving everything.
 -- held: notes sent to the active output and not released yet, as { channel, note }.
@@ -78,18 +75,18 @@ end
 -- Registering a label that already exists replaces that menu item, which is how
 -- the list follows a change of config.numOutputs.
 local function registerActiveOutputMenu()
-    local labels = {}
-    for i = 1, config.numOutputs do labels[i] = "Output " .. i end
+    local outputs = {}
+    for i = 1, config.numOutputs do outputs[i] = { "Output " .. i, i } end
 
     rack.registerContextMenu({
         type = "options",
         label = "Active output",
-        options = labels,
+        options = outputs,
         onGetValue = function()
-            return active - 1
+            return active
         end,
-        onChange = function(idx)
-            switchTo(idx + 1)
+        onChange = function(out)
+            switchTo(out)
         end
     })
 end
@@ -111,12 +108,12 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Number of outputs",
-        options = OUTPUT_COUNT_LABELS,
+        options = { {"2", 2}, {"3", 3}, {"4", 4} },
         onGetValue = function()
-            return config.numOutputs - 2
+            return config.numOutputs
         end,
-        onChange = function(idx)
-            config.numOutputs = idx + 2
+        onChange = function(count)
+            config.numOutputs = count
             rack.setConfig("numOutputs", config.numOutputs)
             midiOut.enablePorts(config.numOutputs)
             -- The active output may be gone now

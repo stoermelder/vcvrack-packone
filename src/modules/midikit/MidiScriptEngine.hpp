@@ -4,6 +4,7 @@
 #include "../../utils/TaskWorker.hpp"
 #include "MidiScriptTypes.hpp"
 #include "MidiScriptEngineHandler.hpp"
+#include "../midi/MidiText.hpp"
 #include <atomic>
 #include <cmath>
 #include <jansson.h>
@@ -110,6 +111,38 @@ struct MidiScriptEngine {
 	// Whether a lead slot is an RPN set to the null parameter.
 	static bool isRpnNull(const ScriptMessage& s) {
 		return s.isNrpn && s.isRpn && s.in.paramNumber == rpnNull;
+	}
+
+	// How many payload bytes midi.toString() shows of a SysEx message.
+	static const int toStringSysExBytes = 32;
+
+	// The one-line text of a handle's message for midi.toString(), in the wording of
+	// MIDI-MON (see MidiText). A group handle (NRPN/RPN/14-bit CC) is one message
+	// whose parts are the decode fields of its lead. A velocity-0 Note-On reads as a
+	// Note-Off, as midi.getType() will treat it. For display only, never an error.
+	static std::string messageText(const ScriptMessage& s) {
+		MidiText::Fields f;
+		if (s.isNrpn || s.isCc14bit) {
+			if (s.in.paramNumber < 0 && !s.isRpn) return MidiText::format(f);   // not set yet
+			MessageEx m(s.in.msg);
+			m.type = s.isCc14bit ? MessageEx::Type::CC_14BIT : s.isRpn ? MessageEx::Type::RPN : MessageEx::Type::NRPN;
+			m.paramNumber = isRpnNull(s) ? int16_t(-1) : s.in.paramNumber;
+			m.extraValue = s.in.extraValue;
+			f = MidiText::classify(m);
+		}
+		else {
+			f = MidiText::classify(s.in.msg);
+			if (f.kind == MidiText::Kind::NOTE_ON && f.y == 0) f.kind = MidiText::Kind::NOTE_OFF;
+		}
+		std::string text = MidiText::format(f);
+		if (f.kind == MidiText::Kind::SYSEX && f.x > 0) {
+			// By value: std::min would take the constant by reference (no out-of-class definition in C++11).
+			int limit = toStringSysExBytes;
+			int shown = std::min(f.x, limit);
+			text += " " + MidiText::hexBytes(&s.in.msg.bytes[1], shown);
+			if (f.x > shown) text += " \xe2\x80\xa6";   // "…"
+		}
+		return text;
 	}
 
 	// Messages a handle sends as one group: 4 for an NRPN/RPN (just the 2 selects

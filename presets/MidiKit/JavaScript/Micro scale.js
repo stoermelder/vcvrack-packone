@@ -98,10 +98,6 @@ const DEFAULT_SCL = config.scl;
 config.scl = rack.getConfig("scl", DEFAULT_SCL);
 if (typeof config.scl !== "string") config.scl = DEFAULT_SCL;
 
-// Context menu choices
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
 // Internal state, indexed by 1-based output channel.
 // noteOfChannel[c]     = incoming note currently sounding on output channel c (-1 = free).
 // sentNoteOfChannel[c] = the note number actually sent there (may differ from the incoming one).
@@ -262,15 +258,14 @@ rack.onLoad = function() {
     // Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type: "options",
-        label: "Input channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel+all Input",
         onGetValue: function() {
             return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx;
+        onChange: function(value, label) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
-            rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+            rack.log("Input channel: ", label);
         }
     });
 
@@ -320,13 +315,8 @@ rack.onLoad = function() {
 
 // Callbacks
 rack.onUnload = function() {
-    for (let c = 1; c <= 16; c++) {
-        if (state.noteOfChannel[c] >= 0) {
-            let off = midi.create();
-            midi.setNoteOff(off, c, state.sentNoteOfChannel[c]);
-            midiOut.send(off);
-        }
-    }
+    // Stops every voice on every channel, whatever the script tracked.
+    midiOut.panic();
 };
 
 midi.onMessage = function(midiPort, msg) {

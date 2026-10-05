@@ -145,7 +145,8 @@ read `param.count` and `input.count` to adapt, see
 - A **"Script"** submenu to load example scripts — **"Examples (JavaScript)"**
   and **"Examples (Lua)"** submenus — plus **Clear**, **Paste from
   clipboard**, **Copy to clipboard**, **Load** (from a file dialog),
-  **Reload**, and **Save as**.
+  **Reload**, and **Save as**. A `.js` or `.lua` file can also be dragged onto
+  the module to load it.
 - Any context-menu items the loaded script registers via
   `rack.registerContextMenu()`.
 

@@ -58,17 +58,6 @@ local state = {
 -- An interval this many times the previous one is a restart, not a slow tempo
 local RESTART_FACTOR = 4
 
--- Context menu choices
-local RATIOS = {1, 2, 3, 4, 6, 8, 12, 24}
-local RATIO_LABELS = {"1x", "2x", "3x", "4x", "6x", "8x", "12x", "24x"}
-
-local function ratioIndex()
-    for i = 1, #RATIOS do
-        if RATIOS[i] == config.ratio then return i - 1 end
-    end
-    return 0
-end
-
 local function clockPulse()
     local m = midi.create()
     midi.setRaw(m, "f8")
@@ -84,19 +73,19 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Multiplier",
-        options = RATIO_LABELS,
+        options = { {"1x", 1}, {"2x", 2}, {"3x", 3}, {"4x", 4}, {"6x", 6}, {"8x", 8}, {"12x", 12}, {"24x", 24} },
         onGetValue = function()
-            return ratioIndex()
+            return config.ratio
         end,
-        onChange = function(idx)
-            config.ratio = RATIOS[idx + 1]
+        onChange = function(ratio, label)
+            config.ratio = ratio
             rack.setConfig("ratio", config.ratio)
-            rack.log("Multiplier: ", RATIO_LABELS[idx + 1])
+            rack.log("Multiplier: ", label)
         end
     })
 
     rack.log("Clock multiplier initialized")
-    rack.log("Multiplier: ", RATIO_LABELS[ratioIndex() + 1])
+    rack.log("Multiplier: ", config.ratio, "x")
 end
 
 -- Callbacks

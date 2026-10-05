@@ -584,9 +584,9 @@ end
 
 ### Add items to the module's context menu
 
-`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark), an options submenu (one entry per option, checkmark on the current selection), an action (a plain entry that calls your function) or a file entry (opens a file dialog and hands the file's text to your function). Items appear in registration order and can be used to change `config` values live instead of editing the script. To persist a change (so it survives a patch save/reload), call `rack.setConfig()` in the item's `onChange` — see [Persistence](#persistence).
+`rack.registerContextMenu()` adds items to the module's right-click context menu — a boolean toggle (a menu line with a checkmark), an options submenu (one entry per option, checkmark on the current selection), an action (a plain entry that calls your function) a file entry (opens a file dialog and hands the file's text to your function), or a separator line or a heading that only structures the menu. Items appear in registration order and can be used to change `config` values live instead of editing the script. To persist a change (so it survives a patch save/reload), call `rack.setConfig()` in the item's `onChange` — see [Persistence](#persistence).
 
-The checkmark/selection state is read **lazily** — each time the menu is opened, the engine calls the item's `onGetValue` callback (if provided) to determine the current value. This means the menu always reflects the live state of the script, even if it was changed programmatically. If `onGetValue` is omitted, the item defaults to `false` (boolean) or `0` (options, i.e. the first option).
+The checkmark/selection state is read **lazily** — each time the menu is opened, the engine calls the item's `onGetValue` callback (if provided) to determine the current value. This means the menu always reflects the live state of the script, even if it was changed programmatically. If `onGetValue` is omitted, the item defaults to `false` (boolean) or `0` (options, i.e. the first option). With `[label, value]` pairs the first option is checked as well, see [Context menu](#context-menu--rackregistercontextmenu).
 
 JavaScript:
 ```js
@@ -595,12 +595,12 @@ config.channel = 1;
 rack.registerContextMenu({
    type: "options",
    label: "MIDI channel",
-   options: ["1", "2", "3"],
+   options: [["1", 1], ["2", 2], ["3", 3]],
    onGetValue: function() {
-      return config.channel - 1;
+      return config.channel;
    },
-   onChange: function(idx) {
-      config.channel = idx + 1;
+   onChange: function(channel) {
+      config.channel = channel;
    }
 });
 
@@ -623,12 +623,12 @@ config.channel = 1
 rack.registerContextMenu({
    type = "options",
    label = "MIDI channel",
-   options = { "1", "2", "3" },
+   options = { {"1", 1}, {"2", 2}, {"3", 3} },
    onGetValue = function()
-      return config.channel - 1
+      return config.channel
    end,
-   onChange = function(idx)
-      config.channel = idx + 1
+   onChange = function(channel)
+      config.channel = channel
    end
 })
 
@@ -916,7 +916,7 @@ Use it with `midiOut.sendAtFrame()`, see [Enabling sample-accurate timing](#enab
 
 #### Context menu — `rack.registerContextMenu`
 
-`rack.registerContextMenu(options)` adds one item to the module's right-click context menu. Items appear in registration order, and any number is allowed. It returns `true`, or throws (the load fails) if `options` is malformed. There are four variants.
+`rack.registerContextMenu(options)` adds one item to the module's right-click context menu. Items appear in registration order, and any number is allowed. It returns `true`, or throws (the load fails) if `options` is malformed. There are seven variants.
 
 *Boolean toggle*, a single menu line with a checkmark:
 ```js
@@ -950,6 +950,43 @@ rack.registerContextMenu({
    }
 });
 ```
+Instead of labels, `options` can hold `[label, value]` pairs. Then `onChange` gets the **value** and `onGetValue` returns a value, so the script needs no second array and no index mapping. The checkmark goes on the option whose value equals the one `onGetValue` returns (`===` in JavaScript, `==` in Lua). If none does, for example because the config holds a value from an older version of the script, no option is checked:
+```js
+rack.registerContextMenu({
+   type: "options",
+   label: "Multiplier",
+   options: [["1x", 1], ["2x", 2], ["4x", 4], ["8x", 8]],
+   onGetValue: function() { return config.ratio; },
+   onChange: function(value, label) {
+      config.ratio = value;
+      rack.setConfig("ratio", value);
+   }
+});
+```
+```lua
+rack.registerContextMenu({
+   type = "options",
+   label = "Multiplier",
+   options = { {"1x", 1}, {"2x", 2}, {"4x", 4}, {"8x", 8} },
+   onGetValue = function() return config.ratio end,
+   onChange = function(value, label)
+      config.ratio = value
+      rack.setConfig("ratio", value)
+   end
+})
+```
+*MIDI channel*, an options item that fills itself in. Use the label `"#midichannel"` and the menu is shown as **MIDI channel** with the options `1` to `16`, whose values are the channel numbers, so `onChange` gets the channel and `onGetValue` returns it. The label `"#midichannel+all"` adds an **All** entry with the value `0` in front. Text after the key becomes part of the label: `"#midichannel+all Input"` is shown as **MIDI channel (Input)**, which tells two channel menus apart. The `options` field is ignored for these labels, so leave it out. They apply to `"options"` items only, and registering one twice replaces the first, as for any label:
+```js
+rack.registerContextMenu({
+   type: "options",
+   label: "#midichannel+all",
+   onGetValue: function() { return config.channel; },
+   onChange: function(channel) {
+      config.channel = channel;
+      rack.setConfig("channel", channel);
+   }
+});
+```
 *Action*, a plain menu line that calls `onChange` on every click, without arguments:
 ```js
 rack.registerContextMenu({
@@ -971,17 +1008,22 @@ rack.registerContextMenu({
    }
 });
 ```
-Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`, and likewise `type = "action"` and `type = "fileopen"`.
+*Separator* and *label*, which structure the menu and cannot be clicked. A separator is a divider line and takes no other field. A label is a heading and takes only `label`:
+```js
+rack.registerContextMenu({ type: "separator" });
+rack.registerContextMenu({ type: "label", label: "Clock" });
+```
+Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = function() return config.emitTrigger end, onChange = function(checked) ... end }`, and likewise `type = "action"`, `type = "fileopen"`, `type = "separator"` and `type = "label"`.
 
 **Fields**
 
 | Field | Required | Rule |
 | --- | --- | --- |
-| `type` | yes | `"boolean"`, `"options"`, `"action"` or `"fileopen"` |
-| `label` | yes | non-empty string |
-| `options` | for `"options"` | non-empty array of strings |
-| `onChange` | yes | function |
-| `onGetValue` | no | function returning the current value: a boolean, or an index for `"options"`. Defaults to `false` / `0` when absent. Ignored for `"action"` and `"fileopen"`, which have no value |
+| `type` | yes | `"boolean"`, `"options"`, `"action"`, `"fileopen"`, `"separator"` or `"label"` |
+| `label` | yes, except for `"separator"` | non-empty string |
+| `options` | for `"options"` | non-empty array of strings (an option stands for its index, 0-based), or non-empty array of `[label, value]` pairs (an option stands for its value: a finite number, a string or a boolean). The two forms cannot be mixed. In a list of pairs no two options may have the same label or the same value (`1` and `1.0` are the same value, `1` and `"1"` are not) |
+| `onChange` | yes, except for `"separator"` and `"label"` | function |
+| `onGetValue` | no | function returning the current value: a boolean, or for `"options"` an index (`-1`: no selection) or, with pairs, a value. Defaults to `false` / `0` when absent, which is the first option. Ignored for the types without a value |
 
 **Files** (`"fileopen"` items)
 
@@ -997,11 +1039,11 @@ Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = f
 - Runs on the worker thread, when the item is clicked, and may call any other `rack.*` function. An exception inside it is logged as `Context menu callback error: ...` and does not crash anything.
 - It can send. Like `rack.onLoad` it is a callback without an event: MIDI built with `midi.create()` and sent with `midiOut.send()` (or any other `midiOut.*` sender) goes out when `onChange` returns, and trigger, voltage and Tipsy outputs work as usual. Timing is "as soon as possible", and `rack.getEventFrame()` is `-1`.
 - The checkmark or selection is updated as soon as the item is clicked, before the callback has run, so the menu reflects the change immediately.
-- Arguments by type: `"boolean"` gets `(checked)`, `"options"` gets `(selectedIndex, selectedLabel)`, `"action"` gets none and `"fileopen"` gets `(content, fileName)`.
+- Arguments by type: `"boolean"` gets `(checked)`, `"options"` gets `(selectedIndex, selectedLabel)` or, with pairs, `(selectedValue, selectedLabel)`, `"action"` gets none and `"fileopen"` gets `(content, fileName)`.
 
 **Changing items at runtime**
 
-- Registering an item whose `label` already exists **replaces** it. It keeps its position, and the new `type`, `options`, `onGetValue` and `onChange` take over. That is how a script changes a menu, for example re-registering "Active input" with a different number of options when a setting changes.
+- Registering an item whose `label` already exists **replaces** it (a separator has no label, so each one is added). It keeps its position, and the new `type`, `options`, `onGetValue` and `onChange` take over. That is how a script changes a menu, for example re-registering "Active input" with a different number of options when a setting changes.
 - `rack.unregisterContextMenu(label)` removes the item and returns `true`, or returns `false` if there was none. Registering the label again afterwards adds a new item at the end.
 - All items are cleared when the script is reloaded or cleared.
 
@@ -1018,7 +1060,7 @@ Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = f
 | `rack.getConfig(key)` | the stored value, or `undefined` (QuickJs) / `nil` (Lua) if `key` was never set |
 | `rack.getConfig(key, default)` | the stored value, or `default` if `key` was never set |
 
-There is no separate "save" step. Call `setConfig()` the moment a setting changes, typically in a context-menu `onChange`: a patch save writes out whatever was last set. `setConfig()` only updates engine-owned state, so it is cheap and cannot time out.
+**Reload** (*Script* menu, `Alt+Y`) and applying a change in the editor keep the saved values. Loading another file, pasting a script or choosing an example starts with an empty store, and so does *Clear*. There is no separate "save" step. Call `setConfig()` the moment a setting changes, typically in a context-menu `onChange`: a patch save writes out whatever was last set. `setConfig()` only updates engine-owned state, so it is cheap and cannot time out.
 
 Read every setting with a default at the top level or in `rack.onLoad()`. That needs no read-modify-write step and nothing to get wrong, unlike merging over a defaults object:
 
@@ -1302,6 +1344,7 @@ Messages are opaque **handles** into an internal message store. Create one with 
 | `getSysEx(msg)` | hex string, payload only — without the `f0`/`f7` framing |
 | `getSysExLength(msg)` | payload length in bytes, framing excluded — check before reading with `getSysEx` |
 | `getRaw(msg)` | hex string of the message's raw bytes, exactly as sent/received — no framing added or removed |
+| `toString(msg)` | one line of text for a log, in the wording of [MIDI-MON](../midi/MidiMon.md): `ch01 note on  60 vel 100`, `ch02 cc7=100`, `ch01 nrpn param=1234 value=16383`, `clock tick`, `sysex (12 data bytes) 43 10 4c …` (payload only, the first 32 bytes). A Note-On with velocity 0 reads as `note off`. The text is meant for display and may get more detail later, so do not parse it; use `getRaw()` or the getters for that. It has no port and no time, and never raises an error for a valid handle |
 
 #### Type predicates
 
@@ -1501,6 +1544,37 @@ midiOut.enablePorts(2);   // allow sending on MIDI outputs 1-2
 | `midiOut.enableTiming([reportLate])` | opt in to sample-accurate output. With `true`, messages that arrive too late are logged. See [Enabling sample-accurate timing](#enabling-sample-accurate-timing) |
 
 The sending functions take no port argument: the destination is whatever `midiOut.selectPort()` last selected (port 1 if it was never called).
+
+#### Resetting the devices — `midiOut.panic()`
+
+`midiOut.panic()` stops every sound the script's earlier output can have left on a device: a note that is still held, a sustain pedal, a pitch bend. It first drops every message the script has scheduled for later (`sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`), like `midiOut.cancel()`, so that no note starts after the reset. Then it sends four controllers per channel, in this order: sustain off (CC 64), all notes off (CC 123), all sound off (CC 120) and reset all controllers (CC 121). It needs no bookkeeping of what was played, so the usual place is `rack.onUnload()`: whenever the script is replaced, edited, reloaded or the module is removed, the devices are left silent. Call it in `rack.onLoad()` instead (or as well) to start from silent devices after a run that was cut off, or one of another script.
+
+It follows the module's MIDI output settings:
+
+- It goes to every output the script has enabled (`midiOut.enablePorts()`) and to no other. It ignores `midiOut.selectPort()`.
+- An output that is set to a MIDI channel in the module gets the messages on that channel only. An output that is not set to one gets all 16 channels.
+- It returns `true`, or `false` if the output queue was too full to take all of it (see [Queues and limits](#queues-and-limits)).
+
+```js
+rack.onLoad = function() {
+   midiOut.enablePorts(2);
+};
+
+rack.onUnload = function() {
+   midiOut.panic();
+};
+```
+```lua
+rack.onLoad = function()
+   midiOut.enablePorts(2)
+end
+
+rack.onUnload = function()
+   midiOut.panic()
+end
+```
+
+Some devices ignore CC 120, 121 or 123. For such a device, send the note-offs yourself. In `rack.onUnload()` `panic()` works like `midiOut.send()`: the output goes out although the script is being replaced. The messages the script scheduled are dropped by the replacement anyway.
 
 #### Sending
 

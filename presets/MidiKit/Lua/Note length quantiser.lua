@@ -53,19 +53,6 @@ local state = {
     sounding = {}
 }
 
--- Context menu choices
-local LENGTH_TICKS = { 6, 12, 24, 48 }
-local LENGTH_LABELS = { "6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)" }
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-
-local function lengthTicksIndex()
-    for i = 1, #LENGTH_TICKS do
-        if LENGTH_TICKS[i] == config.lengthTicks then return i - 1 end
-    end
-    return 0
-end
-
 local function matchesChannel(ch)
     return config.channel == 0 or ch == config.channel
 end
@@ -93,12 +80,12 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Note length",
-        options = LENGTH_LABELS,
+        options = { {"6 (16th)", 6}, {"12 (8th)", 12}, {"24 (quarter)", 24}, {"48 (half)", 48} },
         onGetValue = function()
-            return lengthTicksIndex()
+            return config.lengthTicks
         end,
-        onChange = function(idx)
-            config.lengthTicks = LENGTH_TICKS[idx + 1]
+        onChange = function(ticks)
+            config.lengthTicks = ticks
             rack.setConfig("lengthTicks", config.lengthTicks)
             rack.log("Length: ", config.lengthTicks, " ticks")
         end
@@ -106,15 +93,14 @@ rack.onLoad = function()
 
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel+all",
         onGetValue = function()
             return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx
+        onChange = function(value, label)
+            config.channel = value
             rack.setConfig("channel", config.channel)
-            rack.log("Channel: ", CHANNEL_LABELS[idx + 1])
+            rack.log("Channel: ", label)
         end
     })
 

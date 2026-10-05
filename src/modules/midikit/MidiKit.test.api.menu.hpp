@@ -62,6 +62,7 @@ static void requireSameMenus(const std::vector<ScriptMenuItem>& a, const std::ve
 		else
 			REQUIRE(a[i].selected == b[i].selected);
 		REQUIRE(a[i].options == b[i].options);
+		REQUIRE(a[i].optionValues == b[i].optionValues);
 		REQUIRE(a[i].callbackId >= 1);
 	}
 }
@@ -737,4 +738,245 @@ TEST_CASE("registerContextMenu rejects bad items in both engines and registers o
 
 	REQUIRE(r.specs.size() == 1);
 	REQUIRE(r.specs[0].label == label);
+}
+
+
+// ── options as [label, value] pairs, "separator" and "label" items ───────────
+
+static std::string jsMenu(const std::string& body) {
+	return "/**\n * @engine QuickJs@v1\n */\n" + body + "\n";
+}
+static std::string luaMenu(const std::string& body) {
+	return "--[[\n@engine minilua@v1\n--]]\n" + body + "\n";
+}
+
+// A pairs item whose onGetValue returns `get` and whose onChange logs the value it got.
+static MenuResult runPairs(const std::string& jsOptions, const std::string& luaOptions, const std::string& jsGet,
+                           const std::string& luaGet, MenuResult* luaOut, int clickIdx = -1) {
+	MenuResult js = runMenu(jsMenu(
+		"rack.registerContextMenu({ type: \"options\", label: \"M\", options: " + jsOptions + ",\n"
+		"  onGetValue: function() { return " + jsGet + "; },\n"
+		"  onChange: function(v, label) { rack.log(\"got \" + typeof v + \" \" + String(v) + \" \" + label); } });"),
+		clickIdx < 0 ? -1 : 1, clickIdx);
+	*luaOut = runMenu(luaMenu(
+		"rack.registerContextMenu({ type = \"options\", label = \"M\", options = " + luaOptions + ",\n"
+		"  onGetValue = function() return " + luaGet + " end,\n"
+		"  onChange = function(v, label) rack.log(\"got \" .. type(v) .. \" \" .. tostring(v) .. \" \" .. label) end })"),
+		clickIdx < 0 ? -1 : 1, clickIdx);
+	return js;
+}
+
+TEST_CASE("Options pairs: onGetValue selects by value, no match checks nothing", "[MidiKit][CrossEngine]") {
+	const std::string jsOpts = "[[\"1x\", 1], [\"2x\", 2], [\"half\", 0.5], [\"Off\", \"off\"], [\"On\", true]]";
+	const std::string luaOpts = "{ {\"1x\", 1}, {\"2x\", 2}, {\"half\", 0.5}, {\"Off\", \"off\"}, {\"On\", true} }";
+	struct Case { const char* js; const char* lua; int selected; };
+	const Case cases[] = {
+		{"1", "1", 0}, {"2", "2", 1}, {"0.5", "0.5", 2}, {"\"off\"", "\"off\"", 3}, {"true", "true", 4},
+		{"7", "7", -1}, {"\"2\"", "\"2\"", -1}, {"false", "false", -1}, {"null", "nil", -1},
+	};
+	for (const Case& c : cases) {
+		MenuResult lua;
+		MenuResult js = runPairs(jsOpts, luaOpts, c.js, c.lua, &lua);
+		REQUIRE(js.loaded);
+		REQUIRE(lua.loaded);
+		requireSameMenus(js.specs, lua.specs);
+		REQUIRE(js.specs.size() == 1);
+		REQUIRE(js.specs[0].options.size() == 5);
+		REQUIRE(js.specs[0].optionValues.size() == 5);
+		REQUIRE(js.specs[0].selected == c.selected);
+	}
+}
+
+TEST_CASE("Options pairs: onGetValue omitted checks the first option", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(jsMenu("rack.registerContextMenu({ type: \"options\", label: \"M\", options: [[\"a\", 5], [\"b\", 6]], onChange: function() {} });"));
+	MenuResult lua = runMenu(luaMenu("rack.registerContextMenu({ type = \"options\", label = \"M\", options = { {\"a\", 5}, {\"b\", 6} }, onChange = function() end })"));
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs[0].selected == 0);
+}
+
+TEST_CASE("Options pairs: a click passes the value and the label to onChange", "[MidiKit][CrossEngine]") {
+	const std::string jsOpts = "[[\"1x\", 1], [\"half\", 0.5], [\"Off\", \"off\"], [\"On\", true]]";
+	const std::string luaOpts = "{ {\"1x\", 1}, {\"half\", 0.5}, {\"Off\", \"off\"}, {\"On\", true} }";
+	const char* expected[] = {"got number 1 1x", "got number 0.5 half", "got string off Off", "got boolean true On"};
+	for (int i = 0; i < 4; i++) {
+		MenuResult lua;
+		MenuResult js = runPairs(jsOpts, luaOpts, "1", "1", &lua, i);
+		REQUIRE(js.log.find(expected[i]) != std::string::npos);
+		REQUIRE(lua.log.find(expected[i]) != std::string::npos);
+	}
+}
+
+TEST_CASE("Options as a plain list of labels is unchanged", "[MidiKit][CrossEngine]") {
+	MenuResult lua;
+	MenuResult js = runPairs("[\"a\", \"b\", \"c\"]", "{ \"a\", \"b\", \"c\" }", "2", "2", &lua, 1);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs[0].optionValues.empty());
+	REQUIRE(js.specs[0].selected == 2);
+	REQUIRE(js.log.find("got number 1 b") != std::string::npos);
+	REQUIRE(lua.log.find("got number 1 b") != std::string::npos);
+}
+
+TEST_CASE("Options pairs: malformed options fail the load in both engines", "[MidiKit][CrossEngine]") {
+	struct Case { const char* js; const char* lua; const char* message; };
+	const Case cases[] = {
+		{"[]", "{}", "non-empty array"},
+		{"[\"a\", [\"b\", 1]]", "{ \"a\", {\"b\", 1} }", "mix labels and pairs"},
+		{"[[\"a\", 1], \"b\"]", "{ {\"a\", 1}, \"b\" }", "mix labels and pairs"},
+		{"[[\"a\", 1, 2]]", "{ {\"a\", 1, 2} }", "must be [label, value]"},
+		{"[[\"a\"]]", "{ {\"a\"} }", "must be [label, value]"},
+		{"[[1, 1]]", "{ {1, 1} }", "string label"},
+		{"[[\"a\", null]]", "{ {\"a\", {}} }", "string label"},
+		{"[[\"a\", [1]]]", "{ {\"a\", {1}} }", "string label"},
+		{"[[\"a\", NaN]]", "{ {\"a\", 0/0} }", "finite"},
+		{"[[\"a\", Infinity]]", "{ {\"a\", math.huge} }", "finite"},
+		{"[[\"a\", 1], [\"a\", 2]]", "{ {\"a\", 1}, {\"a\", 2} }", "same label"},
+		{"[[\"a\", 1], [\"b\", 1]]", "{ {\"a\", 1}, {\"b\", 1} }", "same value"},
+		{"[[\"a\", 1], [\"b\", 1.0]]", "{ {\"a\", 1}, {\"b\", 1.0} }", "same value"},
+	};
+	for (const Case& c : cases) {
+		MenuResult js = runMenu(jsMenu(std::string("rack.registerContextMenu({ type: \"options\", label: \"M\", options: ") + c.js + ", onChange: function() {} });"));
+		MenuResult lua = runMenu(luaMenu(std::string("rack.registerContextMenu({ type = \"options\", label = \"M\", options = ") + c.lua + ", onChange = function() end })"));
+		REQUIRE_FALSE(js.loaded);
+		REQUIRE_FALSE(lua.loaded);
+		REQUIRE(js.loadLog.find(c.message) != std::string::npos);
+		REQUIRE(lua.loadLog.find(c.message) != std::string::npos);
+	}
+}
+
+TEST_CASE("Options pairs: equal values of different types are not duplicates", "[MidiKit][CrossEngine]") {
+	MenuResult lua;
+	MenuResult js = runPairs("[[\"a\", 1], [\"b\", \"1\"], [\"c\", true]]", "{ {\"a\", 1}, {\"b\", \"1\"}, {\"c\", true} }", "\"1\"", "\"1\"", &lua);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs[0].selected == 1);
+}
+
+TEST_CASE("Separator and label items", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(jsMenu(
+		"rack.registerContextMenu({ type: \"separator\" });\n"
+		"rack.registerContextMenu({ type: \"label\", label: \"Clock\" });\n"
+		"rack.registerContextMenu({ type: \"action\", label: \"Go\", onChange: function() {} });\n"
+		"rack.registerContextMenu({ type: \"separator\" });"));
+	MenuResult lua = runMenu(luaMenu(
+		"rack.registerContextMenu({ type = \"separator\" })\n"
+		"rack.registerContextMenu({ type = \"label\", label = \"Clock\" })\n"
+		"rack.registerContextMenu({ type = \"action\", label = \"Go\", onChange = function() end })\n"
+		"rack.registerContextMenu({ type = \"separator\" })"));
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	REQUIRE(js.specs.size() == 4);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs[0].type == ScriptMenuItem::Type::Separator);
+	REQUIRE(js.specs[1].type == ScriptMenuItem::Type::Label);
+	REQUIRE(js.specs[1].label == "Clock");
+	REQUIRE(js.specs[2].type == ScriptMenuItem::Type::Action);
+	// Two separators are two items, in registration order.
+	REQUIRE(js.specs[3].type == ScriptMenuItem::Type::Separator);
+
+	// A label needs a text, but neither it nor a separator needs an onChange.
+	js = runMenu(jsMenu("rack.registerContextMenu({ type: \"label\" });"));
+	lua = runMenu(luaMenu("rack.registerContextMenu({ type = \"label\" })"));
+	REQUIRE_FALSE(js.loaded);
+	REQUIRE_FALSE(lua.loaded);
+
+	// Unregistering by an empty label does not remove a separator.
+	js = runMenu(jsMenu("rack.registerContextMenu({ type: \"separator\" });\nrack.log(\"r=\" + rack.unregisterContextMenu(\"\"));"));
+	lua = runMenu(luaMenu("rack.registerContextMenu({ type = \"separator\" })\nrack.log(\"r=\" .. tostring(rack.unregisterContextMenu(\"\")))"));
+	REQUIRE(js.specs.size() == 1);
+	REQUIRE(lua.specs.size() == 1);
+}
+
+// ── "#midichannel" ───────────────────────────────────────────────────────────
+
+TEST_CASE("#midichannel fills in the channels and the label", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(jsMenu(
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel\",\n"
+		"  onGetValue: function() { return 5; },\n"
+		"  onChange: function(v, label) { rack.log(\"got \" + v + \" \" + label); } });"), 1, 9);
+	MenuResult lua = runMenu(luaMenu(
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel\",\n"
+		"  onGetValue = function() return 5 end,\n"
+		"  onChange = function(v, label) rack.log(\"got \" .. v .. \" \" .. label) end })"), 1, 9);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs.size() == 1);
+	REQUIRE(js.specs[0].label == "MIDI channel");
+	REQUIRE(js.specs[0].options.size() == 16);
+	REQUIRE(js.specs[0].options[0] == "1");
+	REQUIRE(js.specs[0].options[15] == "16");
+	REQUIRE(js.specs[0].optionValues[15] == ScriptMenuArg::ofInt(16));
+	REQUIRE(js.specs[0].selected == 4);
+	// Option index 9 is channel 10.
+	REQUIRE(js.log.find("got 10 10") != std::string::npos);
+	REQUIRE(lua.log.find("got 10 10") != std::string::npos);
+}
+
+TEST_CASE("#midichannel+all adds an All entry with the value 0", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(jsMenu(
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel+all\",\n"
+		"  onGetValue: function() { return 0; }, onChange: function(v, label) { rack.log(\"got \" + v + \" \" + label); } });"), 1, 0);
+	MenuResult lua = runMenu(luaMenu(
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel+all\",\n"
+		"  onGetValue = function() return 0 end, onChange = function(v, label) rack.log(\"got \" .. v .. \" \" .. label) end })"), 1, 0);
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs[0].label == "MIDI channel");
+	REQUIRE(js.specs[0].options.size() == 17);
+	REQUIRE(js.specs[0].options[0] == "All");
+	REQUIRE(js.specs[0].options[1] == "1");
+	REQUIRE(js.specs[0].optionValues[0] == ScriptMenuArg::ofInt(0));
+	REQUIRE(js.specs[0].selected == 0);
+	REQUIRE(js.log.find("got 0 All") != std::string::npos);
+	REQUIRE(lua.log.find("got 0 All") != std::string::npos);
+}
+
+TEST_CASE("#midichannel ignores the options of the script", "[MidiKit][CrossEngine]") {
+	// Valid, malformed and wrong-typed options alike: none of them is looked at.
+	struct Case { const char* js; const char* lua; };
+	const Case cases[] = {
+		{"[[\"Ten\", 10]]", "{ {\"Ten\", 10} }"},
+		{"[]", "{}"},
+		{"[\"a\", 42]", "{ \"a\", 42 }"},
+		{"\"nope\"", "\"nope\""},
+	};
+	for (const Case& c : cases) {
+		MenuResult js = runMenu(jsMenu(std::string("rack.registerContextMenu({ type: \"options\", label: \"#midichannel\", options: ") + c.js + ", onChange: function() {} });"));
+		MenuResult lua = runMenu(luaMenu(std::string("rack.registerContextMenu({ type = \"options\", label = \"#midichannel\", options = ") + c.lua + ", onChange = function() end })"));
+		REQUIRE(js.loaded);
+		REQUIRE(lua.loaded);
+		requireSameMenus(js.specs, lua.specs);
+		REQUIRE(js.specs[0].options.size() == 16);
+	}
+}
+
+TEST_CASE("#midichannel is a plain label on other item types", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(jsMenu("rack.registerContextMenu({ type: \"action\", label: \"#midichannel\", onChange: function() {} });"));
+	MenuResult lua = runMenu(luaMenu("rack.registerContextMenu({ type = \"action\", label = \"#midichannel\", onChange = function() end })"));
+	REQUIRE(js.specs[0].label == "#midichannel");
+	REQUIRE(lua.specs[0].label == "#midichannel");
+}
+
+TEST_CASE("#midichannel takes a suffix for the label", "[MidiKit][CrossEngine]") {
+	MenuResult js = runMenu(jsMenu(
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel Output\", onChange: function() {} });\n"
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannel+all Input\", onChange: function() {} });\n"
+		"rack.registerContextMenu({ type: \"options\", label: \"#midichannelX\", options: [[\"a\", 1]], onChange: function() {} });"));
+	MenuResult lua = runMenu(luaMenu(
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel Output\", onChange = function() end })\n"
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannel+all Input\", onChange = function() end })\n"
+		"rack.registerContextMenu({ type = \"options\", label = \"#midichannelX\", options = { {\"a\", 1} }, onChange = function() end })"));
+	REQUIRE(js.loaded);
+	REQUIRE(lua.loaded);
+	requireSameMenus(js.specs, lua.specs);
+	REQUIRE(js.specs.size() == 3);
+	REQUIRE(js.specs[0].label == "MIDI channel (Output)");
+	REQUIRE(js.specs[0].options.size() == 16);
+	REQUIRE(js.specs[1].label == "MIDI channel (Input)");
+	REQUIRE(js.specs[1].options.size() == 17);
+	// Not a key followed by a space: an ordinary label.
+	REQUIRE(js.specs[2].label == "#midichannelX");
+	REQUIRE(js.specs[2].options.size() == 1);
 }

@@ -83,6 +83,11 @@ struct MidiScriptEngineHandler {
 	// so false means none were. Saturation is normal, not an error.
 	virtual bool sendMidi(int midiPort, const Message* msgs, size_t count, uint8_t channel, uint64_t tick, int trigPort = 0, const OutTag& tag = OutTag()) = 0;
 
+	// midiOut.panic(): cancels what is scheduled, then sends sustain off, all notes off, all sound off and reset controllers
+	// on every enabled port, on its channel setting or all 16. False if any group was
+	// dropped (full queue). Worker thread.
+	virtual bool panicMidi() = 0;
+
 	// midiOut.cancel(). Queued behind the messages already sent, applied on the
 	// audio thread when it drains the queue. Ignored in onUnload(). False only on
 	// a full queue, which is normal like sendMidi(). Worker thread.

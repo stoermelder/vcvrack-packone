@@ -96,15 +96,8 @@ param.onValueText = function(i) {
 };
 
 rack.onUnload = function() {
-    for (let c = 1; c <= 16; c++) {
-        for (let n = 0; n < 128; n++) {
-            if (state.sentNote[c][n] >= 0) {
-                let off = midi.create();
-                midi.setNoteOff(off, c, state.sentNote[c][n]);
-                midiOut.send(off);
-            }
-        }
-    }
+    // Stops every voice on every channel, whatever the script tracked.
+    midiOut.panic();
 };
 
 midi.onMessage = function(midiPort, msg) {

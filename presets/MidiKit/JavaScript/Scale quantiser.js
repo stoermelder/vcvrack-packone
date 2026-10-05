@@ -44,10 +44,7 @@ let scales = {
 };
 
 // Context menu choices
-let SCALE_NAMES = ["chromatic", "major", "minor", "harmonic", "dorian", "phrygian", "lydian", "mixolydian", "pentatonic", "minorPenta", "blues", "wholeTone"];
-let SCALE_LABELS = ["Chromatic", "Major", "Minor", "Harmonic", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Pentatonic", "Minor pentatonic", "Blues", "Whole tone"];
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
+let SCALE_OPTIONS = [["Chromatic", "chromatic"], ["Major", "major"], ["Minor", "minor"], ["Harmonic", "harmonic"], ["Dorian", "dorian"], ["Phrygian", "phrygian"], ["Lydian", "lydian"], ["Mixolydian", "mixolydian"], ["Pentatonic", "pentatonic"], ["Minor pentatonic", "minorPenta"], ["Blues", "blues"], ["Whole tone", "wholeTone"]];
 
 
 // Configuration - defaults used when nothing has been persisted yet (or a
@@ -58,7 +55,7 @@ for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 // Persist the scale by NAME, not as the semitone-offset array itself. The
 // array form used to require re-matching a persisted array back to one of
 // the named scales by comparing elements (arraysEqual), purely so the
-// context menu's reference-equality check (scaleIndex(), below) still
+// context menu's reference-equality check (scaleName(), below) still
 // recognized it as selected - a workaround for persisting a value whose
 // *identity* mattered. A name has no identity problem: it round-trips
 // through JSON as itself, and looking it up in `scales` is one dictionary
@@ -156,11 +153,11 @@ function quantise(note) {
     return out;
 };
 
-function scaleIndex() {
-    for (let i = 0; i < SCALE_NAMES.length; i++) {
-        if (config.scale === scales[SCALE_NAMES[i]]) return i;
+function scaleName() {
+    for (let i = 0; i < SCALE_OPTIONS.length; i++) {
+        if (config.scale === scales[SCALE_OPTIONS[i][1]]) return SCALE_OPTIONS[i][1];
     }
-    return 0;
+    return null;
 };
 
 // Setup
@@ -182,28 +179,27 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Scale",
-        options: SCALE_LABELS,
+        options: SCALE_OPTIONS,
         onGetValue: function() {
-            return scaleIndex();
+            return scaleName();
         },
-        onChange: function(idx) {
-            config.scale = scales[SCALE_NAMES[idx]];
-            rack.setConfig("scale", SCALE_NAMES[idx]);
-            rack.log("Scale: ", SCALE_LABELS[idx]);
+        onChange: function(name, label) {
+            config.scale = scales[name];
+            rack.setConfig("scale", name);
+            rack.log("Scale: ", label);
         }
     });
 
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel+all",
         onGetValue: function() {
             return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx;
-            rack.setConfig("channel", idx);
-            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+        onChange: function(value, label) {
+            config.channel = value;
+            rack.setConfig("channel", value);
+            rack.log("Channel: ", label);
         }
     });
 

@@ -54,10 +54,6 @@ local state = {
     hasValueMsb = false
 }
 
--- Context menu choices
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
-
 -- Returns the CC number mapped to nrpnNumber, or -1 if not mapped
 local function findCcNumber(nrpnNumber)
     local ccNumber = -1
@@ -83,13 +79,12 @@ rack.onLoad = function()
     -- The menu mirrors the `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type = "options",
-        label = "CC channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel CC",
         onGetValue = function()
-            return config.ccChannel - 1
+            return config.ccChannel
         end,
-        onChange = function(idx)
-            config.ccChannel = idx + 1
+        onChange = function(value)
+            config.ccChannel = value
             rack.setConfig("ccChannel", config.ccChannel)
             rack.log("CC channel: ", config.ccChannel)
         end

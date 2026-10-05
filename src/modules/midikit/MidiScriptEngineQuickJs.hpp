@@ -683,6 +683,16 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 							int b = JS_ToBool(ctx, r);
 							if (b >= 0) spec.checked = (b != 0);
 						}
+						else if (!spec.optionValues.empty()) {
+							// A value: the option that stands for it, none if there is no such.
+							spec.selected = -1;
+							if (JS_IsBool(r)) spec.selected = menuFindOptionValue(spec, ScriptMenuArg::ofBool(JS_ToBool(ctx, r) != 0));
+							else if (JS_IsString(r)) spec.selected = menuFindOptionValue(spec, ScriptMenuArg::ofString(jsToStdString(r)));
+							else if (JS_IsNumber(r)) {
+								double d = 0;
+								if (JS_ToFloat64(ctx, &d, r) >= 0) spec.selected = menuFindOptionValue(spec, ScriptMenuArg::ofNumber(d));
+							}
+						}
 						else {
 							double d = 0;
 							if (JS_ToFloat64(ctx, &d, r) >= 0) {
@@ -728,6 +738,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 				switch (a.kind) {
 					case ScriptMenuArg::Kind::Bool: jsArgs.push_back(JS_NewBool(ctx, a.b)); break;
 					case ScriptMenuArg::Kind::Int: jsArgs.push_back(JS_NewInt32(ctx, a.i)); break;
+					case ScriptMenuArg::Kind::Number: jsArgs.push_back(JS_NewFloat64(ctx, a.d)); break;
 					case ScriptMenuArg::Kind::String: jsArgs.push_back(JS_NewStringLen(ctx, a.s.data(), a.s.size())); break;
 				}
 			}
@@ -846,6 +857,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midi, "getPitchWheel", JS_NewCFunction(ctx, js_midi_getPitchWheel, "getPitchWheel", 1));
 		JS_SetPropertyStr(ctx, _midi, "getProgramChange", JS_NewCFunction(ctx, js_midi_getProgramChange, "getProgramChange", 1));
 		JS_SetPropertyStr(ctx, _midi, "getRaw", JS_NewCFunction(ctx, js_midi_getRaw, "getRaw", 1));
+		JS_SetPropertyStr(ctx, _midi, "toString", JS_NewCFunction(ctx, js_midi_toString, "toString", 1));
 		JS_SetPropertyStr(ctx, _midi, "getSysEx", JS_NewCFunction(ctx, js_midi_getSysEx, "getSysEx", 1));
 		JS_SetPropertyStr(ctx, _midi, "getSysExLength", JS_NewCFunction(ctx, js_midi_getSysExLength, "getSysExLength", 1));
 		JS_SetPropertyStr(ctx, _midi, "getValue", JS_NewCFunction(ctx, js_midi_getValue, "getValue", 1));
@@ -898,6 +910,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midiOut, "sendAtFrame", JS_NewCFunction(ctx, js_midiOut_sendAtFrame, "sendAtFrame", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterTrigger", JS_NewCFunction(ctx, js_midiOut_sendAfterTrigger, "sendAfterTrigger", 3));
 		JS_SetPropertyStr(ctx, _midiOut, "cancel", JS_NewCFunction(ctx, js_midiOut_cancel, "cancel", 1));
+		JS_SetPropertyStr(ctx, _midiOut, "panic", JS_NewCFunction(ctx, js_midiOut_panic, "panic", 0));
 
 		JS_FreeValue(ctx, glob);
 	}
@@ -999,7 +1012,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	// context menu:
 	//   { type: "boolean", label, onGetValue: fn() -> bool, onChange: fn(checked) }
 	//   { type: "options", label, options: [..], onGetValue: fn() -> int, onChange: fn(idx, label) }
+	//   { type: "options", label, options: [[label, value], ..], onGetValue: fn() -> value,
+	//     onChange: fn(value, label) }
 	//   { type: "fileopen", label, onChange: fn(content, fileName) }
+	//   { type: "separator" }
+	//   { type: "label", label }
 	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
 	// thread when the menu is built, so it always reflects the live config —
 	// unlike a value captured at registration. Returns true on success. An item
@@ -1018,26 +1035,40 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		else if (type == "boolean") spec.type = ScriptMenuItem::Type::Boolean;
 		else if (type == "action") spec.type = ScriptMenuItem::Type::Action;
 		else if (type == "fileopen") spec.type = ScriptMenuItem::Type::FileOpen;
-		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"fileopen\"");
+		else if (type == "separator") spec.type = ScriptMenuItem::Type::Separator;
+		else if (type == "label") spec.type = ScriptMenuItem::Type::Label;
+		else return jsThrow(ctx, "registerContextMenu: type must be \"boolean\", \"options\", \"action\", \"fileopen\", \"separator\" or \"label\"");
+		bool hasLabel = spec.type != ScriptMenuItem::Type::Separator;
+		bool hasCallback = spec.type != ScriptMenuItem::Type::Separator && spec.type != ScriptMenuItem::Type::Label;
 
-		JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
-		std::string label = JS_IsString(labelV) ? e->jsToStdString(labelV) : "";
-		JS_FreeValue(ctx, labelV);
-		if (label.empty()) return jsThrow(ctx, "registerContextMenu: label must be a non-empty string");
-		spec.label = label;
+		if (hasLabel) {
+			JSValue labelV = JS_GetPropertyStr(ctx, argv[0], "label");
+			std::string label = JS_IsString(labelV) ? e->jsToStdString(labelV) : "";
+			JS_FreeValue(ctx, labelV);
+			if (label.empty()) return jsThrow(ctx, "registerContextMenu: label must be a non-empty string");
+			spec.label = label;
+		}
+		// A preset menu brings its own options; the script's are not looked at.
+		const char* presetSuffix = "";
+		const MenuPreset* preset = spec.type == ScriptMenuItem::Type::Options ? menuFindPreset(spec.label.c_str(), &presetSuffix) : NULL;
 
-		JSValue onChangeV = JS_GetPropertyStr(ctx, argv[0], "onChange");
-		if (!JS_IsFunction(ctx, onChangeV)) {
-			JS_FreeValue(ctx, onChangeV);
-			return jsThrow(ctx, "registerContextMenu: onChange must be a function");
+		// A separator and a label have no click, so there is no onChange to keep.
+		JSValue onChangeV = JS_UNDEFINED;
+		if (hasCallback) {
+			onChangeV = JS_GetPropertyStr(ctx, argv[0], "onChange");
+			if (!JS_IsFunction(ctx, onChangeV)) {
+				JS_FreeValue(ctx, onChangeV);
+				return jsThrow(ctx, "registerContextMenu: onChange must be a function");
+			}
 		}
 
-		if (spec.type == ScriptMenuItem::Type::Options) {
+		if (spec.type == ScriptMenuItem::Type::Options && !preset) {
+			static const char* const badOptions = "registerContextMenu: options must be a non-empty array of strings or [label, value] pairs";
 			JSValue optionsV = JS_GetPropertyStr(ctx, argv[0], "options");
 			if (!JS_IsArray(ctx, optionsV)) {
 				JS_FreeValue(ctx, optionsV);
 				JS_FreeValue(ctx, onChangeV);
-				return jsThrow(ctx, "registerContextMenu: options must be a non-empty array of strings");
+				return jsThrow(ctx, badOptions);
 			}
 			JSValue lengthV = JS_GetPropertyStr(ctx, optionsV, "length");
 			uint32_t len = 0;
@@ -1046,22 +1077,64 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 			if (!lenOk || len == 0) {
 				JS_FreeValue(ctx, optionsV);
 				JS_FreeValue(ctx, onChangeV);
-				return jsThrow(ctx, "registerContextMenu: options must be a non-empty array of strings");
+				return jsThrow(ctx, badOptions);
 			}
 			spec.options.resize(len);
-			for (uint32_t i = 0; i < len; i++) {
+			bool pairs = false;
+			const char* error = NULL;
+			for (uint32_t i = 0; i < len && !error; i++) {
 				JSValue v = JS_GetPropertyUint32(ctx, optionsV, i);
-				if (!JS_IsString(v)) {
-					JS_FreeValue(ctx, v);
-					JS_FreeValue(ctx, optionsV);
-					JS_FreeValue(ctx, onChangeV);
-					return jsThrow(ctx, "registerContextMenu: options must contain only strings");
+				bool isPair = JS_IsArray(ctx, v);
+				if (!isPair && !JS_IsString(v)) {
+					error = "registerContextMenu: options must contain only strings or only [label, value] pairs";
 				}
-				spec.options[i] = e->jsToStdString(v);
+				else if (i == 0) {
+					pairs = isPair;
+					if (pairs) spec.optionValues.resize(len);
+				}
+				else if (pairs != isPair) {
+					error = "registerContextMenu: options must not mix labels and pairs";
+				}
+				if (!error && !isPair) {
+					spec.options[i] = e->jsToStdString(v);
+				}
+				else if (!error) {
+					JSValue lengthV = JS_GetPropertyStr(ctx, v, "length");
+					uint32_t pairLen = 0;
+					JS_ToUint32(ctx, &pairLen, lengthV);
+					JS_FreeValue(ctx, lengthV);
+					JSValue labelV = JS_GetPropertyUint32(ctx, v, 0);
+					JSValue valueV = JS_GetPropertyUint32(ctx, v, 1);
+					double d = 0;
+					if (pairLen != 2) {
+						error = "registerContextMenu: an options pair must be [label, value]";
+					}
+					else if (!JS_IsString(labelV) || !(JS_IsString(valueV) || JS_IsBool(valueV) || JS_IsNumber(valueV))
+						|| (JS_IsNumber(valueV) && !(JS_ToFloat64(ctx, &d, valueV) >= 0 && std::isfinite(d)))) {
+						error = "registerContextMenu: an options pair must be a string label and a finite number, string or boolean value";
+					}
+					else {
+						spec.options[i] = e->jsToStdString(labelV);
+						if (JS_IsString(valueV)) spec.optionValues[i] = ScriptMenuArg::ofString(e->jsToStdString(valueV));
+						else if (JS_IsBool(valueV)) spec.optionValues[i] = ScriptMenuArg::ofBool(JS_ToBool(ctx, valueV) != 0);
+						else spec.optionValues[i] = ScriptMenuArg::ofNumber(d);
+						for (uint32_t j = 0; j < i && !error; j++) {
+							if (spec.options[j] == spec.options[i]) error = "registerContextMenu: two options have the same label";
+							else if (spec.optionValues[j] == spec.optionValues[i]) error = "registerContextMenu: two options have the same value";
+						}
+					}
+					JS_FreeValue(ctx, labelV);
+					JS_FreeValue(ctx, valueV);
+				}
 				JS_FreeValue(ctx, v);
 			}
 			JS_FreeValue(ctx, optionsV);
+			if (error) {
+				JS_FreeValue(ctx, onChangeV);
+				return jsThrow(ctx, error);
+			}
 		}
+		if (preset) menuApplyPreset(spec, *preset, presetSuffix);
 
 		// The current value isn't read at registration; it's evaluated lazily
 		// from onGetValue when the menu is built, so it always reflects the
@@ -1082,8 +1155,9 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		// is how a script updates the options of a menu at runtime. The old
 		// callbacks are released; one that is running right now holds its own
 		// reference (see invokeContextMenuCallback()).
+		// A separator has no label to be found by, so it is always added.
 		for (auto& kv : e->contextMenus) {
-			if (kv.second.spec.label != spec.label) continue;
+			if (spec.type == ScriptMenuItem::Type::Separator || kv.second.spec.label != spec.label) continue;
 			JS_FreeValue(ctx, kv.second.callbackFn);
 			JS_FreeValue(ctx, kv.second.onGetValueFn);
 			spec.callbackId = kv.first;
@@ -1116,7 +1190,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 
 		assert(e->onWorkerThread());
 		for (auto it = e->contextMenus.begin(); it != e->contextMenus.end(); ++it) {
-			if (it->second.spec.label != label) continue;
+			if (it->second.spec.type == ScriptMenuItem::Type::Separator || it->second.spec.label != label) continue;
 			JS_FreeValue(ctx, it->second.callbackFn);
 			JS_FreeValue(ctx, it->second.onGetValueFn);
 			e->contextMenus.erase(it);
@@ -1697,6 +1771,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// midiOut.enableTiming([reportLate]) — sample-accurate output for this script.
+	// midiOut.panic() — see MidiScriptEngineHandler::panicMidi().
+	static JSValue js_midiOut_panic(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return JS_NewBool(ctx, getEngine(ctx)->handler->panicMidi());
+	}
+
 	static JSValue js_midiOut_enableTiming(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		getEngine(ctx)->handler->enableTiming(argc >= 1 && JS_ToBool(ctx, argv[0]) > 0);
 		return JS_UNDEFINED;
@@ -1838,6 +1917,14 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.getSysExLength: invalid msg");
 		// Payload length only — f0/f7 framing excluded.
 		return JS_NewFloat64(ctx, std::max(0, getEngine(ctx)->msgStore[idx].in.msg.getSize() - 2));
+	}
+
+	// midi.toString(msg): one line for display, in the wording of MIDI-MON.
+	static JSValue js_midi_toString(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		size_t idx;
+		if (argc < 1 || !getMsgArg(ctx, argv[0], idx)) return jsThrow(ctx, "midi.toString: invalid msg");
+		std::string str = messageText(getEngine(ctx)->msgStore[idx]);
+		return JS_NewStringLen(ctx, str.c_str(), str.length());
 	}
 
 	static JSValue js_midi_getRaw(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {

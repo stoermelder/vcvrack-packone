@@ -55,7 +55,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("framesToMs", "", {{"frames", "number of frames"}}),
 		ApiFunction("random", "", {}),
 		ApiFunction("setRandomSeed", "", {{"seed", "any finite number, truncated to 32 bits"}}),
-		ApiFunction("registerContextMenu", "", {{"options", "{type: \"boolean\", \"options\", \"action\" or \"file\", label, options, onGetValue, onChange}"}}),
+		ApiFunction("registerContextMenu", "", {{"options", "{type: \"boolean\", \"options\", \"action\", \"fileopen\", \"separator\" or \"label\", label, options (labels or [label, value] pairs), onGetValue, onChange}"}}),
 		ApiFunction("unregisterContextMenu", "", {{"label", "label of the item to remove"}}),
 		ApiFunction("getConfig", "", {{"key", "name of the persisted value"}, {"default", "returned if key is unset", true}}),
 		ApiFunction("setConfig", "", {{"key", "name of the value to persist"}, {"value", "boolean, number, string, array or object, undefined/nil removes the key"}}),
@@ -116,6 +116,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("getSysEx", kGetters, {{"msg", MSG}}),
 		ApiFunction("getSysExLength", kGetters, {{"msg", MSG}}),
 		ApiFunction("getRaw", kGetters, {{"msg", MSG}}),
+		ApiFunction("toString", kGetters, {{"msg", MSG}}),
 
 		ApiFunction("isCc", kPredicates, {{"msg", MSG}}),
 		ApiFunction("isNoteOn", kPredicates, {{"msg", MSG}}),
@@ -164,6 +165,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("sendAfterMs", "", {{"msg", MSG}, {"ms", "delay in milliseconds, -1 sends after Rack's output queue"}}),
 		ApiFunction("sendAtFrame", "", {{"msg", MSG}, {"frame", "engine frame, see rack.getEventFrame()"}}),
 		ApiFunction("sendAfterTrigger", "", {{"msg", MSG}, {"ticks", "clock ticks to wait"}, {"trigPort", "trigger input 1-2, default 1", true}, {"channel", TRIG_CH, true}}),
+		ApiFunction("panic", "", {}),
 		ApiFunction("cancel", "", {{"msg", "drop only scheduled messages with this message's address, default all", true}}),
 	}));
 

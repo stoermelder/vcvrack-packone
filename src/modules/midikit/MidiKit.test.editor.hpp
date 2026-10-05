@@ -1470,6 +1470,193 @@ TEST_CASE("Editor field: Ctrl+/ toggles comments in the running script's languag
 	}
 }
 
+// ── Go to line, and a click on a log line ────────────────────────────────────
+
+static std::string lineText(const std::string& text, int line1) {
+	int start = StoermelderPackOne::ui::editor::scripttext::lineColToOffset(text, line1 - 1, 0);
+	int end = StoermelderPackOne::ui::editor::scripttext::lineColToOffset(text, line1 - 1, INT_MAX);
+	return text.substr(start, end - start);
+}
+
+TEST_CASE("Editor go to line: Ctrl+G asks for a number, Enter selects that line and returns to the editor", "[MidiKit][Editor][Goto]") {
+	EditorRig h;
+	MidiKitWidget* mw = h.mw;
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->setText("alpha\nbeta\ngamma\ndelta");
+	e.field->cursor = e.field->selection = 0;
+	e.field->clearHistory();
+	ScriptGotoBar* bar = e.dialog->gotoBar;
+	REQUIRE_FALSE(bar->isOpen);
+	REQUIRE_FALSE(bar->visible);
+
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	e.overlay->step();
+	REQUIRE(bar->isOpen);
+	REQUIRE(bar->visible);
+	REQUIRE(APP->event->selectedWidget == bar->input);
+	REQUIRE(bar->count->text == "of 4");
+
+	// Only digits are taken.
+	h.events().type("x3y");
+	REQUIRE(bar->input->text == "3");
+	h.events().keyPress(GLFW_KEY_ENTER);
+	REQUIRE_FALSE(bar->isOpen);
+	REQUIRE(APP->event->selectedWidget == e.field);
+	REQUIRE(e.field->getSelectedText() == "gamma");
+	REQUIRE(e.field->text == "alpha\nbeta\ngamma\ndelta");   // the buffer is untouched
+	REQUIRE(e.field->undoStack.empty());
+
+	// A line past the end goes to the last one; 0 or nothing goes nowhere.
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	h.events().type("99");
+	h.events().keyPress(GLFW_KEY_ENTER);
+	REQUIRE(e.field->getSelectedText() == "delta");
+
+	e.field->cursor = e.field->selection = 2;
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	h.events().keyPress(GLFW_KEY_ENTER);
+	REQUIRE(e.field->cursor == 2);
+	REQUIRE(e.field->selection == 2);
+	REQUIRE_FALSE(bar->isOpen);
+
+	// Esc closes the bar and leaves the caret.
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	h.events().type("4");
+	h.events().keyPress(GLFW_KEY_ESCAPE);
+	REQUIRE_FALSE(bar->isOpen);
+	REQUIRE(e.field->cursor == 2);
+	REQUIRE(APP->event->selectedWidget == e.field);
+	REQUIRE_FALSE(e.overlay->requestedDelete);
+}
+
+TEST_CASE("Editor go to line: the bar takes room from the code area, and gives it back", "[MidiKit][Editor][Goto]") {
+	EditorRig h;
+	MidiKitWidget* mw = h.mw;
+	OpenEditor e = openEditorOn(h, mw);
+	float before = e.dialog->scroll->box.size.y;
+	rack::math::Vec size = e.dialog->box.size;
+
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	REQUIRE(e.dialog->scroll->box.size.y == before - ScriptGotoBar::kHeight);
+	REQUIRE(e.dialog->box.size.isEqual(size));
+
+	h.events().keyPress(GLFW_KEY_ESCAPE);
+	REQUIRE(e.dialog->scroll->box.size.y == before);
+}
+
+TEST_CASE("Editor go to line: the find bar and the go-to-line bar exclude each other", "[MidiKit][Editor][Goto][Find]") {
+	EditorRig h;
+	MidiKitWidget* mw = h.mw;
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->setText("foo bar\nfoo baz\nqux");
+	e.field->cursor = e.field->selection = 0;
+	e.field->clearHistory();
+	float closed = e.dialog->scroll->box.size.y;
+
+	h.events().keyPress(GLFW_KEY_F, RACK_MOD_CTRL);
+	REQUIRE(e.dialog->findBar->isOpen);
+	REQUIRE_FALSE(e.dialog->gotoBar->isOpen);
+	h.events().type("foo");
+	REQUIRE(e.dialog->scroll->box.size.y == closed - ScriptFindBar::kHeight);
+
+	// Ctrl+G from the find bar swaps them; the search highlight goes with its bar.
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	REQUIRE_FALSE(e.dialog->findBar->isOpen);
+	REQUIRE(e.dialog->gotoBar->isOpen);
+	REQUIRE(APP->event->selectedWidget == e.dialog->gotoBar->input);
+	REQUIRE(e.field->findNeedle.empty());
+	REQUIRE(e.dialog->scroll->box.size.y == closed - ScriptGotoBar::kHeight);
+
+	// Ctrl+F from the go-to-line bar swaps back, and F3 does the same.
+	h.events().keyPress(GLFW_KEY_F, RACK_MOD_CTRL);
+	REQUIRE(e.dialog->findBar->isOpen);
+	REQUIRE_FALSE(e.dialog->gotoBar->isOpen);
+	REQUIRE(e.dialog->scroll->box.size.y == closed - ScriptFindBar::kHeight);
+
+	h.events().keyPress(GLFW_KEY_ESCAPE);                 // closes the find bar
+	h.events().keyPress(GLFW_KEY_G, RACK_MOD_CTRL);
+	REQUIRE(e.dialog->gotoBar->isOpen);
+	e.dialog->field->findNextAction(true);                // F3 from the editor
+	REQUIRE(e.dialog->findBar->isOpen);
+	REQUIRE_FALSE(e.dialog->gotoBar->isOpen);
+	REQUIRE(e.dialog->scroll->box.size.y == closed - ScriptFindBar::kHeight);
+}
+
+// Applies a script that fails at `failLine` (1-based, the line of `marker`), clicks the first
+// log line that points into the script, and checks that the editor selected the failing line.
+// That also holds the engines' line numbers against the editor's own.
+static void clickErrorAndCheck(const std::string& script, const std::string& marker, bool onMessageLine) {
+	EditorRig h(EditorRig::SyncWorker);
+	MidiKitWidget* mw = h.mw;
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->setText(script);
+	e.dialog->apply();
+	h.dspStep();
+	h.uiFrames(2);
+
+	ScriptLogView* view = e.dialog->logPanel->view;
+	// The row to click: the message line of the first error entry, or the line with the number.
+	int row = -1;
+	const std::vector<int>& shown = view->getShown();
+	for (size_t r = 0; r < shown.size(); r++) {
+		const std::string& l = view->lines[shown[r]];
+		if (onMessageLine ? StoermelderPackOne::ui::editor::scripttext::looksLikeError(l)
+		                  : StoermelderPackOne::ui::editor::scripttext::scriptLineOf(l) > 0) {
+			row = (int)r;
+			break;
+		}
+	}
+	CATCH_INFO("log:\n" << view->allText());
+	REQUIRE(row >= 0);
+
+	e.field->cursor = e.field->selection = 0;
+	rack::math::Vec at = Test::EventDriver::pointIn(view, rack::math::Vec(20.f, ScriptLogView::kPad + (row + 0.5f) * ScriptLogView::kLineHeight));
+	h.events().click(at);
+
+	std::string selected = e.field->getSelectedText();
+	REQUIRE(selected.find(marker) != std::string::npos);
+	// The selection is exactly one line of the buffer, the one the numbering names.
+	int line = StoermelderPackOne::ui::editor::scripttext::offsetToLineCol(script, std::min(e.field->cursor, e.field->selection)).line + 1;
+	REQUIRE(lineText(script, line) == selected);
+	REQUIRE(APP->event->selectedWidget == e.field);
+}
+
+TEST_CASE("Editor log: a click on an error line selects the failing line of the script", "[MidiKit][Editor][Goto][Log]") {
+	// A runtime error inside onLoad, on line 6, in both engines. QuickJS puts the line on a
+	// stack line below the message, so the message line is clicked there too.
+	const std::string js = "/**\n * @engine QuickJs@v1\n */\n\nrack.onLoad = function() {\n  null.field;   // FAIL\n};\n";
+	const std::string lua = "--[[\n@engine minilua@v1\n--]]\n\nrack.onLoad = function()\n  local y = nil .. 1   -- FAIL\nend\n";
+	clickErrorAndCheck(js, "FAIL", true);
+	clickErrorAndCheck(js, "FAIL", false);
+	clickErrorAndCheck(lua, "FAIL", true);
+	clickErrorAndCheck(lua, "FAIL", false);
+
+	// A script that does not load: the syntax error on line 5.
+	const std::string jsSyntax = "/**\n * @engine QuickJs@v1\n */\n\nlet = = 3;   // FAIL\n";
+	const std::string luaSyntax = "--[[\n@engine minilua@v1\n--]]\n\nlocal = = 3   -- FAIL\n";
+	clickErrorAndCheck(jsSyntax, "FAIL", true);
+	clickErrorAndCheck(luaSyntax, "FAIL", true);
+}
+
+TEST_CASE("Editor log: a line that points nowhere does nothing when clicked", "[MidiKit][Editor][Goto][Log]") {
+	EditorRig h(EditorRig::SyncWorker);
+	MidiKitWidget* mw = h.mw;
+	OpenEditor e = openEditorOn(h, mw);
+	e.field->setText("/**\n * @engine QuickJs@v1\n */\nrack.log(\"just a message\");\n");
+	e.dialog->apply();
+	h.dspStep();
+	h.uiFrames(2);
+
+	ScriptLogView* view = e.dialog->logPanel->view;
+	e.field->setText("one\ntwo\nthree");
+	e.field->cursor = e.field->selection = 1;
+	REQUIRE_FALSE(view->getShown().empty());
+	rack::math::Vec at = Test::EventDriver::pointIn(view, rack::math::Vec(20.f, ScriptLogView::kPad + 0.5f * ScriptLogView::kLineHeight));
+	h.events().click(at);
+	REQUIRE(e.field->cursor == 1);
+	REQUIRE(e.field->selection == 1);
+}
+
 // ── Double / triple click ──
 
 TEST_CASE("Editor field: double-click selects a word, triple-click the line, a fourth starts over", "[MidiKit][Editor][Click]") {

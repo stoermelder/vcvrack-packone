@@ -36,9 +36,6 @@ let config = {
     numInputs: rack.getConfig("numInputs", 2)
 };
 
-// Context menu choices
-let INPUT_COUNT_LABELS = ["2", "3", "4"];
-
 // Internal state.
 // active: index (0-based) of the input currently routed to the output.
 // inputs[i] is what input i has sent so far:
@@ -135,18 +132,19 @@ function switchTo(idx) {
 // Registering a label that already exists replaces that menu item, which is how
 // the list follows a change of config.numInputs.
 function registerActiveInputMenu() {
-    let labels = [];
-    for (let i = 1; i <= config.numInputs; i++) labels[labels.length] = "Input " + i;
+    // The value of an option is the 0-based input index, as in state.active.
+    let inputs = [];
+    for (let i = 0; i < config.numInputs; i++) inputs[inputs.length] = ["Input " + (i + 1), i];
 
     rack.registerContextMenu({
         type: "options",
         label: "Active input",
-        options: labels,
+        options: inputs,
         onGetValue: function() {
             return state.active;
         },
-        onChange: function(idx) {
-            switchTo(idx);
+        onChange: function(input) {
+            switchTo(input);
         }
     });
 };
@@ -171,12 +169,12 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Number of inputs",
-        options: INPUT_COUNT_LABELS,
+        options: [["2", 2], ["3", 3], ["4", 4]],
         onGetValue: function() {
-            return config.numInputs - 2;
+            return config.numInputs;
         },
-        onChange: function(idx) {
-            config.numInputs = idx + 2;
+        onChange: function(count) {
+            config.numInputs = count;
             rack.setConfig("numInputs", config.numInputs);
             midi.enablePorts(config.numInputs);
             // The active input may be gone now

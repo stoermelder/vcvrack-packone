@@ -54,10 +54,6 @@ let state = {
     hasValueMsb: false
 };
 
-// Context menu choices
-let CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
 // Returns the CC number mapped to nrpnNumber, or -1 if not mapped
 function findCcNumber(nrpnNumber) {
     let ccNumber = -1;
@@ -83,13 +79,12 @@ rack.onLoad = function() {
     // The menu mirrors the `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type: "options",
-        label: "CC channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel CC",
         onGetValue: function() {
-            return config.ccChannel - 1;
+            return config.ccChannel;
         },
-        onChange: function(idx) {
-            config.ccChannel = idx + 1;
+        onChange: function(value) {
+            config.ccChannel = value;
             rack.setConfig("ccChannel", config.ccChannel);
             rack.log("CC channel: ", config.ccChannel);
         }

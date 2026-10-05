@@ -67,6 +67,17 @@ struct ScriptEditField : TextField {
 	// Ctrl+F opens the find bar, F3 / Shift+F3 jump to the next / previous match.
 	std::function<void()> findAction;
 	std::function<void(bool forward)> findNextAction;
+	// Ctrl+G opens the go-to-line bar.
+	std::function<void()> gotoAction;
+
+	// Selects the whole of line `line` (1-based, clamped to the text), cursor at its end so
+	// the caret follows it into view.
+	void gotoLine(int line) {
+		line = std::max(1, std::min(line, scripttext::lineCount(text)));
+		selection = scripttext::lineColToOffset(text, line - 1, 0);
+		cursor = scripttext::lineColToOffset(text, line - 1, INT_MAX);
+		preferredCol = -1;
+	}
 
 	// ── Find ── what to highlight. The match list is rebuilt lazily after the text or
 	// the search changes.
@@ -472,6 +483,11 @@ struct ScriptEditField : TextField {
 				e.consume(this);
 				return;
 			}
+			if (e.isKeyCommand(GLFW_KEY_G, RACK_MOD_CTRL)) {
+				if (e.action == GLFW_PRESS && gotoAction) gotoAction();
+				e.consume(this);
+				return;
+			}
 			if (e.isKeyCommand(GLFW_KEY_F3) || e.isKeyCommand(GLFW_KEY_F3, GLFW_MOD_SHIFT)) {
 				if (findNextAction) findNextAction((e.mods & GLFW_MOD_SHIFT) == 0);
 				e.consume(this);
@@ -772,6 +788,14 @@ struct ScriptLogView : widget::OpaqueWidget {
 
 	// Every line received; the filter decides which of them are shown.
 	std::vector<std::string> lines;
+	// The entry each line came from, so a click can look for a script line in the rest of
+	// its entry (an error's stack comes on the lines after its message).
+	std::vector<int> entryOf;
+	int entryCount = 0;
+	// Click on a line that points to a script line: jump there. Set by the dialog.
+	std::function<void(int line)> jumpAction;
+	// What takes the keyboard after a jump: Rack selects the widget that consumed the click.
+	widget::Widget* jumpFocus = nullptr;
 	scripttext::LineFilter filter;
 	// Indices into `lines` of the shown ones, rebuilt lazily.
 	std::vector<int> shown;
@@ -813,8 +837,29 @@ struct ScriptLogView : widget::OpaqueWidget {
 
 	// Right-click: copy everything / clear. The area only mirrors the owner's log, so
 	// clearing it leaves the owner's own log display alone.
+	// The script line that log line `index` (into `lines`) points to: its own, or the first
+	// one on a later line of the same entry. 0 if there is none.
+	int targetOf(int index) const {
+		for (int i = index; i >= 0 && i < (int)lines.size() && entryOf[i] == entryOf[index]; i++) {
+			int n = scripttext::scriptLineOf(lines[i]);
+			if (n > 0) return n;
+		}
+		return 0;
+	}
+
 	void onButton(const ButtonEvent& e) override {
 		OpaqueWidget::onButton(e);
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			const std::vector<int>& rows = getShown();
+			int row = (int)std::floor((e.pos.y - kPad) / kLineHeight);
+			if (row >= 0 && row < (int)rows.size() && jumpAction) {
+				int target = targetOf(rows[row]);
+				if (target > 0) {
+					jumpAction(target);
+					e.consume(jumpFocus ? jumpFocus : this);
+				}
+			}
+		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			rack::ui::Menu* menu = createMenu();
 			bool empty = getShown().empty();
@@ -831,13 +876,19 @@ struct ScriptLogView : widget::OpaqueWidget {
 	// An entry may span several lines.
 	void append(const std::string& entry) {
 		size_t start = 0;
+		int id = entryCount++;
 		while (true) {
 			size_t nl = entry.find('\n', start);
 			lines.push_back(entry.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+			entryOf.push_back(id);
 			if (nl == std::string::npos) break;
 			start = nl + 1;
 		}
-		if (lines.size() > kMaxLines) lines.erase(lines.begin(), lines.begin() + (lines.size() - kMaxLines));
+		if (lines.size() > kMaxLines) {
+			size_t extra = lines.size() - kMaxLines;
+			lines.erase(lines.begin(), lines.begin() + extra);
+			entryOf.erase(entryOf.begin(), entryOf.begin() + extra);
+		}
 		shownStale = true;
 	}
 
@@ -860,7 +911,14 @@ struct ScriptLogView : widget::OpaqueWidget {
 		int last = std::min(n - 1, (int)std::floor((args.clipBox.getBottom() - kPad) / kLineHeight));
 		for (int l = first; l <= last; l++) {
 			nvgFillColor(vg, scripttext::looksLikeError(lines[rows[l]]) ? nvgRGB(240, 100, 90) : nvgRGBA(200, 200, 200, 230));
-			nvgText(vg, 6.f, kPad + (l + 0.5f) * kLineHeight, lines[rows[l]].c_str(), NULL);
+			float y = kPad + (l + 0.5f) * kLineHeight;
+			float end = nvgText(vg, 6.f, y, lines[rows[l]].c_str(), NULL);
+			// A line that a click takes to the script is underlined.
+			if (jumpAction && targetOf(rows[l]) > 0) {
+				nvgBeginPath(vg);
+				nvgRect(vg, 6.f, y + kFontSize * 0.5f + 0.5f, std::max(0.f, end - 6.f), 1.f);
+				nvgFill(vg);
+			}
 		}
 		nvgResetScissor(vg);
 	}
@@ -989,6 +1047,10 @@ struct FindField : TextField {
 	std::function<void(bool forward)> nextAction;
 	std::function<void()> closeAction;
 	std::function<void()> changeAction;
+	// Ctrl+G and Ctrl+F in the input, for the two bars that swap places. Unset: Ctrl+G does
+	// nothing, and Ctrl+F selects the input's text again.
+	std::function<void()> gotoAction;
+	std::function<void()> findAction;
 
 	void onChange(const ChangeEvent& e) override {
 		TextField::onChange(e);
@@ -1009,9 +1071,19 @@ struct FindField : TextField {
 				e.consume(this);
 				return;
 			}
-			// Ctrl+F in the bar selects the search again.
+			// Ctrl+F in the bar selects the search again, or goes to the find bar.
 			if (e.isKeyCommand(GLFW_KEY_F, RACK_MOD_CTRL)) {
-				selectAll();
+				if (findAction) {
+					if (e.action == GLFW_PRESS) findAction();
+				}
+				else {
+					selectAll();
+				}
+				e.consume(this);
+				return;
+			}
+			if (e.isKeyCommand(GLFW_KEY_G, RACK_MOD_CTRL) && gotoAction) {
+				if (e.action == GLFW_PRESS) gotoAction();
 				e.consume(this);
 				return;
 			}
@@ -1116,6 +1188,7 @@ struct ScriptLogPanel : widget::Widget {
 	// Empties the log; the filter stays for what comes next.
 	void clear() {
 		view->lines.clear();
+		view->entryOf.clear();
 		view->shownStale = true;
 		scroll->offset = Vec();
 	}
@@ -1322,6 +1395,118 @@ private:
 	}
 };
 
+// ScriptGotoBar
+
+// Ctrl+G: a line number to jump to, shown below the find bar. Enter goes there and gives the
+// keyboard back to the editor; Esc closes it. Hidden until opened.
+struct ScriptGotoBar : widget::Widget {
+	static constexpr float kHeight = 34.f;
+
+	ScriptEditField* field;
+	FindField* input;
+	rack::ui::Label* count;
+	ActionButton* goButton;
+	ActionButton* closeButton;
+	bool isOpen = false;
+	std::function<void()> layoutChanged;
+	std::function<void()> returnFocus;
+
+	explicit ScriptGotoBar(ScriptEditField* f) : field(f) {
+		hide();
+
+		input = new FindField;
+		input->placeholder = "Go to line";
+		input->nextAction = [this](bool) { go(); };
+		input->closeAction = [this]() { close(); };
+		input->changeAction = [this]() { digitsOnly(); };
+		addChild(input);
+
+		count = new rack::ui::Label;
+		count->box.size = Vec(110.f, 20.f);
+		count->alignment = rack::ui::Label::RIGHT_ALIGNMENT;
+		addChild(count);
+
+		goButton = new ActionButton;
+		goButton->text = "Go";
+		goButton->action = [this]() { go(); };
+		addChild(goButton);
+
+		closeButton = new ActionButton;
+		closeButton->text = "X";
+		closeButton->action = [this]() { close(); };
+		addChild(closeButton);
+	}
+
+	float space() const {
+		return isOpen ? kHeight : 0.f;
+	}
+
+	void layout() {
+		setVisible(isOpen);
+		const float y = 6.f;
+		float x = box.size.x;
+		x -= 30.f;
+		closeButton->box.size.x = 30.f;
+		closeButton->box.pos = Vec(x, y);
+		x -= 4.f + 60.f;
+		goButton->box.size.x = 60.f;
+		goButton->box.pos = Vec(x, y);
+		x -= 4.f + count->box.size.x;
+		count->box.pos = Vec(x, y);
+		input->box.pos = Vec(0.f, y);
+		input->box.size.x = std::max(60.f, x - 8.f);
+	}
+
+	// The line the input holds, 0 if it holds none.
+	int line() const {
+		if (input->text.empty() || input->text.size() > 8) return 0;
+		return std::atoi(input->text.c_str());
+	}
+
+	void open() {
+		if (!isOpen) {
+			isOpen = true;
+			if (layoutChanged) layoutChanged();
+		}
+		show();
+		input->setText("");
+		input->selectAll();
+		APP->event->setSelectedWidget(input);
+	}
+
+	void close() {
+		if (!isOpen) return;
+		isOpen = false;
+		if (layoutChanged) layoutChanged();
+		if (returnFocus) returnFocus();
+	}
+
+	// Jumps to the line in the input (a number past the end goes to the last line) and closes.
+	void go() {
+		int n = line();
+		if (n > 0) field->gotoLine(n);
+		close();
+	}
+
+	void step() override {
+		if (isOpen) {
+			std::string t = string::f("of %d", scripttext::lineCount(field->text));
+			if (count->text != t) count->text = t;
+		}
+		Widget::step();
+	}
+
+private:
+	// Only digits make a line number.
+	void digitsOnly() {
+		std::string s;
+		for (char c : input->text) {
+			if (c >= '0' && c <= '9') s += c;
+		}
+		if (s != input->text) input->setText(s);
+	}
+};
+
 // ScriptEditorDialog
 
 struct ScriptEditorDialog : widget::OpaqueWidget {
@@ -1348,6 +1533,7 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 	ScriptLogPanel* logPanel;
 	SplitHandle* splitHandle;
 	ScriptFindBar* findBar;
+	ScriptGotoBar* gotoBar;
 	// Height of the log area; the user drags it. Not persisted.
 	float logHeight = kDefaultLogHeight;
 	std::vector<ActionButton*> buttons;
@@ -1397,8 +1583,10 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		field->applyAction = [this](bool closeAfter) { closeAfter ? applyAndClose() : apply(); };
 		field->closeAction = [this]() { requestClose(); };
 		field->changeAction = [this]() { updateDirty(); };
-		field->findAction = [this]() { findBar->open(); };
-		field->findNextAction = [this](bool forward) { findBar->stepFromEditor(forward); };
+		// The find bar and the go-to-line bar share the room above the code: opening one closes the other.
+		field->findAction = [this]() { gotoBar->close(); findBar->open(); };
+		field->findNextAction = [this](bool forward) { gotoBar->close(); findBar->stepFromEditor(forward); };
+		field->gotoAction = [this]() { findBar->close(); gotoBar->open(); };
 		scroll->container->addChild(field);
 
 		findBar = new ScriptFindBar(field);
@@ -1406,12 +1594,22 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		findBar->returnFocus = [this]() { focusField(); };
 		addChild(findBar);
 
+		gotoBar = new ScriptGotoBar(field);
+		gotoBar->layoutChanged = [this]() { layoutFrame(); };
+		gotoBar->returnFocus = [this]() { focusField(); };
+		addChild(gotoBar);
+		// Ctrl+G in the find input and Ctrl+F in the go-to-line input swap the bars too.
+		findBar->input->gotoAction = [this]() { findBar->close(); gotoBar->open(); };
+		gotoBar->input->findAction = [this]() { gotoBar->close(); findBar->open(); };
+
 		gutter = new LineNumberGutter;
 		gutter->field = field;
 		scroll->container->addChild(gutter);
 
 		logPanel = new ScriptLogPanel;
 		logPanel->returnFocus = [this]() { focusField(); };
+		logPanel->view->jumpAction = [this](int line) { field->gotoLine(line); };
+		logPanel->view->jumpFocus = field;
 		addChild(logPanel);
 		splitHandle = new SplitHandle;
 		splitHandle->dragged = [this](float dy) { setLogHeight(logHeight - dy); };
@@ -1436,10 +1634,15 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 		updateDirty();
 	}
 
+	// The height the find bar and the go-to-line bar take from the code area.
+	float barSpace() const {
+		return findBar->space() + gotoBar->space();
+	}
+
 	// Keeps both areas usable: the log at least a few lines, the code area at least its minimum.
 	float clampLogHeight(float h) const {
 		const float minLog = kMinLogHeight;   // by value: std::min/max would odr-use the members
-		float maxH = box.size.y - kHeaderHeight - findBar->space() - kFooterHeight - kMinCodeHeight;
+		float maxH = box.size.y - kHeaderHeight - barSpace() - kFooterHeight - kMinCodeHeight;
 		return std::max(std::min(minLog, maxH), std::min(h, maxH));
 	}
 
@@ -1451,13 +1654,16 @@ struct ScriptEditorDialog : widget::OpaqueWidget {
 	// Positions everything from box.size, which step() clamps to the scene.
 	void layoutFrame() {
 		logHeight = clampLogHeight(logHeight);
-		const float findSpace = findBar->space();
+		const float findSpace = barSpace();
 		modifiedLabel->box.pos = Vec(box.size.x - kMargin - modifiedLabel->box.size.x, 6.f);
 		scroll->box.pos = Vec(kMargin, kHeaderHeight + findSpace);
 		scroll->box.size = Vec(box.size.x - 2.f * kMargin, box.size.y - kHeaderHeight - findSpace - kFooterHeight - logHeight);
 		findBar->box.pos = Vec(kMargin, kHeaderHeight);
 		findBar->box.size = Vec(box.size.x - 2.f * kMargin, ScriptFindBar::kHeight);
 		findBar->layout();
+		gotoBar->box.pos = Vec(kMargin, kHeaderHeight + findBar->space());
+		gotoBar->box.size = Vec(box.size.x - 2.f * kMargin, ScriptGotoBar::kHeight);
+		gotoBar->layout();
 		const float footerY = box.size.y - logHeight - kFooterHeight + 7.f;
 		logPanel->box.pos = Vec(kMargin, box.size.y - logHeight);
 		logPanel->box.size = Vec(box.size.x - 2.f * kMargin, logHeight - kMargin);

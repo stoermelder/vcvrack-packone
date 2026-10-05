@@ -527,3 +527,22 @@ TEST_CASE("ScriptEditorText apiSnippet", "[ScriptEditor]") {
 		REQUIRE(s == "-- [enabled]: false releases (optional)\ntrig.enableTipsyIn()");
 	}
 }
+
+TEST_CASE("ScriptEditorText scriptLineOf reads the line of an engine error", "[ScriptEditor]") {
+	// Lua, QuickJS message, QuickJS stack frames.
+	REQUIRE(scriptLineOf("onLoad error: script:6: attempt to concatenate a nil value") == 6);
+	REQUIRE(scriptLineOf("Error loading script: script:5: <name> expected near '='") == 5);
+	REQUIRE(scriptLineOf("    at <anonymous> (script:6:7)") == 6);
+	REQUIRE(scriptLineOf("    at script:12:3") == 12);
+	REQUIRE(scriptLineOf("script:1: x") == 1);
+	// The first one wins, the engine's own mention of a second line is not a target.
+	REQUIRE(scriptLineOf("script:6: 'end' expected (to close 'function' at line 5) near <eof>") == 6);
+	// No number, no target: the word alone, a message without a line, an empty line.
+	REQUIRE(scriptLineOf("Error loading script: SyntaxError: unexpected token") == 0);
+	REQUIRE(scriptLineOf("Script loaded") == 0);
+	REQUIRE(scriptLineOf("") == 0);
+	// "script:" must stand alone as a word, and a line is at least 1.
+	REQUIRE(scriptLineOf("myscript:7: no") == 0);
+	REQUIRE(scriptLineOf("script:0: no") == 0);
+	REQUIRE(scriptLineOf("script:x1") == 0);
+}

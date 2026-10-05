@@ -1833,6 +1833,33 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort, gen, false, tag);
 	}
 
+	// MidiScriptEngineHandler — midiOut.panic(). Via sendMidi(), so it keeps call order
+	// and works in onUnload() (where the swap drops the scheduled messages anyway). Enabled ports only; a port set to a channel gets that
+	// channel only (Rack would overwrite the channel anyway), else all 16. The port's
+	// channel is written by the UI thread: a stale read is harmless.
+	bool panicMidi() override {
+		// Sustain off first so the notes can release; then notes off, sound off, reset.
+		static const uint8_t controllers[4][2] = {{64, 0}, {123, 0}, {120, 0}, {121, 0}};
+		bool ok = true;
+		for (int port = 0; port < midiOuts.enabledCount(); port++) {
+			// First drop what is scheduled, or a waiting note-on would sound after the reset.
+			if (!cancelMidi(port, MidiScript::CancelMode::ALL, MidiScript::Message(), MidiScript::OutGroup())) ok = false;
+			int fixed = midiOuts.ports[port].channel;
+			for (int ch = fixed >= 0 ? fixed : 0; ch < (fixed >= 0 ? fixed + 1 : 16); ch++) {
+				MidiScript::Message group[4];
+				for (int k = 0; k < 4; k++) {
+					group[k].setSize(3);
+					group[k].setStatus(0xb);
+					group[k].setChannel(uint8_t(ch));
+					group[k].setNote(controllers[k][0]);
+					group[k].setValue(controllers[k][1]);
+				}
+				if (!sendMidi(port, group, 4, 0, 0)) ok = false;
+			}
+		}
+		return ok;
+	}
+
 	// MidiScriptEngineHandler — ignored in onUnload(), silently: the swap drops
 	// everything the old script scheduled anyway.
 	bool cancelMidi(int midiPort, MidiScript::CancelMode mode, const MidiScript::Message& pattern, const MidiScript::OutGroup& group) override {
@@ -2388,7 +2415,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
 		menu->addChild(createMenuItem("Copy to clipboard", RACK_MOD_ALT_NAME "+C", [=]() { copyJsClipboard(); }));
 		menu->addChild(createMenuItem("Load", RACK_MOD_ALT_NAME "+L", [=]() { loadJsDialog(); }));
-		menu->addChild(createMenuItem("Reload", RACK_MOD_ALT_NAME "+Y", [=]() { loadJs(filename); }, filename.empty()));
+		menu->addChild(createMenuItem("Reload", RACK_MOD_ALT_NAME "+Y", [=]() { loadJs(filename, true); }, filename.empty()));
 		menu->addChild(createMenuItem("Save as", "", [=]() { saveScriptDialog(); }));
 	}
 
@@ -2436,7 +2463,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		loadJs(path);
 	}
 
-	void loadJs(std::string filename) {
+	// `keepConfig`: Reload keeps what the script saved with rack.setConfig(); loading
+	// another file starts with a fresh config.
+	void loadJs(std::string filename, bool keepConfig = false) {
 		// Read first: an unreadable file leaves the running script and its log alone.
 		std::string script;
 		if (!vcv::fs::read(filename, script)) {
@@ -2445,7 +2474,8 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			return;
 		}
 		resetLog();
-		module->loadScript(script);
+		if (keepConfig) module->loadScriptKeepingConfig(script);
+		else module->loadScript(script);
 	}
 
 	// Returns true if dir (or any of its subfolders, recursively) contains at
@@ -2532,10 +2562,18 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		}
 	}
 
+	// A dropped .js or .lua file is loaded like "Load" does, so Reload works on it. Any
+	// other file (a module preset, a patch) is left to Rack.
 	void onPathDrop(const event::PathDrop& e) override {
-		if (module && e.paths.size() > 0) {
-			loadJs(e.paths[0]);
-			e.consume(this);
+		if (module) {
+			for (const std::string& path : e.paths) {
+				std::string ext = string::lowercase(vcv::fs::getExtension(path));
+				if (ext != ".js" && ext != ".lua") continue;
+				filename = path;
+				loadJs(path);
+				e.consume(this);
+				return;
+			}
 		}
 		BASE::onPathDrop(e);
 	}
@@ -2560,7 +2598,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			}
 			if (e.keyName == "y") {
 				if (!filename.empty()) {
-					loadJs(filename);
+					loadJs(filename, true);
 				}
 				e.consume(this);
 			}

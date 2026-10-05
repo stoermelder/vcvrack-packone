@@ -40,19 +40,6 @@ let state = {
     direction: 1
 };
 
-// Context menu choices
-let CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-let TICKS_PER_STEP = [1, 2, 4, 8, 16, 24];
-let TICKS_LABELS = ["1", "2", "4", "8 (16th)", "16 (8th)", "24 (quarter)"];
-
-function ticksIndex() {
-    for (let i = 0; i < TICKS_PER_STEP.length; i++) {
-        if (TICKS_PER_STEP[i] === config.ticksPerStep) return i;
-    }
-    return 0;
-};
-
 function sendNrpn() {
     let nrpn = midi.createNRPN();
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value);
@@ -79,13 +66,12 @@ rack.onLoad = function() {
     // Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel",
         onGetValue: function() {
-            return config.channel - 1;
+            return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx + 1;
+        onChange: function(value) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
             rack.log("Channel: ", config.channel);
         }
@@ -94,12 +80,12 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Ticks per step",
-        options: TICKS_LABELS,
+        options: [["1", 1], ["2", 2], ["4", 4], ["8 (16th)", 8], ["16 (8th)", 16], ["24 (quarter)", 24]],
         onGetValue: function() {
-            return ticksIndex();
+            return config.ticksPerStep;
         },
-        onChange: function(idx) {
-            config.ticksPerStep = TICKS_PER_STEP[idx];
+        onChange: function(ticks) {
+            config.ticksPerStep = ticks;
             rack.setConfig("ticksPerStep", config.ticksPerStep);
             rack.log("Ticks per step: ", config.ticksPerStep);
         }

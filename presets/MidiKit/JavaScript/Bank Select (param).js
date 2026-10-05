@@ -42,8 +42,6 @@ const config = {
 };
 
 const PRESETS_PER_BANK = 128;
-const CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
 // Absolute index (bank * 128 + program) of the preset sent last, -1 if none
 let current = -1;
@@ -94,13 +92,12 @@ rack.onLoad = function() {
     // Context menu - right-click the module to change the MIDI channel live.
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel",
         onGetValue: function() {
-            return config.channel - 1;
+            return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx + 1;
+        onChange: function(value) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
             rack.log("Channel: ", config.channel);
         }

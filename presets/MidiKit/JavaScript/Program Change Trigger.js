@@ -24,9 +24,6 @@ const config = {
     programs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 };
 
-const CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
 // Setup
 rack.onLoad = function() {
     // trig.onTrigger is only called for enabled trigger channels
@@ -37,13 +34,12 @@ rack.onLoad = function() {
     // Context menu - right-click the module to change the MIDI channel live.
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel",
         onGetValue: function() {
-            return config.channel - 1;
+            return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx + 1;
+        onChange: function(value) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
             rack.log("Channel: ", config.channel);
         }

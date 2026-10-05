@@ -23,8 +23,6 @@ const config = {
 
 // Note name of a program number under the same mapping (0 = C0)
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const CHANNEL_LABELS = [];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
 
 function noteName(program) {
     return NOTE_NAMES[program % 12] + Math.floor(program / 12);
@@ -38,13 +36,12 @@ rack.onLoad = function() {
     // Context menu - right-click the module to change the MIDI channel live.
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel",
         onGetValue: function() {
-            return config.channel - 1;
+            return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx + 1;
+        onChange: function(value) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
             rack.log("Channel: ", config.channel);
         }

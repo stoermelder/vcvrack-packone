@@ -58,17 +58,6 @@ let state = {
 // An interval this many times the previous one is a restart, not a slow tempo
 let RESTART_FACTOR = 4;
 
-// Context menu choices
-let RATIOS = [1, 2, 3, 4, 6, 8, 12, 24];
-let RATIO_LABELS = ["1x", "2x", "3x", "4x", "6x", "8x", "12x", "24x"];
-
-function ratioIndex() {
-    for (let i = 0; i < RATIOS.length; i++) {
-        if (RATIOS[i] === config.ratio) return i;
-    }
-    return 0;
-};
-
 function clockPulse() {
     let m = midi.create();
     midi.setRaw(m, "f8");
@@ -84,19 +73,19 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Multiplier",
-        options: RATIO_LABELS,
+        options: [["1x", 1], ["2x", 2], ["3x", 3], ["4x", 4], ["6x", 6], ["8x", 8], ["12x", 12], ["24x", 24]],
         onGetValue: function() {
-            return ratioIndex();
+            return config.ratio;
         },
-        onChange: function(idx) {
-            config.ratio = RATIOS[idx];
+        onChange: function(ratio, label) {
+            config.ratio = ratio;
             rack.setConfig("ratio", config.ratio);
-            rack.log("Multiplier: ", RATIO_LABELS[idx]);
+            rack.log("Multiplier: ", label);
         }
     });
 
     rack.log("Clock multiplier initialized");
-    rack.log("Multiplier: ", RATIO_LABELS[ratioIndex()]);
+    rack.log("Multiplier: ", config.ratio, "x");
 };
 
 // Callbacks

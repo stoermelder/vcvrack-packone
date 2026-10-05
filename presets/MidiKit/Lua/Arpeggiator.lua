@@ -69,10 +69,8 @@ local state = {
 }
 
 -- Context menu choices
-local CHANNEL_LABELS = { "All" }
-for c = 1, 16 do CHANNEL_LABELS[c + 1] = tostring(c) end
-local OUT_CHANNEL_LABELS = { "Same as input" }
-for c = 1, 16 do OUT_CHANNEL_LABELS[c + 1] = tostring(c) end
+local OUT_CHANNEL_OPTIONS = { { "Same as input", 0 } }
+for c = 1, 16 do OUT_CHANNEL_OPTIONS[c + 1] = { tostring(c), c } end
 
 local function divisionIndex()
     local idx = math.floor(param.getValue(1) * #DIVISIONS) + 1
@@ -157,29 +155,28 @@ rack.onLoad = function()
     -- Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type = "options",
-        label = "Input channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel+all Input",
         onGetValue = function()
             return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx
+        onChange = function(value, label)
+            config.channel = value
             rack.setConfig("channel", config.channel)
-            rack.log("Input channel: ", CHANNEL_LABELS[idx + 1])
+            rack.log("Input channel: ", label)
         end
     })
 
     rack.registerContextMenu({
         type = "options",
-        label = "Output channel",
-        options = OUT_CHANNEL_LABELS,
+        label = "MIDI channel (Output)",
+        options = OUT_CHANNEL_OPTIONS,
         onGetValue = function()
             return config.outChannel
         end,
-        onChange = function(idx)
-            config.outChannel = idx
+        onChange = function(value, label)
+            config.outChannel = value
             rack.setConfig("outChannel", config.outChannel)
-            rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx + 1])
+            rack.log("Output channel: ", label)
         end
     })
 

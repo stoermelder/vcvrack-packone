@@ -719,7 +719,7 @@ TEST_CASE("'Euclidean rhythm generator.js/.lua' output channel menu changes the 
 	// "Output channel" option index 1 -> MIDI channel 2 (internal 1).
 	std::vector<ScriptMenuItem> specs = kit.menus();
 	REQUIRE(specs.size() == 1);
-	REQUIRE(specs[0].label == "Output channel");
+	REQUIRE(specs[0].label == "MIDI channel (Output)");
 	m->host.getActiveEngine()->invokeContextMenuCallback(specs[0].callbackId, 1);
 	drainLog(m);
 
@@ -1116,7 +1116,7 @@ TEST_CASE("'Gravity well.js/.lua' passes non-note messages through unchanged", "
 	REQUIRE(pw == std::vector<Out>{{0xe, 1, 0, 64, 0}});
 }
 
-TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[MidiKit][GravityWell]") {
+TEST_CASE("'Gravity well.js/.lua' panics on unload, so the held bent note stops", "[MidiKit][GravityWell]") {
 	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
@@ -1133,10 +1133,11 @@ TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[Midi
 
 	m->loadScript("");
 
-	// onUnload releases on the script channel the note was played on (channel
-	// 2 = internal 1).
+	// onUnload panics: all notes off on every channel, the one the note was
+	// played on (channel 2 = internal 1) included.
 	auto ev = kit.drain();
-	REQUIRE(ev == std::vector<Out>{{0x8, 1, 64, 0, 0}});
+	REQUIRE(std::find(ev.begin(), ev.end(), Out{0xb, 1, 123, 0, 0}) != ev.end());
+	REQUIRE(ev.size() == 16 * 4);
 }
 
 
@@ -1341,7 +1342,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 
 	std::vector<ScriptMenuItem> specs = kit.menus();
 	REQUIRE(specs.size() == 3);
-	REQUIRE(specs[1].label == "Channel");
+	REQUIRE(specs[1].label == "MIDI channel");
 	REQUIRE(specs[2].label == "Round up on ties");
 
 	// "Channel" option index 1 selects MIDI channel 2 (internal channel 1).
@@ -1384,7 +1385,7 @@ TEST_CASE("'Scale quantiser.js/.lua' config survives a save/reload round-trip", 
 	// time, before onLoad() restored the persisted config).
 	std::vector<ScriptMenuItem> restoredSpecs = kit2.menus();
 	REQUIRE(restoredSpecs.size() == 3);
-	REQUIRE(restoredSpecs[1].label == "Channel");
+	REQUIRE(restoredSpecs[1].label == "MIDI channel");
 	REQUIRE(restoredSpecs[2].label == "Round up on ties");
 	REQUIRE(restoredSpecs[1].selected == 1);
 	REQUIRE(restoredSpecs[2].checked == true);
@@ -1473,7 +1474,7 @@ TEST_CASE("'Micro scale.js/.lua' dispatches simultaneous notes to separate chann
 	REQUIRE(csOff == std::vector<Out>{{0x8, 1, 62, 0, 0}});
 }
 
-TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and releases it on unload", "[MidiKit][MicroScale]") {
+TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and panics on unload", "[MidiKit][MicroScale]") {
 	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
@@ -1488,8 +1489,10 @@ TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and relea
 	// onUnload releases the still-held note.
 	m->loadScript("");
 
+	// It panics: all notes off on every channel, the one the note is held on included.
 	auto unload = kit.drain();
-	REQUIRE(unload == std::vector<Out>{{0x8, 0, 60, 0, 0}});
+	REQUIRE(std::find(unload.begin(), unload.end(), Out{0xb, 0, 123, 0, 0}) != unload.end());
+	REQUIRE(unload.size() == 16 * 4);
 }
 
 TEST_CASE("'Micro scale.js/.lua' parses a pasted equal-temperament scl", "[MidiKit][MicroScale]") {
@@ -1663,7 +1666,7 @@ TEST_CASE("'Micro scale.js/.lua' alwaysSendBend forces a bend even for the tonic
 
 	std::vector<ScriptMenuItem> specs = kit.menus();
 	REQUIRE(specs.size() == 4);
-	REQUIRE(specs[0].label == "Input channel");
+	REQUIRE(specs[0].label == "MIDI channel (Input)");
 	REQUIRE(specs[1].label == "Always send pitch bend");
 	REQUIRE(specs[2].label == "Load scale (.scl)...");
 	REQUIRE(specs[3].label == "Default scale");
@@ -2405,7 +2408,7 @@ TEST_CASE("'NRPN to CC (assembled).js/.lua' switches the data entry mode from it
 
 	std::vector<ScriptMenuItem> specs = kit.menus();
 	REQUIRE(specs.size() == 2);
-	REQUIRE(specs[0].label == "CC channel");
+	REQUIRE(specs[0].label == "MIDI channel (CC)");
 	REQUIRE(specs[1].label == "Device sends 7-bit NRPN");
 
 	// Off by default: NRPN is enabled in "lsb" mode, on every channel.
@@ -2607,7 +2610,7 @@ TEST_CASE("'NRPN Generator.js/.lua' context menu changes ticks per step and chan
 
 	std::vector<ScriptMenuItem> specs = kit.menus();
 	REQUIRE(specs.size() == 2);
-	REQUIRE(specs[0].label == "Channel");
+	REQUIRE(specs[0].label == "MIDI channel");
 	REQUIRE(specs[1].label == "Ticks per step");
 
 	// "Ticks per step" option index 1 -> TICKS_PER_STEP[1] = 2 ticks/step.

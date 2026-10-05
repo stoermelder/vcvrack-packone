@@ -69,10 +69,8 @@ let state = {
 };
 
 // Context menu choices
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-let OUT_CHANNEL_LABELS = ["Same as input"];
-for (let c = 1; c <= 16; c++) OUT_CHANNEL_LABELS[OUT_CHANNEL_LABELS.length] = String(c);
+let OUT_CHANNEL_OPTIONS = [["Same as input", 0]];
+for (let c = 1; c <= 16; c++) OUT_CHANNEL_OPTIONS[OUT_CHANNEL_OPTIONS.length] = [String(c), c];
 
 function divisionIndex() {
     let idx = Math.floor(param.getValue(1) * DIVISIONS.length);
@@ -159,29 +157,28 @@ rack.onLoad = function() {
     // Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type: "options",
-        label: "Input channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel+all Input",
         onGetValue: function() {
             return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx;
+        onChange: function(value, label) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
-            rack.log("Input channel: ", CHANNEL_LABELS[idx]);
+            rack.log("Input channel: ", label);
         }
     });
 
     rack.registerContextMenu({
         type: "options",
-        label: "Output channel",
-        options: OUT_CHANNEL_LABELS,
+        label: "MIDI channel (Output)",
+        options: OUT_CHANNEL_OPTIONS,
         onGetValue: function() {
             return config.outChannel;
         },
-        onChange: function(idx) {
-            config.outChannel = idx;
+        onChange: function(value, label) {
+            config.outChannel = value;
             rack.setConfig("outChannel", config.outChannel);
-            rack.log("Output channel: ", OUT_CHANNEL_LABELS[idx]);
+            rack.log("Output channel: ", label);
         }
     });
 

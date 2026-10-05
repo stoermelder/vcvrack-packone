@@ -53,19 +53,6 @@ let state = {
     sounding: []
 };
 
-// Context menu choices
-let LENGTH_TICKS = [6, 12, 24, 48];
-let LENGTH_LABELS = ["6 (16th)", "12 (8th)", "24 (quarter)", "48 (half)"];
-let CHANNEL_LABELS = ["All"];
-for (let c = 1; c <= 16; c++) CHANNEL_LABELS[CHANNEL_LABELS.length] = String(c);
-
-function lengthTicksIndex() {
-    for (let i = 0; i < LENGTH_TICKS.length; i++) {
-        if (LENGTH_TICKS[i] === config.lengthTicks) return i;
-    }
-    return 0;
-};
-
 function matchesChannel(ch) {
     return config.channel === 0 || ch === config.channel;
 };
@@ -93,12 +80,12 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Note length",
-        options: LENGTH_LABELS,
+        options: [["6 (16th)", 6], ["12 (8th)", 12], ["24 (quarter)", 24], ["48 (half)", 48]],
         onGetValue: function() {
-            return lengthTicksIndex();
+            return config.lengthTicks;
         },
-        onChange: function(idx) {
-            config.lengthTicks = LENGTH_TICKS[idx];
+        onChange: function(ticks) {
+            config.lengthTicks = ticks;
             rack.setConfig("lengthTicks", config.lengthTicks);
             rack.log("Length: ", config.lengthTicks, " ticks");
         }
@@ -106,15 +93,14 @@ rack.onLoad = function() {
 
     rack.registerContextMenu({
         type: "options",
-        label: "Channel",
-        options: CHANNEL_LABELS,
+        label: "#midichannel+all",
         onGetValue: function() {
             return config.channel;
         },
-        onChange: function(idx) {
-            config.channel = idx;
+        onChange: function(value, label) {
+            config.channel = value;
             rack.setConfig("channel", config.channel);
-            rack.log("Channel: ", CHANNEL_LABELS[idx]);
+            rack.log("Channel: ", label);
         }
     });
 

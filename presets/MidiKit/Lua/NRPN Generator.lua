@@ -40,19 +40,6 @@ local state = {
     direction = 1
 }
 
--- Context menu choices
-local CHANNEL_LABELS = {}
-for c = 1, 16 do CHANNEL_LABELS[c] = tostring(c) end
-local TICKS_PER_STEP = { 1, 2, 4, 8, 16, 24 }
-local TICKS_LABELS = { "1", "2", "4", "8 (16th)", "16 (8th)", "24 (quarter)" }
-
-local function ticksIndex()
-    for i = 1, #TICKS_PER_STEP do
-        if TICKS_PER_STEP[i] == config.ticksPerStep then return i - 1 end
-    end
-    return 0
-end
-
 local function sendNrpn()
     local nrpn = midi.createNRPN()
     midi.setNRPN(nrpn, config.channel, config.nrpnNumber, state.value)
@@ -78,13 +65,12 @@ rack.onLoad = function()
     -- Each menu mirrors a `config` value above; onChange applies the choice.
     rack.registerContextMenu({
         type = "options",
-        label = "Channel",
-        options = CHANNEL_LABELS,
+        label = "#midichannel",
         onGetValue = function()
-            return config.channel - 1
+            return config.channel
         end,
-        onChange = function(idx)
-            config.channel = idx + 1
+        onChange = function(value)
+            config.channel = value
             rack.setConfig("channel", config.channel)
             rack.log("Channel: ", config.channel)
         end
@@ -93,12 +79,12 @@ rack.onLoad = function()
     rack.registerContextMenu({
         type = "options",
         label = "Ticks per step",
-        options = TICKS_LABELS,
+        options = { {"1", 1}, {"2", 2}, {"4", 4}, {"8 (16th)", 8}, {"16 (8th)", 16}, {"24 (quarter)", 24} },
         onGetValue = function()
-            return ticksIndex()
+            return config.ticksPerStep
         end,
-        onChange = function(idx)
-            config.ticksPerStep = TICKS_PER_STEP[idx + 1]
+        onChange = function(ticks)
+            config.ticksPerStep = ticks
             rack.setConfig("ticksPerStep", config.ticksPerStep)
             rack.log("Ticks per step: ", config.ticksPerStep)
         end

@@ -712,6 +712,23 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 						if (spec.type == ScriptMenuItem::Type::Boolean) {
 							spec.checked = lua_toboolean(L, -1) != 0;
 						}
+						else if (!spec.optionValues.empty()) {
+							// A value: the option that stands for it, none if there is no such.
+							ScriptMenuArg v;
+							bool ok = true;
+							switch (lua_type(L, -1)) {
+								case LUA_TBOOLEAN: v = ScriptMenuArg::ofBool(lua_toboolean(L, -1) != 0); break;
+								case LUA_TSTRING: {
+									size_t n;
+									const char* str = lua_tolstring(L, -1, &n);
+									v = ScriptMenuArg::ofString(std::string(str, n));
+									break;
+								}
+								case LUA_TNUMBER: v = ScriptMenuArg::ofNumber(static_cast<double>(lua_tonumber(L, -1))); break;
+								default: ok = false;
+							}
+							spec.selected = ok ? menuFindOptionValue(spec, v) : -1;
+						}
 						else {
 							lua_Integer sel = lua_tointeger(L, -1);
 							spec.selected = static_cast<int>(std::max<lua_Integer>(0, std::min<lua_Integer>(sel, static_cast<lua_Integer>(spec.options.size()) - 1)));
@@ -754,6 +771,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 				switch (a.kind) {
 					case ScriptMenuArg::Kind::Bool: lua_pushboolean(L, a.b); break;
 					case ScriptMenuArg::Kind::Int: lua_pushinteger(L, a.i); break;
+					case ScriptMenuArg::Kind::Number: lua_pushnumber(L, a.d); break;
 					case ScriptMenuArg::Kind::String: lua_pushlstring(L, a.s.data(), a.s.size()); break;
 				}
 			}
@@ -1093,6 +1111,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("getPitchWheel",   lua_midi_getPitchWheel);
 		setTableFunc("getProgramChange",lua_midi_getProgramChange);
 		setTableFunc("getRaw",          lua_midi_getRaw);
+		setTableFunc("toString",        lua_midi_toString);
 		setTableFunc("getSysEx",        lua_midi_getSysEx);
 		setTableFunc("getSysExLength",  lua_midi_getSysExLength);
 		setTableFunc("getControl",      lua_midi_getControl);
@@ -1145,6 +1164,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("sendAtFrame",        lua_midiOut_sendAtFrame);
 		setTableFunc("sendAfterTrigger",   lua_midiOut_sendAfterTrigger);
 		setTableFunc("cancel",             lua_midiOut_cancel);
+		setTableFunc("panic",              lua_midiOut_panic);
 		setTableInt("portCount",           midiOutputCount);
 		lua_setglobal(L, "midiOut");
 	}
@@ -1219,6 +1239,10 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	// context menu:
 	//   { type = "boolean", label, onGetValue = fn() -> bool, onChange = fn(checked) }
 	//   { type = "options", label, options = {...}, onGetValue = fn() -> int, onChange = fn(idx, label) }
+	//   { type = "options", label, options = { {label, value}, ... }, onGetValue = fn() -> value,
+	//     onChange = fn(value, label) }
+	//   { type = "separator" }
+	//   { type = "label", label }
 	// onGetValue is optional (defaults to 0) and evaluated lazily on the worker
 	// thread when the menu is built, so it always reflects the live config.
 	// Callbacks are stored as registry refs and fired on the worker thread.
@@ -1241,28 +1265,68 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		else if (strcmp(typeName, "boolean") == 0) type = ScriptMenuItem::Type::Boolean;
 		else if (strcmp(typeName, "action") == 0) type = ScriptMenuItem::Type::Action;
 		else if (strcmp(typeName, "fileopen") == 0) type = ScriptMenuItem::Type::FileOpen;
-		else return luaL_error(L, "registerContextMenu: type must be \"boolean\", \"options\", \"action\" or \"fileopen\"");
+		else if (strcmp(typeName, "separator") == 0) type = ScriptMenuItem::Type::Separator;
+		else if (strcmp(typeName, "label") == 0) type = ScriptMenuItem::Type::Label;
+		else return luaL_error(L, "registerContextMenu: type must be \"boolean\", \"options\", \"action\", \"fileopen\", \"separator\" or \"label\"");
+		bool hasLabel = type != ScriptMenuItem::Type::Separator;
+		bool hasCallback = type != ScriptMenuItem::Type::Separator && type != ScriptMenuItem::Type::Label;
 
+		// The fields are always read so the stack positions stay the same; a separator
+		// ignores the label and a label item the onChange.
 		lua_getfield(L, 1, "label");
-		if (lua_type(L, 3) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");
-		size_t labelLen;
-		const char* label = lua_tolstring(L, 3, &labelLen);
-		if (labelLen == 0) return luaL_error(L, "registerContextMenu: label must be a non-empty string");
+		size_t labelLen = 0;
+		const char* label = "";
+		if (hasLabel) {
+			if (lua_type(L, 3) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: label must be a string");
+			label = lua_tolstring(L, 3, &labelLen);
+			if (labelLen == 0) return luaL_error(L, "registerContextMenu: label must be a non-empty string");
+		}
+		// A preset menu brings its own options; the script's are not looked at.
+		const char* presetSuffix = "";
+		const MenuPreset* preset = type == ScriptMenuItem::Type::Options ? menuFindPreset(label, &presetSuffix) : NULL;
 
 		lua_getfield(L, 1, "onChange");
-		if (!lua_isfunction(L, 4)) return luaL_error(L, "registerContextMenu: onChange must be a function");
+		if (hasCallback && !lua_isfunction(L, 4)) return luaL_error(L, "registerContextMenu: onChange must be a function");
 
 		lua_Integer optionCount = 0;
-		if (type == ScriptMenuItem::Type::Options) {
+		bool pairs = false;
+		if (type == ScriptMenuItem::Type::Options && !preset) {
 			lua_getfield(L, 1, "options");
-			if (!lua_istable(L, 5)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
+			if (!lua_istable(L, 5)) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings or [label, value] pairs");
 			lua_len(L, 5);
 			optionCount = lua_tointeger(L, -1);
 			lua_pop(L, 1);
-			if (optionCount <= 0) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings");
+			if (optionCount <= 0) return luaL_error(L, "registerContextMenu: options must be a non-empty array of strings or [label, value] pairs");
 			for (lua_Integer i = 1; i <= optionCount; i++) {
 				lua_rawgeti(L, 5, i);
-				if (lua_type(L, -1) != LUA_TSTRING) return luaL_error(L, "registerContextMenu: options must contain only strings");
+				int t = lua_type(L, -1);
+				if (t != LUA_TSTRING && t != LUA_TTABLE) return luaL_error(L, "registerContextMenu: options must contain only strings or only [label, value] pairs");
+				if (i == 1) pairs = (t == LUA_TTABLE);
+				else if (pairs != (t == LUA_TTABLE)) return luaL_error(L, "registerContextMenu: options must not mix labels and pairs");
+				if (t == LUA_TTABLE) {
+					// Stack: ..., pair, label, value
+					int pairIdx = lua_gettop(L);
+					if (lua_rawlen(L, pairIdx) != 2) return luaL_error(L, "registerContextMenu: an options pair must be [label, value]");
+					lua_rawgeti(L, pairIdx, 1);
+					lua_rawgeti(L, pairIdx, 2);
+					int vt = lua_type(L, pairIdx + 2);
+					bool valueOk = vt == LUA_TSTRING || vt == LUA_TBOOLEAN
+						|| (vt == LUA_TNUMBER && std::isfinite(static_cast<double>(lua_tonumber(L, pairIdx + 2))));
+					if (lua_type(L, pairIdx + 1) != LUA_TSTRING || !valueOk) {
+						return luaL_error(L, "registerContextMenu: an options pair must be a string label and a finite number, string or boolean value");
+					}
+					for (lua_Integer j = 1; j < i; j++) {
+						lua_rawgeti(L, 5, j);
+						lua_rawgeti(L, -1, 1);
+						lua_rawgeti(L, -2, 2);
+						bool sameLabel = lua_rawequal(L, -2, pairIdx + 1) != 0;
+						bool sameValue = lua_rawequal(L, -1, pairIdx + 2) != 0;
+						lua_pop(L, 3);
+						if (sameLabel) return luaL_error(L, "registerContextMenu: two options have the same label");
+						if (sameValue) return luaL_error(L, "registerContextMenu: two options have the same value");
+					}
+					lua_pop(L, 2); // label, value
+				}
 				lua_pop(L, 1);
 			}
 		}
@@ -1282,31 +1346,59 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		}
 
 		assert(e->onWorkerThread());
-		lua_pushvalue(L, 4);
-		int ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the copy of the onChange function
+		int ref = LUA_NOREF; // luaL_unref ignores it
+		if (hasCallback) {
+			lua_pushvalue(L, 4);
+			ref = luaL_ref(L, LUA_REGISTRYINDEX); // pops the copy of the onChange function
+		}
 
 		// Only calls that cannot raise from here on: copy into the C++ values.
 		ScriptMenuItem spec;
 		spec.type = type;
 		spec.label.assign(label, labelLen);
-		if (type == ScriptMenuItem::Type::Options) {
+		if (type == ScriptMenuItem::Type::Options && !preset) {
 			spec.options.resize(static_cast<size_t>(optionCount));
+			if (pairs) spec.optionValues.resize(static_cast<size_t>(optionCount));
 			for (lua_Integer i = 1; i <= optionCount; i++) {
-				lua_rawgeti(L, 5, i);   // a string, checked above
-				size_t olen;
-				const char* os = lua_tolstring(L, -1, &olen);
-				spec.options[static_cast<size_t>(i - 1)].assign(os, olen);
+				lua_rawgeti(L, 5, i);   // a string or a pair, checked above
+				size_t idx = static_cast<size_t>(i - 1);
+				if (pairs) {
+					lua_rawgeti(L, -1, 1);
+					lua_rawgeti(L, -2, 2);
+					size_t olen;
+					const char* os = lua_tolstring(L, -2, &olen);
+					spec.options[idx].assign(os, olen);
+					switch (lua_type(L, -1)) {
+						case LUA_TBOOLEAN: spec.optionValues[idx] = ScriptMenuArg::ofBool(lua_toboolean(L, -1) != 0); break;
+						case LUA_TSTRING: {
+							size_t vlen;
+							const char* vs = lua_tolstring(L, -1, &vlen);
+							spec.optionValues[idx] = ScriptMenuArg::ofString(std::string(vs, vlen));
+							break;
+						}
+						default: spec.optionValues[idx] = ScriptMenuArg::ofNumber(static_cast<double>(lua_tonumber(L, -1))); break;
+					}
+					lua_pop(L, 2);
+				}
+				else {
+					size_t olen;
+					const char* os = lua_tolstring(L, -1, &olen);
+					spec.options[idx].assign(os, olen);
+				}
 				lua_pop(L, 1);
 			}
+			if (pairs) spec.selected = 0;
 		}
+		if (preset) menuApplyPreset(spec, *preset, presetSuffix);
 
 		// Registering a label that is already there replaces that item in place
 		// (same position, same callback id) instead of adding a second one - this
 		// is how a script updates the options of a menu at runtime. The old refs
 		// are released; a callback that is running right now has its function on
 		// the Lua stack (see invokeContextMenuCallback()), so it stays alive.
+		// A separator has no label to be found by, so it is always added.
 		for (auto& kv : e->contextMenus) {
-			if (kv.second.spec.label != spec.label) continue;
+			if (type == ScriptMenuItem::Type::Separator || kv.second.spec.label != spec.label) continue;
 			luaL_unref(L, LUA_REGISTRYINDEX, kv.second.callbackRef);
 			if (kv.second.onGetValueRef != LUA_NOREF) {
 				luaL_unref(L, LUA_REGISTRYINDEX, kv.second.onGetValueRef);
@@ -1345,7 +1437,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 		assert(e->onWorkerThread());
 		for (auto it = e->contextMenus.begin(); it != e->contextMenus.end(); ++it) {
-			if (it->second.spec.label != label) continue;
+			if (it->second.spec.type == ScriptMenuItem::Type::Separator || it->second.spec.label != label) continue;
 			luaL_unref(L, LUA_REGISTRYINDEX, it->second.callbackRef);
 			if (it->second.onGetValueRef != LUA_NOREF) {
 				luaL_unref(L, LUA_REGISTRYINDEX, it->second.onGetValueRef);
@@ -1890,6 +1982,14 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 1;
 	}
 
+	// midi.toString(msg): one line for display, in the wording of MIDI-MON.
+	static int lua_midi_toString(lua_State* L) {
+		ScriptMessage* m = getMsg(L, 1);
+		std::string s = messageText(*m);
+		lua_pushlstring(L, s.c_str(), s.size());
+		return 1;
+	}
+
 	// Type-aware, like StoermelderPackOne::MessageEx::getValue(): the combined
 	// 0-16383 quantity on an assembled NRPN/RPN/14-bit CC, the raw 7-bit data
 	// byte on everything else. Assembled messages are new, so no existing script
@@ -2339,6 +2439,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		e->cancelEntry(&e->msgStore[idx]);
 		return 0;
+	}
+
+	// midiOut.panic() — see MidiScriptEngineHandler::panicMidi().
+	static int lua_midiOut_panic(lua_State* L) {
+		lua_pushboolean(L, getEngine(L)->handler->panicMidi());
+		return 1;
 	}
 
 	static int lua_midiOut_sendAfterTrigger(lua_State* L) {

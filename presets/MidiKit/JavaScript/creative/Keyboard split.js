@@ -60,8 +60,8 @@ function targetChannel(note) {
 };
 
 // Context menu choices
-let PRESET_LABELS = [];
-for (let i = 0; i < config.presets.length; i++) PRESET_LABELS[PRESET_LABELS.length] = presetLabel(i);
+let PRESET_OPTIONS = [];
+for (let i = 0; i < config.presets.length; i++) PRESET_OPTIONS[PRESET_OPTIONS.length] = [presetLabel(i), i];
 
 // Setup
 rack.onLoad = function() {
@@ -74,14 +74,14 @@ rack.onLoad = function() {
     rack.registerContextMenu({
         type: "options",
         label: "Preset",
-        options: PRESET_LABELS,
+        options: PRESET_OPTIONS,
         onGetValue: function() {
             return state.active;
         },
-        onChange: function(idx) {
-            state.active = idx;
-            rack.setConfig("activePreset", idx);
-            rack.log("Preset: ", PRESET_LABELS[idx]);
+        onChange: function(preset, label) {
+            state.active = preset;
+            rack.setConfig("activePreset", preset);
+            rack.log("Preset: ", label);
         }
     });
 
