@@ -474,6 +474,50 @@ TEST_CASE("appendExampleItems leaf click loads the script", "[MidiKit][Examples]
 	Test::destroyWidget(mw);
 }
 
+TEST_CASE("Reload keeps the values saved with setConfig, loading a file starts fresh", "[MidiKit][Examples]") {
+	MidiKitModule* m;
+	MidiKitWidget* mw;
+	Kit<> kit;
+	createExampleFixture(kit, &m, &mw);
+
+	static const std::string CONTENT =
+		"/**\n"
+		" * @engine QuickJs@v1\n"
+		" */\n"
+		"rack.log(\"k=\" + rack.getConfig(\"k\", \"default\"));\n"
+		"rack.setConfig(\"k\", \"saved\");\n";
+
+	TempExampleDir d;
+	d.write("Alpha.js", CONTENT);
+
+	rack::ui::Menu* examples = new rack::ui::Menu;
+	mw->appendExampleItems(examples, d.root, ".js");
+	rack::ui::MenuItem* alpha = findMenuItem(examples, "Alpha");
+	REQUIRE(alpha != nullptr);
+
+	// A first load: nothing saved yet.
+	drainLog(m);
+	alpha->doAction(true);
+	REQUIRE(drainLog(m).find("k=default") != std::string::npos);
+
+	// Reload: what the script saved is still there.
+	rack::ui::Menu* script = new rack::ui::Menu;
+	mw->appendScriptItems(script);
+	rack::ui::MenuItem* reload = findMenuItem(script, "Reload");
+	REQUIRE(reload != nullptr);
+	REQUIRE_FALSE(reload->disabled);
+	reload->doAction(true);
+	REQUIRE(drainLog(m).find("k=saved") != std::string::npos);
+
+	// Loading the file again from the menu is a load, not a reload: a fresh config.
+	alpha->doAction(true);
+	REQUIRE(drainLog(m).find("k=default") != std::string::npos);
+
+	delete script;
+	delete examples;
+	Test::destroyWidget(mw);
+}
+
 TEST_CASE("appendExampleItems shows 'None found' when nothing matches", "[MidiKit][Examples]") {
 	MidiKitModule* m;
 	MidiKitWidget* mw;

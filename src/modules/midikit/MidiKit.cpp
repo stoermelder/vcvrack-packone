@@ -2415,7 +2415,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
 		menu->addChild(createMenuItem("Copy to clipboard", RACK_MOD_ALT_NAME "+C", [=]() { copyJsClipboard(); }));
 		menu->addChild(createMenuItem("Load", RACK_MOD_ALT_NAME "+L", [=]() { loadJsDialog(); }));
-		menu->addChild(createMenuItem("Reload", RACK_MOD_ALT_NAME "+Y", [=]() { loadJs(filename); }, filename.empty()));
+		menu->addChild(createMenuItem("Reload", RACK_MOD_ALT_NAME "+Y", [=]() { loadJs(filename, true); }, filename.empty()));
 		menu->addChild(createMenuItem("Save as", "", [=]() { saveScriptDialog(); }));
 	}
 
@@ -2463,7 +2463,9 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 		loadJs(path);
 	}
 
-	void loadJs(std::string filename) {
+	// `keepConfig`: Reload keeps what the script saved with rack.setConfig(); loading
+	// another file starts with a fresh config.
+	void loadJs(std::string filename, bool keepConfig = false) {
 		// Read first: an unreadable file leaves the running script and its log alone.
 		std::string script;
 		if (!vcv::fs::read(filename, script)) {
@@ -2472,7 +2474,8 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			return;
 		}
 		resetLog();
-		module->loadScript(script);
+		if (keepConfig) module->loadScriptKeepingConfig(script);
+		else module->loadScript(script);
 	}
 
 	// Returns true if dir (or any of its subfolders, recursively) contains at
@@ -2587,7 +2590,7 @@ struct MidiKitWidgetBase : ThemedModuleWidget<MidiKitModuleBase<CONFIG>>, Overla
 			}
 			if (e.keyName == "y") {
 				if (!filename.empty()) {
-					loadJs(filename);
+					loadJs(filename, true);
 				}
 				e.consume(this);
 			}

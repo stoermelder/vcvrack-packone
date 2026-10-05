@@ -1060,7 +1060,7 @@ Lua uses an equivalent table: `{ type = "boolean", label = "...", onGetValue = f
 | `rack.getConfig(key)` | the stored value, or `undefined` (QuickJs) / `nil` (Lua) if `key` was never set |
 | `rack.getConfig(key, default)` | the stored value, or `default` if `key` was never set |
 
-There is no separate "save" step. Call `setConfig()` the moment a setting changes, typically in a context-menu `onChange`: a patch save writes out whatever was last set. `setConfig()` only updates engine-owned state, so it is cheap and cannot time out.
+**Reload** (*Script* menu, `Alt+Y`) and applying a change in the editor keep the saved values. Loading another file, pasting a script or choosing an example starts with an empty store, and so does *Clear*. There is no separate "save" step. Call `setConfig()` the moment a setting changes, typically in a context-menu `onChange`: a patch save writes out whatever was last set. `setConfig()` only updates engine-owned state, so it is cheap and cannot time out.
 
 Read every setting with a default at the top level or in `rack.onLoad()`. That needs no read-modify-write step and nothing to get wrong, unlike merging over a defaults object:
 
