@@ -68,7 +68,13 @@ inline Fields classify(const MessageEx& m) {
 		case T::PROGRAM_CHANGE:   f.kind = Kind::PROGRAM_CHANGE; f.x = m.getNote(); break;
 		case T::CHANNEL_PRESSURE: f.kind = Kind::CHANNEL_PRESSURE; f.x = m.getNote(); break;
 		case T::PITCH_BEND:       f.kind = Kind::PITCH_BEND; f.x = m.getValue(); break;
-		case T::SYSEX:            f.kind = Kind::SYSEX; f.x = m.getSysExSize() - 2; break;
+		case T::SYSEX: {
+			// F0 <data> F7, but a script can build a message without the F7.
+			int size = m.getSysExSize();
+			f.kind = Kind::SYSEX;
+			f.x = size - 1 - (size > 1 && m.getSysExByte(size - 1) == 0xf7 ? 1 : 0);
+			break;
+		}
 		case T::SONG_POINTER:     f.kind = Kind::SONG_POINTER; f.x = m.getValue(); break;
 		case T::SONG_SELECT:      f.kind = Kind::SONG_SELECT; f.x = m.getNote(); break;
 		case T::CLOCK:            f.kind = Kind::CLOCK; break;
