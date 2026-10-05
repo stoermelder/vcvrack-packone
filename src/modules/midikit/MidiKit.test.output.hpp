@@ -865,3 +865,93 @@ TEST_CASE("Input queue overflow raises one notice per saturation", "[MidiKit][Ti
 	}
 	REQUIRE(lines == 1);
 }
+
+// ── midiOut.panic() ──────────────────────────────────────────────────────────
+
+// What panic queued, in order: port, channel (0-based) and controller number. Cancels are skipped.
+struct PanicEntry { int port; int channel; int cc; int value; };
+
+static std::vector<PanicEntry> queuedPanic(MidiKitModule* m) {
+	std::vector<PanicEntry> out;
+	auto& q = m->midiOuts.queue;
+	for (size_t i = q.start; i < q.end; i++) {
+		const auto& e = q.data[i % 2048];
+		// Each port starts with a cancel of what is scheduled; it is not a message.
+		if (e.cancel) continue;
+		REQUIRE(e.msg.getStatus() == 0xb);
+		out.push_back({e.port, e.msg.getChannel(), e.msg.getNote(), e.msg.getValue()});
+	}
+	return out;
+}
+
+TEST_CASE("panic resets all 16 channels of a port that is not set to a channel", "[MidiKit]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	REQUIRE(m->midiOuts.ports[0].channel == -1);
+	REQUIRE(m->panicMidi());
+	std::vector<PanicEntry> sent = queuedPanic(m);
+	REQUIRE(sent.size() == 16 * 4);
+	// Per channel: sustain off, all notes off, all sound off, reset all controllers.
+	const int order[4] = {64, 123, 120, 121};
+	for (int ch = 0; ch < 16; ch++) {
+		for (int k = 0; k < 4; k++) {
+			const PanicEntry& e = sent[ch * 4 + k];
+			REQUIRE(e.port == 0);
+			REQUIRE(e.channel == ch);
+			REQUIRE(e.cc == order[k]);
+			REQUIRE(e.value == 0);
+		}
+	}
+}
+
+TEST_CASE("panic sends only on the channel a port is set to", "[MidiKit]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	m->midiOuts.ports[0].channel = 3;
+	REQUIRE(m->panicMidi());
+	std::vector<PanicEntry> sent = queuedPanic(m);
+	REQUIRE(sent.size() == 4);
+	for (const PanicEntry& e : sent) REQUIRE(e.channel == 3);
+}
+
+TEST_CASE("panic reaches the enabled ports only, each by its own channel setting", "[MidiKit][CrossEngine]") {
+	auto check = [](const std::string& script) {
+		Kit<> kit;
+		MidiKitModule* m = kit.m;
+		m->midiOuts.ports[1].channel = 5;
+		m->loadScript(script);
+		drainLog(m);
+		std::vector<PanicEntry> sent = queuedPanic(m);
+		// Port 1: all 16 channels. Port 2: channel 5 only. Port 3 is not enabled.
+		REQUIRE(sent.size() == 16 * 4 + 4);
+		for (size_t i = 0; i < sent.size(); i++) {
+			REQUIRE(sent[i].port == (i < 64 ? 0 : 1));
+			if (i >= 64) REQUIRE(sent[i].channel == 5);
+		}
+	};
+	check("/**\n * @engine QuickJs@v1\n */\nrack.onLoad = function() { midiOut.enablePorts(2); rack.log(\"ok=\" + midiOut.panic()); };\n");
+	check("--[[\n@engine minilua@v1\n--]]\nrack.onLoad = function() midiOut.enablePorts(2) rack.log(\"ok=\" .. tostring(midiOut.panic())) end\n");
+}
+
+TEST_CASE("panic reports a full output queue", "[MidiKit]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	// Fill the ring so that no further group of 4 fits.
+	midi::Message msg = noteOn(1, 60, 100);
+	while (m->midiOuts.queue.capacity() >= 1) REQUIRE(m->sendMidi(0, &msg, 1, 0, 0));
+	REQUIRE_FALSE(m->panicMidi());
+}
+
+TEST_CASE("panic drops the scheduled messages of the enabled ports first", "[MidiKit]") {
+	Kit<> kit;
+	MidiKitModule* m = kit.m;
+	midi::Message msg = noteOn(1, 60, 100);
+	REQUIRE(m->sendMidi(0, &msg, 1, 0, 5));   // tick 5: waits in the tick queue
+	processOneDividerPeriod(m);
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 1);
+
+	REQUIRE(m->panicMidi());
+	processOneDividerPeriod(m);
+
+	REQUIRE(m->midiOuts.ports[0].tickQueue[0].size() == 0);
+}

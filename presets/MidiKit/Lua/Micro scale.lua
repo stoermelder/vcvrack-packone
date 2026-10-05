@@ -328,13 +328,8 @@ end
 
 -- Callbacks
 rack.onUnload = function()
-    for c = 1, 16 do
-        if state.noteOfChannel[c] >= 0 then
-            local off = midi.create()
-            midi.setNoteOff(off, c, state.sentNoteOfChannel[c])
-            midiOut.send(off)
-        end
-    end
+    -- Stops every voice on every channel, whatever the script tracked.
+    midiOut.panic()
 end
 
 midi.onMessage = function(midiPort, msg)

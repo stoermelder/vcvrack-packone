@@ -165,6 +165,7 @@ inline std::vector<ui::editor::scripttext::ApiGroup> apiReference() {
 		ApiFunction("sendAfterMs", "", {{"msg", MSG}, {"ms", "delay in milliseconds, -1 sends after Rack's output queue"}}),
 		ApiFunction("sendAtFrame", "", {{"msg", MSG}, {"frame", "engine frame, see rack.getEventFrame()"}}),
 		ApiFunction("sendAfterTrigger", "", {{"msg", MSG}, {"ticks", "clock ticks to wait"}, {"trigPort", "trigger input 1-2, default 1", true}, {"channel", TRIG_CH, true}}),
+		ApiFunction("panic", "", {}),
 		ApiFunction("cancel", "", {{"msg", "drop only scheduled messages with this message's address, default all", true}}),
 	}));
 

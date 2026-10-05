@@ -1116,7 +1116,7 @@ TEST_CASE("'Gravity well.js/.lua' passes non-note messages through unchanged", "
 	REQUIRE(pw == std::vector<Out>{{0xe, 1, 0, 64, 0}});
 }
 
-TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[MidiKit][GravityWell]") {
+TEST_CASE("'Gravity well.js/.lua' panics on unload, so the held bent note stops", "[MidiKit][GravityWell]") {
 	std::string path = GENERATE(presetPaths("Gravity well"));
 	CATCH_INFO("preset: " << path);
 
@@ -1133,10 +1133,11 @@ TEST_CASE("'Gravity well.js/.lua' releases the held bent note on unload", "[Midi
 
 	m->loadScript("");
 
-	// onUnload releases on the script channel the note was played on (channel
-	// 2 = internal 1).
+	// onUnload panics: all notes off on every channel, the one the note was
+	// played on (channel 2 = internal 1) included.
 	auto ev = kit.drain();
-	REQUIRE(ev == std::vector<Out>{{0x8, 1, 64, 0, 0}});
+	REQUIRE(std::find(ev.begin(), ev.end(), Out{0xb, 1, 123, 0, 0}) != ev.end());
+	REQUIRE(ev.size() == 16 * 4);
 }
 
 
@@ -1473,7 +1474,7 @@ TEST_CASE("'Micro scale.js/.lua' dispatches simultaneous notes to separate chann
 	REQUIRE(csOff == std::vector<Out>{{0x8, 1, 62, 0, 0}});
 }
 
-TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and releases it on unload", "[MidiKit][MicroScale]") {
+TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and panics on unload", "[MidiKit][MicroScale]") {
 	std::string path = GENERATE(presetPaths("Micro scale"));
 	CATCH_INFO("preset: " << path);
 
@@ -1488,8 +1489,10 @@ TEST_CASE("'Micro scale.js/.lua' sends no redundant bend for the tonic and relea
 	// onUnload releases the still-held note.
 	m->loadScript("");
 
+	// It panics: all notes off on every channel, the one the note is held on included.
 	auto unload = kit.drain();
-	REQUIRE(unload == std::vector<Out>{{0x8, 0, 60, 0, 0}});
+	REQUIRE(std::find(unload.begin(), unload.end(), Out{0xb, 0, 123, 0, 0}) != unload.end());
+	REQUIRE(unload.size() == 16 * 4);
 }
 
 TEST_CASE("'Micro scale.js/.lua' parses a pasted equal-temperament scl", "[MidiKit][MicroScale]") {

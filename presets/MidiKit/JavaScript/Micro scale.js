@@ -315,13 +315,8 @@ rack.onLoad = function() {
 
 // Callbacks
 rack.onUnload = function() {
-    for (let c = 1; c <= 16; c++) {
-        if (state.noteOfChannel[c] >= 0) {
-            let off = midi.create();
-            midi.setNoteOff(off, c, state.sentNoteOfChannel[c]);
-            midiOut.send(off);
-        }
-    }
+    // Stops every voice on every channel, whatever the script tracked.
+    midiOut.panic();
 };
 
 midi.onMessage = function(midiPort, msg) {

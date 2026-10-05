@@ -1545,6 +1545,37 @@ midiOut.enablePorts(2);   // allow sending on MIDI outputs 1-2
 
 The sending functions take no port argument: the destination is whatever `midiOut.selectPort()` last selected (port 1 if it was never called).
 
+#### Resetting the devices — `midiOut.panic()`
+
+`midiOut.panic()` stops every sound the script's earlier output can have left on a device: a note that is still held, a sustain pedal, a pitch bend. It first drops every message the script has scheduled for later (`sendAfterMs`, `sendAtFrame`, `sendAfterTrigger`), like `midiOut.cancel()`, so that no note starts after the reset. Then it sends four controllers per channel, in this order: sustain off (CC 64), all notes off (CC 123), all sound off (CC 120) and reset all controllers (CC 121). It needs no bookkeeping of what was played, so the usual place is `rack.onUnload()`: whenever the script is replaced, edited, reloaded or the module is removed, the devices are left silent. Call it in `rack.onLoad()` instead (or as well) to start from silent devices after a run that was cut off, or one of another script.
+
+It follows the module's MIDI output settings:
+
+- It goes to every output the script has enabled (`midiOut.enablePorts()`) and to no other. It ignores `midiOut.selectPort()`.
+- An output that is set to a MIDI channel in the module gets the messages on that channel only. An output that is not set to one gets all 16 channels.
+- It returns `true`, or `false` if the output queue was too full to take all of it (see [Queues and limits](#queues-and-limits)).
+
+```js
+rack.onLoad = function() {
+   midiOut.enablePorts(2);
+};
+
+rack.onUnload = function() {
+   midiOut.panic();
+};
+```
+```lua
+rack.onLoad = function()
+   midiOut.enablePorts(2)
+end
+
+rack.onUnload = function()
+   midiOut.panic()
+end
+```
+
+Some devices ignore CC 120, 121 or 123. For such a device, send the note-offs yourself. In `rack.onUnload()` `panic()` works like `midiOut.send()`: the output goes out although the script is being replaced. The messages the script scheduled are dropped by the replacement anyway.
+
 #### Sending
 
 | Function | Sends |

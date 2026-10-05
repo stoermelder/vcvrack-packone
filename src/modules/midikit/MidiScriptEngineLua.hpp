@@ -1164,6 +1164,7 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		setTableFunc("sendAtFrame",        lua_midiOut_sendAtFrame);
 		setTableFunc("sendAfterTrigger",   lua_midiOut_sendAfterTrigger);
 		setTableFunc("cancel",             lua_midiOut_cancel);
+		setTableFunc("panic",              lua_midiOut_panic);
 		setTableInt("portCount",           midiOutputCount);
 		lua_setglobal(L, "midiOut");
 	}
@@ -2438,6 +2439,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		if (!hasContent(e->msgStore[idx])) luaL_argerror(L, 1, "message has no status byte");
 		e->cancelEntry(&e->msgStore[idx]);
 		return 0;
+	}
+
+	// midiOut.panic() — see MidiScriptEngineHandler::panicMidi().
+	static int lua_midiOut_panic(lua_State* L) {
+		lua_pushboolean(L, getEngine(L)->handler->panicMidi());
+		return 1;
 	}
 
 	static int lua_midiOut_sendAfterTrigger(lua_State* L) {

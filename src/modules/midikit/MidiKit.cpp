@@ -1833,6 +1833,33 @@ struct MidiKitModuleBase : Module, MidiScript::MidiScriptEngineHandler {
 		return midiOuts.enqueue(midiPort, msgs, count, channel, tick, trigPort, gen, false, tag);
 	}
 
+	// MidiScriptEngineHandler — midiOut.panic(). Via sendMidi(), so it keeps call order
+	// and works in onUnload() (where the swap drops the scheduled messages anyway). Enabled ports only; a port set to a channel gets that
+	// channel only (Rack would overwrite the channel anyway), else all 16. The port's
+	// channel is written by the UI thread: a stale read is harmless.
+	bool panicMidi() override {
+		// Sustain off first so the notes can release; then notes off, sound off, reset.
+		static const uint8_t controllers[4][2] = {{64, 0}, {123, 0}, {120, 0}, {121, 0}};
+		bool ok = true;
+		for (int port = 0; port < midiOuts.enabledCount(); port++) {
+			// First drop what is scheduled, or a waiting note-on would sound after the reset.
+			if (!cancelMidi(port, MidiScript::CancelMode::ALL, MidiScript::Message(), MidiScript::OutGroup())) ok = false;
+			int fixed = midiOuts.ports[port].channel;
+			for (int ch = fixed >= 0 ? fixed : 0; ch < (fixed >= 0 ? fixed + 1 : 16); ch++) {
+				MidiScript::Message group[4];
+				for (int k = 0; k < 4; k++) {
+					group[k].setSize(3);
+					group[k].setStatus(0xb);
+					group[k].setChannel(uint8_t(ch));
+					group[k].setNote(controllers[k][0]);
+					group[k].setValue(controllers[k][1]);
+				}
+				if (!sendMidi(port, group, 4, 0, 0)) ok = false;
+			}
+		}
+		return ok;
+	}
+
 	// MidiScriptEngineHandler — ignored in onUnload(), silently: the swap drops
 	// everything the old script scheduled anyway.
 	bool cancelMidi(int midiPort, MidiScript::CancelMode mode, const MidiScript::Message& pattern, const MidiScript::OutGroup& group) override {

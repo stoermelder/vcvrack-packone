@@ -910,6 +910,7 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 		JS_SetPropertyStr(ctx, _midiOut, "sendAtFrame", JS_NewCFunction(ctx, js_midiOut_sendAtFrame, "sendAtFrame", 2));
 		JS_SetPropertyStr(ctx, _midiOut, "sendAfterTrigger", JS_NewCFunction(ctx, js_midiOut_sendAfterTrigger, "sendAfterTrigger", 3));
 		JS_SetPropertyStr(ctx, _midiOut, "cancel", JS_NewCFunction(ctx, js_midiOut_cancel, "cancel", 1));
+		JS_SetPropertyStr(ctx, _midiOut, "panic", JS_NewCFunction(ctx, js_midiOut_panic, "panic", 0));
 
 		JS_FreeValue(ctx, glob);
 	}
@@ -1770,6 +1771,11 @@ struct MidiScriptEngineQuickJs : MidiScriptEngine {
 	}
 
 	// midiOut.enableTiming([reportLate]) — sample-accurate output for this script.
+	// midiOut.panic() — see MidiScriptEngineHandler::panicMidi().
+	static JSValue js_midiOut_panic(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
+		return JS_NewBool(ctx, getEngine(ctx)->handler->panicMidi());
+	}
+
 	static JSValue js_midiOut_enableTiming(JSContext* ctx, JSValueConst thisVal, int argc, JSValueConst* argv) {
 		getEngine(ctx)->handler->enableTiming(argc >= 1 && JS_ToBool(ctx, argv[0]) > 0);
 		return JS_UNDEFINED;
