@@ -23,7 +23,7 @@ bool hideBrands = false;
 
 // Static functions
 
-static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
+static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const std::vector<TextTagFilter>& textTagFilters, const bool& hidden) {
 	// Filter if not whitelisted by library
 	if (pluginSettings.mbApplyLibraryWhitelist) {
 		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
@@ -62,6 +62,11 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 	for (const auto& ct : customTagFilter) {
 		if (!customTagHas(model, ct))
 			return false;
+	}
+
+	// Filter tags typed into the search field ("t=prefix")
+	if (!textTagFiltersMatch(model, effectiveTagIds, textTagFilters)) {
+		return false;
 	}
 
 	// Filter hidden
@@ -602,9 +607,10 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	}
 
 	// Compute search scores via fuzzy database
+	std::string searchQuery = textTagFiltersParse(search, textTagFilters);
 	std::map<plugin::Model*, float> searchScores;
-	if (!search.empty()) {
-		auto results = modelDb.search(search);
+	if (!searchQuery.empty()) {
+		auto results = modelDb.search(searchQuery);
 		for (auto& result : results) {
 			searchScores[result.key] = result.score;
 		}
@@ -614,8 +620,8 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		bool visible = isModelVisible(m->model, favorites, brand, tagId, customTagFilter, hidden);
-		if (visible && !search.empty()) {
+		bool visible = isModelVisible(m->model, favorites, brand, tagId, customTagFilter, textTagFilters, hidden);
+		if (visible && !searchQuery.empty()) {
 			visible = searchScores.find(m->model) != searchScores.end();
 		}
 		m->visible = visible;
@@ -672,7 +678,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		return t1 < t2;
 	};
 
-	if (sortBySearchScore && !search.empty()) {
+	if (sortBySearchScore && !searchQuery.empty()) {
 		modelContainer->children.sort(sortFuzzySearchScore);
 	}
 	else {
@@ -704,9 +710,9 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		if (!isModelVisible(m->model, favorites, "", emptyTagId, customTagFilter, hidden))
+		if (!isModelVisible(m->model, favorites, "", emptyTagId, customTagFilter, textTagFilters, hidden))
 			continue;
-		if (!search.empty() && searchScores.find(m->model) == searchScores.end())
+		if (!searchQuery.empty() && searchScores.find(m->model) == searchScores.end())
 			continue;
 		filteredModels.push_back(m->model);
 	}
@@ -715,7 +721,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		std::set<int> tagIdp1 = tagId;
 		if (itemTagId >= 0) tagIdp1.insert(itemTagId);
 		for (plugin::Model* model : filteredModels) {
-			if (isModelVisible(model, favorites, brand, tagIdp1, customTagFilter, hidden))
+			if (isModelVisible(model, favorites, brand, tagIdp1, customTagFilter, textTagFilters, hidden))
 				return true;
 		}
 		return false;
@@ -744,7 +750,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 
 	auto hasModelWithCustomTag = [&](const std::string& newTag) -> bool {
 		for (plugin::Model* model : filteredModels) {
-			if (isModelVisible(model, favorites, brand, tagId, customTagFilter, hidden) && customTagHas(model, newTag))
+			if (isModelVisible(model, favorites, brand, tagId, customTagFilter, textTagFilters, hidden) && customTagHas(model, newTag))
 				return true;
 		}
 		return false;

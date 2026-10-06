@@ -868,3 +868,57 @@ TEST_CASE("Favorite and hidden interaction", "[Mb]") {
 	
 	cleanupMockModels();
 }
+// Shared by the v1 and v2 browsers (v1 can't be driven headless, so it is covered here).
+TEST_CASE("Text tag filters parse t= tokens", "[Mb]") {
+	plugin::Model* model = createMockModel("test-plugin", "test-model", "Test Model");
+	cleanupMockModels();
+	customTagReset();
+	std::vector<TextTagFilter> filters;
+
+	SECTION("Plain text has no filters") {
+		REQUIRE(textTagFiltersParse("  bog  filter ", filters) == "bog filter");
+		REQUIRE(filters.empty());
+	}
+
+	SECTION("Tokens are extracted from any position, rest is the query") {
+		customTagAdd(model, "Bogtag");
+		REQUIRE(textTagFiltersParse("t=bog osc T=vco", filters) == "osc");
+		REQUIRE(filters.size() == 2);
+		REQUIRE(filters[0].customTags.count("Bogtag") == 1);
+		REQUIRE(filters[0].tagIds.empty());
+		REQUIRE(filters[1].tagIds.count(tag::findId("VCO")) == 1);
+	}
+
+	SECTION("Prefix collects every matching predefined and custom tag") {
+		customTagAdd(model, "Filterbank");
+		customTagAdd(model, "Other");
+		textTagFiltersParse("t=fil", filters);
+		REQUIRE(filters.size() == 1);
+		REQUIRE(filters[0].tagIds.count(tag::findId("Filter")) == 1);
+		REQUIRE(filters[0].customTags.count("Filterbank") == 1);
+		REQUIRE(filters[0].customTags.count("Other") == 0);
+	}
+
+	SECTION("Bare t= is plain text, parse replaces earlier filters") {
+		REQUIRE(textTagFiltersParse("t=vco", filters) == "");
+		REQUIRE(filters.size() == 1);
+		REQUIRE(textTagFiltersParse("t=", filters) == "t=");
+		REQUIRE(filters.empty());
+	}
+
+	SECTION("Match: any tag of a filter, all filters") {
+		customTagAdd(model, "Alpha");
+		std::set<int> effective = {tag::findId("VCO")};
+		textTagFiltersParse("t=alp t=vc", filters);
+		REQUIRE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("t=alp t=fil", filters);
+		REQUIRE_FALSE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("t=zzz", filters);
+		REQUIRE_FALSE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("", filters);
+		REQUIRE(textTagFiltersMatch(model, effective, filters));
+	}
+
+	customTagReset();
+	cleanupMockModels();
+}

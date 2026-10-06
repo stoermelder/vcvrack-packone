@@ -182,3 +182,122 @@ TEST_CASE("Disabling arrow-key navigation restores Left/Right as text cursor mov
 		REQUIRE(searchField->cursor == 2);
 	}
 }
+
+// Feature: "t=<prefix>" tokens in the v2 search field filter by tag (ModuleBrowser::parseSearch(),
+// Mb_v2.cpp). A prefix matches predefined tag aliases and custom tags, case-insensitively; the
+// remaining words are the normal search. Only Mb's own model is registered in this suite, so
+// each case checks that it is shown or hidden depending on the tags it carries.
+TEST_CASE("Search field t= tokens filter by tag prefix", "[Mb][Widget]") {
+	Test::Harness h;
+	APP->scene->box.size = math::Vec(1024, 300);
+
+	auto* m = h.addModule<MbModule>("Mb");
+	auto* mw = h.addWidget<MbWidget>(m);
+	REQUIRE(mw->active);
+	BrowserOverlay* overlay = mw->browserOverlay;
+	auto* browser = dynamic_cast<v2::ModuleBrowser*>(overlay->mbV2);
+	REQUIRE(browser != nullptr);
+	overlay->show();
+	settleLayout(overlay);
+
+	v2::ModelBox* box = h.events().find<v2::ModelBox>(browser);
+	plugin::Model* model = box->model;
+
+	// Tag state is process-wide; leave it clean for later TEST_CASEs.
+	struct TagCleanup {
+		~TagCleanup() { customTagReset(); predefinedTagsReset(); modelDbInit(); }
+	} cleanup;
+	customTagReset();
+	predefinedTagsReset();
+
+	auto typeSearch = [&](const std::string& s) {
+		// setText() only fires onChange when the text differs, so clear first to re-filter
+		// after the tags changed under an identical query.
+		browser->searchField->setText("");
+		browser->searchField->setText(s);
+		settleLayout(overlay);
+	};
+	// The test model has no name and isn't in Rack's plugin list, so give modelDb an entry
+	// that a normal text query can find; restored by TagCleanup via modelDbInit().
+	const std::string word = "zorblax";
+	modelDb = fuzzysearch::Database<plugin::Model*>();
+	modelDb.setThreshold(pluginSettings.mbSearchThreshold);
+	modelDb.addEntry(model, {"", "", word, "", ""});
+
+	SECTION("Baseline: untagged model is visible without a filter") {
+		typeSearch("");
+		REQUIRE(box->visible);
+	}
+
+	SECTION("Custom tag: full name and prefix match, other prefix does not") {
+		customTagAdd(model, "Bogtag");
+		typeSearch("t=bogtag");
+		REQUIRE(box->visible);
+		typeSearch("t=bog");
+		REQUIRE(box->visible);
+		typeSearch("T=BOG");
+		REQUIRE(box->visible);
+		typeSearch("t=zzz");
+		REQUIRE_FALSE(box->visible);
+	}
+
+	SECTION("Predefined tag prefix, including tags added by the user") {
+		int vco = tag::findId("VCO");
+		REQUIRE(vco >= 0);
+		typeSearch("t=vco");
+		REQUIRE_FALSE(box->visible);
+		predefinedTagAdd(model, vco);
+		typeSearch("t=vc");
+		REQUIRE(box->visible);
+		typeSearch("t=fil");
+		REQUIRE_FALSE(box->visible);
+	}
+
+	SECTION("A prefix is a union over every tag it matches") {
+		customTagAdd(model, "Filterbank");
+		predefinedTagAdd(model, tag::findId("Filter"));
+		typeSearch("t=fil");
+		REQUIRE(box->visible);
+		predefinedTagRemove(model, tag::findId("Filter"));
+		typeSearch("t=fil");
+		REQUIRE(box->visible); // still has the custom tag
+		customTagRemove(model, "Filterbank");
+		typeSearch("t=fil");
+		REQUIRE_FALSE(box->visible);
+	}
+
+	SECTION("Combined with a normal search, in either order") {
+		customTagAdd(model, "Bogtag");
+		typeSearch("t=bog " + word);
+		REQUIRE(box->visible);
+		typeSearch(word + " t=bog");
+		REQUIRE(box->visible);
+		typeSearch("t=bog qqqqzzzz");
+		REQUIRE_FALSE(box->visible);
+		typeSearch("t=nomatch " + word);
+		REQUIRE_FALSE(box->visible);
+	}
+
+	SECTION("Several t= tokens must all match") {
+		customTagAdd(model, "Alpha");
+		customTagAdd(model, "Beta");
+		typeSearch("t=alp t=bet");
+		REQUIRE(box->visible);
+		typeSearch("t=alp t=gam");
+		REQUIRE_FALSE(box->visible);
+	}
+
+	SECTION("A bare t= is not a filter") {
+		typeSearch("t=");
+		REQUIRE(browser->textTagFilters.empty());
+	}
+
+	SECTION("Removing the token clears the filter") {
+		customTagAdd(model, "Bogtag");
+		typeSearch("t=zzz");
+		REQUIRE_FALSE(box->visible);
+		typeSearch("");
+		REQUIRE(box->visible);
+		REQUIRE(browser->textTagFilters.empty());
+	}
+}

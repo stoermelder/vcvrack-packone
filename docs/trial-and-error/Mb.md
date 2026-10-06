@@ -32,6 +32,23 @@ All three options show a confirmation dialog listing the proposed tag assignment
 
 MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
 
+## Filtering tags by search text (*v1 mod* and *v2 mod*)
+
+Tags can also be filtered directly from the search field by typing `t=` followed by the beginning of a tag name:
+
+| Search text | Result |
+| --- | --- |
+| `t=vco` | Only modules tagged "VCO" |
+| `t=fil` | Only modules with any tag starting with "fil", e.g. "Filter" or a custom tag "Filterbank" |
+| `t=vco bog` | Modules tagged "VCO", additionally searched for "bog" with the normal fuzzy search |
+| `t=vco t=fil` | Modules that have a tag starting with "vco" *and* a tag starting with "fil" |
+
+- A prefix matches both predefined tags (including their aliases and your own additions/removals, see above) and custom tags. Matching is case-insensitive.
+- A module passes a `t=` filter if it has *any* tag starting with the prefix. With several `t=` entries, a module must pass *all* of them.
+- The `t=` entries can be placed anywhere in the search text, the remaining words are used for the normal search.
+- A prefix without any matching tag shows no modules, a lone `t=` without a prefix is treated as normal search text.
+- The filter is combined with the Brand, Tag, Custom Tag and other filters of the browser.
+
 
 ## Width filter (*v2 mod*)
 
@@ -231,6 +248,7 @@ itself. Disabled by default.
     - Fixed broken sorting option "Last used"
     - Fixed module preview in *v1 mod* browser
 - v2.7.0
+    - Added tag-filtering using "t=..." in the search field
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser
     - Added option to pre-warm module preview

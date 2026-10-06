@@ -865,14 +865,21 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 	// Use effective tag IDs (with predefined tag modifications applied)
 	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
-		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
+		if (effectiveTagIds.find(tagId) == effectiveTagIds.end()) {
 			return false;
+		}
 	}
 
 	// Filter custom tags
 	for (const auto& ct : customTagFilter) {
-		if (!customTagHas(model, ct))
+		if (!customTagHas(model, ct)) {
 			return false;
+		}
+	}
+
+	// Filter tags typed into the search field ("t=prefix")
+	if (!textTagFiltersMatch(model, effectiveTagIds, textTagFilters)) {
+		return false;
 	}
 
 	// Filter hidden modules (does not use the Rack's "hidden" property)
@@ -910,6 +917,7 @@ void ModuleBrowser::updateZoom() {
 
 void ModuleBrowser::refresh(bool scrollTop) {
 	if (scrollTop) modelScroll->offset = math::Vec();
+	std::string searchQuery = textTagFiltersParse(search, textTagFilters);
 	prefilteredModelScores.clear();
 	// Filtering/sorting is user interaction; back off warming for a few frames.
 	prewarmer.reset();
@@ -987,7 +995,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		}
 	};
 
-	if (search.empty()) {
+	if (searchQuery.empty()) {
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);
 			prefilteredModelScores[m->model] = 1.f;
@@ -996,7 +1004,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		applyBrowserSort();
 	}
 	else {
-		auto results = modelDb.search(search);
+		auto results = modelDb.search(searchQuery);
 		for (auto& result : results) {
 			prefilteredModelScores[result.key] = result.score;
 		}

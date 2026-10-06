@@ -8,6 +8,7 @@
 #include "Mb_v06.hpp"
 #include "Mb_manifests.hpp"
 #include "Mb_autotag.hpp"
+#include <sstream>
 #include "Mb_autotag_widgets.hpp"
 #include <tag.hpp>
 #include <chrono>
@@ -330,6 +331,57 @@ std::set<std::string> customTagsAll() {
 	for (auto& pair : customTagModels)
 		result.insert(pair.first);
 	return result;
+}
+
+
+// Text tag filters
+
+std::string textTagFiltersParse(const std::string& search, std::vector<TextTagFilter>& filters) {
+	filters.clear();
+	std::string query;
+	std::istringstream ss(search);
+	std::string token;
+	while (ss >> token) {
+		std::string lower = string::lowercase(token);
+		if (lower.size() > 2 && lower.compare(0, 2, "t=") == 0) {
+			std::string prefix = lower.substr(2);
+			TextTagFilter f;
+			for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
+				for (const std::string& alias : tag::tagAliases[id]) {
+					if (string::lowercase(alias).compare(0, prefix.size(), prefix) == 0) {
+						f.tagIds.insert(id);
+						break;
+					}
+				}
+			}
+			for (const std::string& ct : customTagsAll()) {
+				if (string::lowercase(ct).compare(0, prefix.size(), prefix) == 0)
+					f.customTags.insert(ct);
+			}
+			filters.push_back(std::move(f));
+		}
+		else {
+			if (!query.empty()) query += " ";
+			query += token;
+		}
+	}
+	return query;
+}
+
+bool textTagFiltersMatch(Model* model, const std::set<int>& effectiveTagIds, const std::vector<TextTagFilter>& filters) {
+	for (const auto& f : filters) {
+		bool match = false;
+		for (int id : f.tagIds) {
+			if (effectiveTagIds.find(id) != effectiveTagIds.end()) { match = true; break; }
+		}
+		if (!match) {
+			for (const auto& ct : f.customTags) {
+				if (customTagHas(model, ct)) { match = true; break; }
+			}
+		}
+		if (!match) return false;
+	}
+	return true;
 }
 
 

@@ -44,6 +44,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ui::SequentialLayout* modelContainer;
 
 	std::string search;
+	// "t=<prefix>" tokens parsed out of `search` (see textTagFiltersParse).
+	std::vector<TextTagFilter> textTagFilters;
 	bool favorites;
 	std::string brand;
 	std::set<int> tagId;
