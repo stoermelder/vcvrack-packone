@@ -6,7 +6,7 @@
 // keymaps/Mb.jsonc (see Keymaps::open()). No in-app rebinding menu yet; hand-editing that file
 // is the only way to change a shortcut.
 //
-// v1 has no arrow-key result navigation and no Ctrl+1/2/3 layout shortcuts (no header dropdowns
+// v1 has no arrow-key result navigation and no Ctrl+1/2/3/4 layout shortcuts (no header dropdowns
 // to jump to); it simply never hooks those action ids. Both UI generations share one keymap
 // since they belong to the same module and mostly overlap.
 
@@ -41,8 +41,8 @@ inline std::shared_ptr<Keymap> registerActions() {
 	km->registerAction("browser.v2.sideview.focus",   "Focus search field (side view)",   "SideView", "Ctrl+F");
 	km->registerAction("browser.v2.sideview.release", "Release search field (side view)", "SideView", "Escape");
 
-	// v2 only (hence the "v2" in the ids, as the JSON file shows nothing else): arrow-key result navigation. Up/Down are always active; Left/Right are gated
-	// behind pluginSettings.mbArrowKeyNavigation at the call site.
+	// v2 only (hence the "v2" in the ids, as the JSON file shows nothing else): arrow-key result navigation. Left/Right can be unbound (also via the
+	// "Arrow keys select modules" menu option) to leave those keys to the search field's text cursor.
 	km->registerAction("browser.v2.nav.up",    "Select module above",  "Navigation", "Up", GLFW_REPEAT);
 	km->registerAction("browser.v2.nav.down",  "Select module below",  "Navigation", "Down", GLFW_REPEAT);
 	km->registerAction("browser.v2.nav.left",  "Select module left",   "Navigation", "Left", GLFW_REPEAT);
@@ -53,9 +53,24 @@ inline std::shared_ptr<Keymap> registerActions() {
 	km->registerAction("browser.v2.layout.brand",     "Open Brand dropdown",      "Browser", "Ctrl+1");
 	km->registerAction("browser.v2.layout.tag",       "Open Tag dropdown",        "Browser", "Ctrl+2");
 	km->registerAction("browser.v2.layout.customtag", "Open Custom Tag dropdown", "Browser", "Ctrl+3");
+	km->registerAction("browser.v2.layout.width",     "Open Width dropdown",      "Browser", "Ctrl+4");
 
 	km->save();
 	return km;
+}
+
+// Left/Right are the only navigation keys that collide with text editing, so the "Arrow keys
+// select modules" menu option is just these two actions bound or unbound.
+inline bool arrowKeyNavigationEnabled(const std::shared_ptr<Keymap>& km) {
+	return !km->combosFor("browser.v2.nav.left").empty() || !km->combosFor("browser.v2.nav.right").empty();
+}
+
+inline void setArrowKeyNavigation(const std::shared_ptr<Keymap>& km, bool enabled) {
+	for (const char* id : {"browser.v2.nav.left", "browser.v2.nav.right"}) {
+		if (enabled) km->resetAction(id);
+		else km->unbind(id);
+	}
+	km->save();
 }
 
 } // namespace Mb

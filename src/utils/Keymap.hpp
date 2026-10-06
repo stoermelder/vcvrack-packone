@@ -28,6 +28,10 @@ struct KeyCombo {
 	int key = GLFW_KEY_UNKNOWN;   // GLFW key code, already keyFix()'d
 	int mods = 0;                 // GLFW_MOD_* mask, RACK_MOD_MASK-normalised
 
+	// "+" has no GLFW key code, so it gets one GLFW leaves unused. It matches the numpad plus, a
+	// key labelled "+" (QWERTZ, Nordic) and Shift+= (US) - see matches().
+	enum { KEY_PLUS = '+' };
+
 	KeyCombo() {}
 	KeyCombo(int key, int mods = 0) : key(key), mods(mods) {}
 	// Implicit, so `registerAction(..., "Ctrl+Z")` just works. Parses the combo grammar:
@@ -42,7 +46,16 @@ struct KeyCombo {
 	// Compares against an incoming key event: masks eventMods to RACK_MOD_MASK and runs
 	// eventKey through keyFix(), so KP_1 matches a "1" binding and a stray
 	// GLFW_MOD_CAPS_LOCK bit never breaks a match.
-	bool matches(int eventKey, int eventMods) const;
+	//
+	// `eventKeyName` is the event's layout-aware key name (Rack's e.keyName, glfwGetKeyName()).
+	// Letter bindings (A-Z) compare against it when it is a single character, so Ctrl+Z
+	// follows the key *labelled* Z on QWERTZ/AZERTY/Dvorak instead of the US key position, and
+	// a key labelled with punctuation never matches a letter. Only an empty or multi-byte name
+	// (a non-Latin layout's letter) falls back to the key-code match.
+	// Everything that is not a letter is always matched by key code, except KEY_PLUS: it matches
+	// the numpad plus or a key named "+", and on US layouts the "=" key with Shift held on top of
+	// the binding's own mods (so "Ctrl++" fires on Ctrl+Shift+=).
+	bool matches(int eventKey, int eventMods, const std::string& eventKeyName = "") const;
 
 	// Canonical, portable spelling ("Ctrl+Shift+Z") — round-trips through the parser and is
 	// what gets written to the keymap file. Always "Ctrl", even on macOS, so a file is portable
@@ -115,7 +128,9 @@ struct Keymap {
 	// GLFW_REPEAT returns "". First-match-wins in registration order. With `contexts` non-empty
 	// only actions in one of those contexts are considered, so two actions in different contexts
 	// can share a key without one shadowing the other.
-	const std::string& lookup(int key, int mods, int action, const Contexts& contexts = Contexts()) const;
+	// `keyName` is the event's layout-aware name, see KeyCombo::matches().
+	const std::string& lookup(int key, int mods, int action, const Contexts& contexts = Contexts(),
+	                           const std::string& keyName = "") const;
 
 	// ---- reverse lookup, for menus and on-screen help ----
 	std::vector<KeyCombo> combosFor(const std::string& id) const;
@@ -213,7 +228,7 @@ struct KeymapHandlers {
 	// order), then unscoped ones as fallback, so a scoped handler is never shadowed. Returns
 	// true if handled — or if an exclusive scope's predicate is active (see scope()), since
 	// that scope owns the keyboard outright and must swallow the event either way.
-	bool dispatch(int key, int mods, int action) const;
+	bool dispatch(int key, int mods, int action, const std::string& keyName = "") const;
 
 	// Block registration with a shared predicate. `exclusive` means this scope owns the
 	// keyboard outright while its predicate holds (a modal picker), so dispatch() never falls

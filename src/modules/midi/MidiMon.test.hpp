@@ -24,8 +24,9 @@ static MessageEx makeEx(MType type, const rack::midi::Message& msg) {
 // Pop all pending log entries out of the module's ring buffer.
 static std::vector<LogEntry> drain(MidiMonModule* module) {
 	std::vector<LogEntry> out;
+	LogDecoder decoder;
 	while (!module->midiLogMessages.empty()) {
-		out.push_back(module->midiLogMessages.shift());
+		decoder.decode(module->midiLogMessages.shift(), [&](LogEntry&& e) { out.push_back(std::move(e)); });
 	}
 	return out;
 }

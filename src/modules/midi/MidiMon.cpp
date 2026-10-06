@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <chrono>
 #include "MidiProcessor.hpp"
+#include "MidiText.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiMon {
@@ -20,7 +21,65 @@ enum class LOG_FORMAT {
 	TEXT
 };
 
+/** A formatted log line, as shown by the widget. */
 using LogEntry = std::tuple<LOG_FORMAT, float, int64_t, std::string>;
+
+/** A log line as the dsp thread records it: plain data, no strings. Building a
+ *  std::string allocates, which the dsp thread must not do, so the text is only
+ *  assembled from this on the UI thread (LogDecoder). */
+struct RawEntry {
+	enum class Kind : uint8_t {
+		MESSAGE,			// text = the message
+		DATE,				// frame = time_t
+		SAMPLE_RATE,		// text.x = sample rate
+		SYSEX_DATA			// bytes[0..count), more = the line continues in the next entry
+	};
+	enum { SYSEX_CHUNK = 24 };
+
+	Kind kind = Kind::MESSAGE;
+	LOG_FORMAT format = LOG_FORMAT::TIMESTAMP;
+	bool more = false;
+	uint8_t count = 0;
+	MidiText::Fields text;
+	float timestamp = 0.f;
+	int64_t frame = 0;
+	uint8_t bytes[SYSEX_CHUNK];
+};
+
+/** Turns RawEntry records into LogEntry lines. UI thread (or tests) only. */
+struct LogDecoder {
+	std::string sysexLine;
+
+	template <typename F>
+	void decode(const RawEntry& r, F emit) {
+		using K = RawEntry::Kind;
+		std::string s;
+		switch (r.kind) {
+			case K::MESSAGE:
+				s = MidiText::format(r.text);
+				break;
+			case K::DATE: {
+				std::time_t t = (std::time_t)r.frame;
+				char buf[100] = {0};
+				std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+				s = buf;
+				break;
+			}
+			case K::SAMPLE_RATE:
+				s = string::f("sample rate %i", r.text.x);
+				break;
+			case K::SYSEX_DATA: {
+				// Every chunk ends in a space, so the next one continues the line.
+				sysexLine += MidiText::hexBytes(r.bytes, r.count) + " ";
+				if (r.more) return;
+				s = std::move(sysexLine);
+				sysexLine.clear();
+				break;
+			}
+		}
+		emit(LogEntry(r.format, r.timestamp, r.kind == RawEntry::Kind::DATE ? 0LL : r.frame, std::move(s)));
+	}
+};
 
 struct MidiMonModule : Module, MidiProcessorHandler {
 	enum ParamIds {
@@ -69,10 +128,11 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 	bool showFrame;
 
 	/** [Stored to JSON] */
-	MidiProcessor midiProcessor;
+	// The lock-free input queue: the audio thread never takes a lock or frees here.
+	MidiCProcessor midiProcessor;
 
 	ClockDividerEx processDivider;
-	dsp::RingBuffer<LogEntry, 4096> midiLogMessages;
+	dsp::RingBuffer<RawEntry, 4096> midiLogMessages;
 	bool isProcessing = false;
 
 	MidiMonModule() {
@@ -126,122 +186,93 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		}
 	}
 
-	void logMessage(bool showMessage, LOG_FORMAT logFormat, float timestamp, int64_t frame, std::string s) {
-		if (!midiLogMessages.full() && showMessage) {
-			midiLogMessages.push(std::make_tuple(logFormat, timestamp, frame, s));
-		}
+	/** Dsp thread: plain data only, no allocation. */
+	void logMessage(bool showMessage, LOG_FORMAT format, const MessageEx& m, const MidiText::Fields& text) {
+		if (!showMessage || midiLogMessages.full()) return;
+		RawEntry r;
+		r.kind = RawEntry::Kind::MESSAGE;
+		r.format = format;
+		r.text = text;
+		r.timestamp = format == LOG_FORMAT::TIMESTAMP ? float(m.frame) / APP->engine->getSampleRate() : 0.f;
+		r.frame = format == LOG_FORMAT::TIMESTAMP ? m.frame : 0LL;
+		midiLogMessages.push(r);
 	}
 
 	void logTimestampReset() {
-		std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		char buf[100] = {0};
-		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, 0LL, std::string(buf));
-		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, 0LL, string::f("sample rate %i", int(APP->engine->getSampleRate())));
+		RawEntry r;
+		r.format = LOG_FORMAT::TIMESTAMP;
+		r.kind = RawEntry::Kind::DATE;
+		r.frame = (int64_t)std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		if (!midiLogMessages.full()) midiLogMessages.push(r);
+		r.kind = RawEntry::Kind::SAMPLE_RATE;
+		r.frame = 0;
+		r.text.x = int(APP->engine->getSampleRate());
+		if (!midiLogMessages.full()) midiLogMessages.push(r);
 	}
 
 	// MidiProcessorHandler
 	bool processMidi(const MessageEx& m) override {
-		std::string s;
-		float timestamp = float(m.frame) / APP->engine->getSampleRate();
-		int64_t frame = m.frame;
-		switch (m.type) {
-			case MessageEx::Type::NOTE_ON:
-				s = string::f("ch%02d note on  %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+		using K = MidiText::Kind;
+		const LOG_FORMAT TS = LOG_FORMAT::TIMESTAMP;
+		const LOG_FORMAT IND = LOG_FORMAT::INDENTED;
+		const MidiText::Fields f = MidiText::classify(m);
+		switch (f.kind) {
+			case K::NOTE_ON:
+			case K::NOTE_OFF:
+				logMessage(showNoteMsg, TS, m, f);
 				break;
-			case MessageEx::Type::NOTE_OFF:
-				s = string::f("ch%02d note off %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+			case K::KEY_PRESSURE:
+				logMessage(showKeyPressure, TS, m, f);
 				break;
-			case MessageEx::Type::KEY_PRESSURE:
-				s = string::f("ch%02d key-pressure %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showKeyPressure, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+			case K::CC:
+				logMessage(showCcMsg, TS, m, f);
 				break;
-			case MessageEx::Type::CC:
-				s = string::f("ch%02d cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showCcMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+			case K::CC_14BIT:
+				logMessage(showCcExMsg, IND, m, f);
 				break;
-			case MessageEx::Type::CC_14BIT:
-				s = string::f("ch%02d 14-bit cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
-				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+			case K::RPN_RESET:
+			case K::RPN_VALUE:
+			case K::RPN_PARAM:
+			case K::NRPN_VALUE:
+			case K::NRPN_PARAM:
+				logMessage(showRpnNrpnMsg, IND, m, f);
 				break;
-			case MessageEx::Type::RPN:
-				if (m.getParamNumber() < 0) {
-					s = string::f("ch%02d rpn/nrpn reset", m.getChannel() + 1);
-				}
-				else if (m.hasValue()) {
-					s = string::f("ch%02d rpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
-				}
-				else if (m.getParamNumber() == 0) {
-					s = string::f("ch%02d rpn param=0 (Pitch Bend Sensitivity)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 1) {
-					s = string::f("ch%02d rpn param=1 (Fine Tuning)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 2) {
-					s = string::f("ch%02d rpn param=2 (Coarse Tuning)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 3) {
-					s = string::f("ch%02d rpn param=3 (Tuning Program Select)", m.getChannel() + 1);
-				}
-				else if (m.getParamNumber() == 4) {
-					s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", m.getChannel() + 1);
-				}
-				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+			case K::PROGRAM_CHANGE:
+				logMessage(showProgChangeMsg, TS, m, f);
 				break;
-			case MessageEx::Type::NRPN:
-				if (m.hasValue()) {
-					s = string::f("ch%02d nrpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
-				}
-				else {
-					s = string::f("ch%02d nrpn param=%i selected", m.getChannel() + 1, m.getParamNumber());
-				}
-				logMessage(showRpnNrpnMsg, LOG_FORMAT::INDENTED, 0.f, 0LL, s);
+			case K::CHANNEL_PRESSURE:
+				logMessage(showChannelPressurelMsg, TS, m, f);
 				break;
-			case MessageEx::Type::PROGRAM_CHANGE:
-				s = string::f("ch%02d program=%i", m.getChannel() + 1, m.getNote());
-				logMessage(showProgChangeMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
+			case K::PITCH_BEND:
+				logMessage(showPitchWheelMsg, TS, m, f);
 				break;
-			case MessageEx::Type::CHANNEL_PRESSURE:
-				s = string::f("ch%02d channel-pressure=%i", m.getChannel() + 1, m.getNote());
-				logMessage(showChannelPressurelMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
-				break;
-			case MessageEx::Type::PITCH_BEND:
-				s = string::f("ch%02d pitchbend=%i", m.getChannel() + 1, m.getValue());
-				logMessage(showPitchWheelMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, s);
-				break;
-			case MessageEx::Type::SYSEX:
-				logMessage(showSysExMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("sysex (%i data bytes)", m.getSysExSize() - 2));
-				if (showSysExData) {
-					std::ostringstream ss;
-					ss << std::hex;
-					for (int i = 0; i < m.getSysExSize(); i++) {
-						ss << std::setw(2) << std::setfill('0') << static_cast<int>(m.getSysExByte(i)) << " ";
-					}
-					logMessage(true, LOG_FORMAT::TEXT, 0.f, 0LL, ss.str());
+			case K::SYSEX: {
+				int size = m.getSysExSize();
+				int chunks = showSysExData ? (size + RawEntry::SYSEX_CHUNK - 1) / RawEntry::SYSEX_CHUNK : 0;
+				// All or nothing: a partial data line would glue onto the next entry.
+				if (midiLogMessages.capacity() < (size_t)(chunks + (showSysExMsg ? 1 : 0))) break;
+				logMessage(showSysExMsg, TS, m, f);
+				for (int i = 0; i < chunks; i++) {
+					RawEntry r;
+					r.kind = RawEntry::Kind::SYSEX_DATA;
+					r.format = LOG_FORMAT::TEXT;
+					r.count = (uint8_t)std::min((int)RawEntry::SYSEX_CHUNK, size - i * (int)RawEntry::SYSEX_CHUNK);
+					r.more = i + 1 < chunks;
+					for (int j = 0; j < r.count; j++) r.bytes[j] = m.getSysExByte(i * RawEntry::SYSEX_CHUNK + j);
+					midiLogMessages.push(r);
 				}
 				break;
-			case MessageEx::Type::SONG_POINTER:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("song pointer=%i", m.getValue()));
+			}
+			case K::SONG_POINTER:
+			case K::SONG_SELECT:
+			case K::START:
+			case K::CONTINUE:
+			case K::STOP:
+			case K::RESET:
+				logMessage(showSystemMsg, TS, m, f);
 				break;
-			case MessageEx::Type::SONG_SELECT:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, string::f("song select=%i", m.getNote()));
-				break;
-			case MessageEx::Type::CLOCK:
-				logMessage(showClockMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "clock tick");
-				break;
-			case MessageEx::Type::START:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "start");
-				break;
-			case MessageEx::Type::CONTINUE:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "continue");
-				break;
-			case MessageEx::Type::STOP:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "stop");
-				break;
-			case MessageEx::Type::RESET:
-				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, frame, "reset");
+			case K::CLOCK:
+				logMessage(showClockMsg, TS, m, f);
 				break;
 			default:
 				break;
@@ -309,10 +340,14 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 };
 
 
+// The log text, newest line first. It is the content of a ScrollWidget, so it is as
+// tall as all its lines and scrolling, clipping and the scrollbar are the ScrollWidget's.
 struct LogDisplay : LedTextDisplay {
 	std::list<LogEntry>* buffer;
 	bool* showFrame = nullptr;
 	bool dirty = true;
+	// At least the height of the ScrollWidget's viewport.
+	float minHeight = 0.f;
 
 	LogDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
@@ -325,31 +360,46 @@ struct LogDisplay : LedTextDisplay {
 		LedTextDisplay::step();
 		if (dirty) {
 			text = "";
-			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize) + 1);
-			size_t i = 0;
+			float lines = 0.f;
 			bool frameMode = showFrame && *showFrame;
 			for (LogEntry s : *buffer) {
-				if (i >= size) break;
 				LOG_FORMAT f = std::get<0>(s);
 				float timestamp = std::get<1>(s);
 				int64_t frame = std::get<2>(s);
 				switch (f) {
 					case LOG_FORMAT::TIMESTAMP:
+						lines += 1.f;
 						if (frameMode)
 							text += string::f("[%9" PRId64 "] %s\n", frame, std::get<3>(s).c_str());
 						else
 							text += string::f("[%9.4f] %s\n", timestamp, std::get<3>(s).c_str());
 						break;
 					case LOG_FORMAT::TEXT:
+						lines += 1.f;
 						text += string::f("%s\n", std::get<3>(s).c_str());
 						break;
 					case LOG_FORMAT::INDENTED:
+						lines += 1.f;
 						text += string::f("     %s\n", std::get<3>(s).c_str());
 						break;
 					default:
 						break;
 				};
 			}
+			// A line is one fontSize high; a long one wraps into more, which only the
+			// font can measure, so without a window the entries are counted.
+			float h = lines * fontSize;
+			if (APP->window && !text.empty()) {
+				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+				NVGcontext* vg = APP->window->vg;
+				nvgFontFaceId(vg, font->handle);
+				nvgFontSize(vg, fontSize);
+				float bounds[4];
+				nvgTextBoxBounds(vg, textOffset.x, textOffset.y + fontSize, box.size.x - 2 * textOffset.x, text.c_str(), NULL, bounds);
+				h = std::max(h, bounds[3] - bounds[1]);
+			}
+			box.size.y = std::max(minHeight, h + 2.f * textOffset.y);
+			dirty = false;
 		}
 	}
 
@@ -362,8 +412,11 @@ struct LogDisplay : LedTextDisplay {
 struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	MidiMonModule* module;
 	LogDisplay* logDisplay;
+	rack::ui::ScrollWidget* logScroll;
 	std::list<LogEntry> buffer;
-	
+	LogDecoder decoder;
+	bool lastFrameMode = false;
+
 	MidiMonWidget(MidiMonModule* module)
 		: ThemedModuleWidget<MidiMonModule>(module, "MidiMon") {
 		this->module = module;
@@ -383,10 +436,20 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		textDisplay->box.size = Vec(240.f, 236.0f);
 		addChild(textDisplay);
 
-		logDisplay = createWidget<LogDisplay>(Vec());
+		// The lines scroll, newest on top; the scrollbar shows once they outgrow the area.
+		logScroll = new rack::ui::ScrollWidget;
+		logScroll->box.pos.y = 3.f;
+		// A narrow scrollbar is drawn partly beyond its box: stay clear of the right edge.
+		logScroll->box.size = Vec(textDisplay->box.size.x - 3.f, textDisplay->box.size.y - 2.f * logScroll->box.pos.y);
+		logScroll->verticalScrollbar->box.size.x = 8.f;
+		logScroll->horizontalScrollbar->hide();
+		textDisplay->addChild(logScroll);
+
+		logDisplay = new LogDisplay;
 		logDisplay->buffer = &buffer;
-		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 4.f));
-		textDisplay->addChild(logDisplay);
+		logDisplay->box.size = Vec(logScroll->box.size.x - logScroll->verticalScrollbar->box.size.x, logScroll->box.size.y);
+		logDisplay->minHeight = logScroll->box.size.y;
+		logScroll->container->addChild(logDisplay);
 
 		if (!module) {
 			// fake data for module browser
@@ -407,13 +470,21 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		ThemedModuleWidget<MidiMonModule>::step();
 		if (!module) return;
 		logDisplay->showFrame = &module->showFrame;
-		while (!module->midiLogMessages.empty()) {
-			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
-			auto s = module->midiLogMessages.shift();
-			buffer.push_front(s);
+		bool frameMode = module->showFrame;
+		if (frameMode != lastFrameMode) {
+			lastFrameMode = frameMode;
+			logDisplay->dirty = true;
 		}
-		logDisplay->dirty = true;
-		logDisplay->setSize(Vec(240.f, std::max(236.0f, buffer.size() * 16.f)));
+		while (!module->midiLogMessages.empty()) {
+			RawEntry r = module->midiLogMessages.shift();
+			decoder.decode(r, [&](LogEntry&& e) {
+				if (buffer.size() == BUFFERSIZE) buffer.pop_back();
+				buffer.push_front(std::move(e));
+				logDisplay->dirty = true;
+				// A view scrolled back to older lines stays on them as the new one pushes them down.
+				if (logScroll->offset.y > 0.f) logScroll->offset.y += logDisplay->fontSize;
+			});
+		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -452,6 +523,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		buffer.clear();
 		module->logTimestampReset();
 		logDisplay->reset();
+		logScroll->offset = Vec();
 	}
 
 #ifndef METAMODULE

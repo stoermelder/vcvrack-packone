@@ -68,7 +68,14 @@ widget. Behaviour goes into a `KeymapHandlers` owned by the widget, which is des
 
 ## dispatch(): how a key finds its handler
 
-`dispatch(key, mods, action)` does two things in order:
+`dispatch(key, mods, action, keyName)` does two things in order. `keyName` is optional: pass the
+event's `e.keyName` and letter bindings (A-Z) follow the key *labelled* so on the current layout
+(Ctrl+Z is the "Z" key on QWERTZ, not the US-position one), and a key labelled with punctuation
+never matches a letter (the ";" key at the US-Z position on Dvorak is not Z). Only without it, or
+when it is multi-byte (a non-Latin layout), matching falls back to the physical GLFW key code.
+Non-letters always match by key code, except `+`: GLFW has no key code for it, so a `+` binding
+matches the numpad plus, a key labelled "+" (QWERTZ, Nordic) and, on US layouts, Shift+= (the
+Shift is implied, so `Ctrl++` fires on Ctrl+Shift+=). Use `KPAdd` for the numpad key alone.
 
 1. **Resolve the key to one action id** with `Keymap::lookup()`. Only actions in the handlers'
    `contexts` are considered (all if none were given). The **first registered** match wins.

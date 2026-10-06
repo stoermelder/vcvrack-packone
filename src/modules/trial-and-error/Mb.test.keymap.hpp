@@ -161,6 +161,85 @@ TEST_CASE("MB keymap: rebinding replaces the default", "[Mb][Widget][Keymap]") {
 	}
 }
 
+// Unbinding Left/Right in the keymap hands those keys to the search field's text cursor, which
+// is what the "Arrow keys select modules" option does by other means.
+TEST_CASE("MB keymap: unbinding Left/Right moves the text cursor instead of the selection", "[Mb][Widget][Keymap]") {
+	KeymapFixture fx;
+	rack::ui::TextField* field = fx.browser->searchField;
+	fx.typeText("abc");
+	REQUIRE(field->cursor == 3);
+
+	SECTION("Bound (default): Left/Right navigate the results, cursor stays put") {
+		REQUIRE(fx.press(GLFW_KEY_LEFT));
+		REQUIRE(field->cursor == 3);
+		REQUIRE(fx.press(GLFW_KEY_RIGHT));
+		REQUIRE(field->cursor == 3);
+	}
+
+	SECTION("Unbound: Left/Right move the text cursor") {
+		fx.km->unbind("browser.v2.nav.left");
+		fx.km->unbind("browser.v2.nav.right");
+
+		fx.press(GLFW_KEY_LEFT);
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 1);
+		fx.press(GLFW_KEY_RIGHT);
+		REQUIRE(field->cursor == 2);
+	}
+
+	SECTION("Unbinding only Left leaves Right navigating the results") {
+		fx.km->unbind("browser.v2.nav.left");
+
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 2);
+		REQUIRE(fx.press(GLFW_KEY_RIGHT));
+		REQUIRE(field->cursor == 2);
+	}
+
+	SECTION("Up/Down keep navigating when Left/Right are unbound") {
+		fx.km->unbind("browser.v2.nav.left");
+		fx.km->unbind("browser.v2.nav.right");
+
+		REQUIRE(fx.press(GLFW_KEY_DOWN));
+		REQUIRE(fx.press(GLFW_KEY_UP));
+		REQUIRE(field->cursor == 3);
+	}
+}
+
+// The "Arrow keys select modules (v2)" menu option is a shortcut to the same two bindings.
+TEST_CASE("MB keymap: the arrow-key menu option binds and unbinds Left/Right", "[Mb][Widget][Keymap]") {
+	KeymapFixture fx;
+	rack::ui::TextField* field = fx.browser->searchField;
+	fx.typeText("abc");
+
+	REQUIRE(arrowKeyNavigationEnabled(fx.km));
+
+	SECTION("Disabling unbinds both actions and frees the text cursor") {
+		setArrowKeyNavigation(fx.km, false);
+		REQUIRE_FALSE(arrowKeyNavigationEnabled(fx.km));
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 2);
+	}
+
+	SECTION("Enabling restores the default keys") {
+		setArrowKeyNavigation(fx.km, false);
+		setArrowKeyNavigation(fx.km, true);
+		REQUIRE(arrowKeyNavigationEnabled(fx.km));
+		REQUIRE(fx.press(GLFW_KEY_LEFT));
+		REQUIRE(field->cursor == 3);
+	}
+
+	SECTION("A custom binding on one action counts as enabled") {
+		fx.km->unbind("browser.v2.nav.right");
+		fx.km->bind("browser.v2.nav.left", KeyCombo("Ctrl+Left"));
+		REQUIRE(arrowKeyNavigationEnabled(fx.km));
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 2);
+		REQUIRE(fx.press(GLFW_KEY_LEFT, RACK_MOD_CTRL));
+		REQUIRE(field->cursor == 2);
+	}
+}
+
 TEST_CASE("MB keymap: the *.always actions are unbound and ignore the search text", "[Mb][Widget][Keymap]") {
 	KeymapFixture fx;
 
@@ -199,19 +278,22 @@ struct StubChoiceButton : rack::ui::ChoiceButton {
 };
 
 struct LayoutFixture : KeymapFixture {
-	StubChoiceButton brandStub, tagStub, customTagStub;
+	StubChoiceButton brandStub, tagStub, customTagStub, widthStub;
 	rack::ui::ChoiceButton* savedBrand;
 	rack::ui::ChoiceButton* savedTag;
 	rack::ui::ChoiceButton* savedCustomTag;
+	rack::ui::ChoiceButton* savedWidth;
 	std::vector<rack::ui::MenuOverlay*> overlays;
 
 	LayoutFixture() {
 		savedBrand = browser->brandButton;
 		savedTag = browser->tagButton;
 		savedCustomTag = browser->customTagButton;
+		savedWidth = browser->widthButton;
 		browser->brandButton = &brandStub;
 		browser->tagButton = &tagStub;
 		browser->customTagButton = &customTagStub;
+		browser->widthButton = &widthStub;
 	}
 
 	~LayoutFixture() {
@@ -224,6 +306,7 @@ struct LayoutFixture : KeymapFixture {
 		browser->brandButton = savedBrand;
 		browser->tagButton = savedTag;
 		browser->customTagButton = savedCustomTag;
+		browser->widthButton = savedWidth;
 	}
 
 	// A dropdown already open, as a shortcut press would have left it.
@@ -241,13 +324,15 @@ struct LayoutFixture : KeymapFixture {
 TEST_CASE("MB keymap: layout dropdown shortcuts", "[Mb][Widget][Keymap]") {
 	LayoutFixture fx;
 
-	SECTION("Ctrl+1/2/3 open the Brand/Tag/Custom Tag dropdown") {
+	SECTION("Ctrl+1/2/3/4 open the Brand/Tag/Custom Tag/Width dropdown") {
 		REQUIRE(fx.press(GLFW_KEY_1, RACK_MOD_CTRL));
 		REQUIRE(fx.brandStub.opened == 1);
 		REQUIRE(fx.press(GLFW_KEY_2, RACK_MOD_CTRL));
 		REQUIRE(fx.tagStub.opened == 1);
 		REQUIRE(fx.press(GLFW_KEY_3, RACK_MOD_CTRL));
 		REQUIRE(fx.customTagStub.opened == 1);
+		REQUIRE(fx.press(GLFW_KEY_4, RACK_MOD_CTRL));
+		REQUIRE(fx.widthStub.opened == 1);
 		REQUIRE(fx.brandStub.opened == 1);
 	}
 
@@ -266,6 +351,20 @@ TEST_CASE("MB keymap: layout dropdown shortcuts", "[Mb][Widget][Keymap]") {
 		REQUIRE(open->parent->requestedDelete);
 		REQUIRE(fx.tagStub.opened == 1);
 		REQUIRE(fx.brandStub.opened == 0);
+	}
+
+	SECTION("The Width shortcut closes an open Width dropdown without reopening it") {
+		auto* open = fx.openDropdownFor(&fx.widthStub);
+		REQUIRE(fx.press(GLFW_KEY_4, RACK_MOD_CTRL));
+		REQUIRE(open->parent->requestedDelete);
+		REQUIRE(fx.widthStub.opened == 0);
+	}
+
+	SECTION("The Width shortcut switches from another open dropdown") {
+		auto* open = fx.openDropdownFor(&fx.brandStub);
+		REQUIRE(fx.press(GLFW_KEY_4, RACK_MOD_CTRL));
+		REQUIRE(open->parent->requestedDelete);
+		REQUIRE(fx.widthStub.opened == 1);
 	}
 
 	SECTION("Browse shortcuts are suspended while a dropdown is open") {
@@ -432,6 +531,76 @@ TEST_CASE("MB keymap: in side view a hovered module's shortcut wins over the foc
 		e.mods = RACK_MOD_CTRL;
 		catcher->onHoverKey(e);
 		REQUIRE(catcher->active);
+	}
+
+	cleanupMockModels();
+}
+
+TEST_CASE("MB keymap: favorite and hidden hotkeys target the keyboard-selected module", "[Mb][Widget][Keymap][ModelBox]") {
+	cleanupMockModels();
+	KeymapFixture fx;
+	// Nothing hovered: a toggle can only have come from the selection.
+	APP->event->setHoveredWidget(nullptr);
+
+	auto* box = fx.h.events().find<v2::ModelBox>(fx.browser);
+	REQUIRE(box != nullptr);
+
+	SECTION("Without a keyboard selection the search field leaves the key alone") {
+		REQUIRE(fx.browser->selectedModel == nullptr);
+		REQUIRE_FALSE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+	}
+
+	SECTION("Ctrl+F toggles the selected module's favorite") {
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		REQUIRE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE(isModelFavorite(box->model));
+		REQUIRE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+	}
+
+	SECTION("Ctrl+H hides the selected module and drops the selection") {
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		REQUIRE(fx.press(GLFW_KEY_H, RACK_MOD_CTRL));
+		REQUIRE(isModelHidden(box->model));
+		REQUIRE_FALSE(box->visible);
+		REQUIRE(fx.browser->selectedModel == nullptr);
+		hiddenModelsReset();
+	}
+
+	SECTION("Unfavoriting the selection under the Favorites filter drops the selection") {
+		toggleModelFavorite(box->model);
+		fx.press(GLFW_KEY_SPACE);   // Favorites filter on
+		REQUIRE(fx.browser->favorite);
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		REQUIRE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+		REQUIRE(fx.browser->selectedModel == nullptr);
+	}
+
+	SECTION("Rebinding follows the keymap") {
+		fx.km->bind("modelbox.favorite.toggle", KeyCombo("Ctrl+G"));
+		fx.press(GLFW_KEY_DOWN);
+
+		REQUIRE_FALSE(fx.press(GLFW_KEY_F, RACK_MOD_CTRL));
+		REQUIRE_FALSE(isModelFavorite(box->model));
+		REQUIRE(fx.press(GLFW_KEY_G, RACK_MOD_CTRL));
+		REQUIRE(isModelFavorite(box->model));
+	}
+
+	SECTION("Moving the mouse clears the keyboard selection") {
+		fx.press(GLFW_KEY_DOWN);
+		REQUIRE(fx.browser->selectedModel == box->model);
+
+		fx.h.events().hover(rack::math::Vec(30.f, 40.f));
+		fx.h.events().hover(rack::math::Vec(60.f, 80.f));
+		REQUIRE(fx.browser->selectedModel == nullptr);
 	}
 
 	cleanupMockModels();

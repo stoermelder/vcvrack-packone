@@ -61,6 +61,7 @@ static const KeyNameEntry kPrintableKeyNames[] = {
 	{GLFW_KEY_PERIOD, "."}, {GLFW_KEY_SLASH, "/"}, {GLFW_KEY_SEMICOLON, ";"},
 	{GLFW_KEY_EQUAL, "="}, {GLFW_KEY_LEFT_BRACKET, "["}, {GLFW_KEY_BACKSLASH, "\\"},
 	{GLFW_KEY_RIGHT_BRACKET, "]"}, {GLFW_KEY_GRAVE_ACCENT, "`"},
+	{KeyCombo::KEY_PLUS, "+"},
 };
 
 // Extra parse-only aliases so a user writing keyboard.hpp's keyName() spelling by analogy
@@ -152,7 +153,8 @@ KeyCombo::KeyCombo(const char* spec) {
 	size_t pos = 0;
 	while (true) {
 		size_t plus = s.find('+', pos);
-		if (plus == std::string::npos) break;
+		// A '+' with nothing after it is the key itself ("+", "Ctrl++", "KP +"), not a separator.
+		if (plus == std::string::npos || plus + 1 == s.size()) break;
 		std::string tok = toUpper(s.substr(pos, plus - pos));
 		if (tok == "CTRL" || tok == "CMD" || tok == "COMMAND" || tok == "SUPER") m |= RACK_MOD_CTRL;
 		else if (tok == "SHIFT") m |= GLFW_MOD_SHIFT;
@@ -168,9 +170,35 @@ KeyCombo::KeyCombo(const char* spec) {
 	mods = m;
 }
 
-bool KeyCombo::matches(int eventKey, int eventMods) const {
+// The letter a layout-aware key name stands for, or 0 if it is not a single ASCII letter.
+static int layoutLetter(const std::string& keyName) {
+	if (keyName.size() != 1) return 0;
+	char c = keyName[0];
+	if (c >= 'a' && c <= 'z') return c - 'a' + 'A';
+	if (c >= 'A' && c <= 'Z') return c;
+	return 0;
+}
+
+static bool comboMatches(const KeyCombo& c, int fixedKey, int maskedMods, const std::string& keyName) {
+	if (c.key == KeyCombo::KEY_PLUS) {
+		// GLFW has no plus key code: it is the numpad key, a key of its own (QWERTZ, Nordic) or
+		// Shift+= (US). The Shift a US plus needs is not part of the binding.
+		if (fixedKey == GLFW_KEY_KP_ADD || keyName == "+") return maskedMods == c.mods;
+		bool equalKey = keyName.size() == 1 ? keyName == "=" : fixedKey == GLFW_KEY_EQUAL;
+		return equalKey && maskedMods == (c.mods | GLFW_MOD_SHIFT);
+	}
+	if (maskedMods != c.mods) return false;
+	if (c.key >= GLFW_KEY_A && c.key <= GLFW_KEY_Z) {
+		// GLFW_KEY_A..Z equal the ASCII capitals. A single-byte name is authoritative, as in Rack's
+		// isKeyCommand(): the key labelled ";" on Dvorak sits at the US-Z position but is not Z.
+		if (keyName.size() == 1) return layoutLetter(keyName) == c.key;
+	}
+	return c.key == fixedKey;
+}
+
+bool KeyCombo::matches(int eventKey, int eventMods, const std::string& eventKeyName) const {
 	if (!valid()) return false;
-	return StoermelderPackOne::keyFix(eventKey) == key && (eventMods & RACK_MOD_MASK) == mods;
+	return comboMatches(*this, StoermelderPackOne::keyFix(eventKey), eventMods & RACK_MOD_MASK, eventKeyName);
 }
 
 std::string KeyCombo::toString() const {
@@ -268,7 +296,8 @@ void Keymap::registerAlias(const std::string& id, KeyCombo defaultCombo) {
 	}
 }
 
-const std::string& Keymap::lookup(int key, int mods, int action, const Contexts& contexts) const {
+const std::string& Keymap::lookup(int key, int mods, int action, const Contexts& contexts,
+                                   const std::string& keyName) const {
 	int fixedKey = StoermelderPackOne::keyFix(key);
 	int maskedMods = mods & RACK_MOD_MASK;
 	for (const auto& a : actions_) {
@@ -278,7 +307,7 @@ const std::string& Keymap::lookup(int key, int mods, int action, const Contexts&
 		if (action == GLFW_REPEAT && a.trigger != GLFW_REPEAT) continue;
 		if (!contexts.empty() && std::find(contexts.begin(), contexts.end(), a.context) == contexts.end()) continue;
 		for (const auto& c : a.combos) {
-			if (c.valid() && c.key == fixedKey && c.mods == maskedMods) return a.id;
+			if (c.valid() && comboMatches(c, fixedKey, maskedMods, keyName)) return a.id;
 		}
 	}
 	return EMPTY;
@@ -579,7 +608,7 @@ void KeymapHandlers::onTry(const std::string& id, Predicate when, TryHandler h) 
 	entries_.push_back(Entry{id, std::move(when), std::move(h)});
 }
 
-bool KeymapHandlers::dispatch(int key, int mods, int action) const {
+bool KeymapHandlers::dispatch(int key, int mods, int action, const std::string& keyName) const {
 	if (!keymap) return false;
 
 	bool exclusiveActive = false;
@@ -587,7 +616,7 @@ bool KeymapHandlers::dispatch(int key, int mods, int action) const {
 		if (gate()) { exclusiveActive = true; break; }
 	}
 
-	const std::string& id = keymap->lookup(key, mods, action, contexts);
+	const std::string& id = keymap->lookup(key, mods, action, contexts, keyName);
 	if (id.empty()) return exclusiveActive;   // even an unbound key is swallowed by a picker
 
 	// Pass 1: predicated entries, in registration order.

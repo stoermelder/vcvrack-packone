@@ -231,6 +231,23 @@ TEST_CASE("SysEx logging", "[MidiMon]") {
 		REQUIRE(textOf(entries[1]).find("f7") != std::string::npos);
 	}
 
+	SECTION("A long message is one hex line, whatever the chunking") {
+		rack::midi::Message big;
+		big.bytes.clear(); // Message starts with 3 default bytes
+		big.bytes.push_back(0xf0);
+		for (int i = 0; i < 60; i++) big.bytes.push_back(uint8_t(i));
+		big.bytes.push_back(0xf7);
+		module->showSysExMsg = true;
+		module->showSysExData = true;
+		module->processMidi(makeEx(MType::SYSEX, big));
+		auto entries = drain(module);
+		REQUIRE(entries.size() == 2);
+		REQUIRE(textOf(entries[0]) == "sysex (60 data bytes)");
+		REQUIRE(textOf(entries[1]).size() == 62 * 3);
+		REQUIRE(textOf(entries[1]).substr(0, 6) == "f0 00 ");
+		REQUIRE(textOf(entries[1]).substr(61 * 3) == "f7 ");
+	}
+
 	SECTION("Nothing logged when SysEx display is off") {
 		module->showSysExMsg = false;
 		module->showSysExData = false;
@@ -502,6 +519,39 @@ TEST_CASE("exportLogDialog routes through the UI save dialog", "[MidiMon][ui]") 
 		CHECK(mock.ui.messages[0].buttons == vcv::MessageButtons::OK);
 		CHECK(mock.ui.messages[0].msg.find("Could not write") != std::string::npos);
 	}
+
+	Test::destroyWidget(widget);
+}
+
+TEST_CASE("Log display: the lines scroll once they outgrow the area, and a view scrolled back stays put", "[MidiMon][Log]") {
+	Test::ModuleScaffold<MidiMonModule> mods;
+	auto module = mods.create("MidiMon");
+	auto widget = Test::createWidget<MidiMonWidget>(module);
+	rack::ui::ScrollWidget* scroll = widget->logScroll;
+	auto push = [&]() {
+		RawEntry r;
+		r.kind = RawEntry::Kind::DATE;
+		r.frame = 0;
+		module->midiLogMessages.push(r);
+		widget->step();
+		widget->logDisplay->step();
+	};
+
+	// The two header entries of the construction: nothing to scroll.
+	push();
+	REQUIRE(widget->logDisplay->box.size.y == scroll->box.size.y);
+
+	for (int i = 0; i < 100; i++) push();
+	REQUIRE(widget->logDisplay->box.size.y > scroll->box.size.y);
+
+	// Scrolled back, a new line does not move what is on screen; a clear starts over.
+	scroll->offset.y = 50.f;
+	push();
+	REQUIRE(scroll->offset.y == 50.f + widget->logDisplay->fontSize);
+	widget->resetLog();
+	widget->logDisplay->step();
+	REQUIRE(scroll->offset.y == 0.f);
+	REQUIRE(widget->logDisplay->box.size.y == scroll->box.size.y);
 
 	Test::destroyWidget(widget);
 }

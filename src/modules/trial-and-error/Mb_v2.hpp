@@ -39,6 +39,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	ui::SequentialLayout* modelContainer;
 
 	std::string search;
+	// "t=<prefix>" tokens parsed out of `search` (see textTagFiltersParse).
+	std::vector<TextTagFilter> textTagFilters;
 	std::string brand;
 	std::set<int> tagIds;
 	std::set<std::string> customTagFilter;
@@ -64,9 +66,11 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	void clear();
 	void updateZoom();
 	void navigateSelection(int key);
+	void dropHiddenSelection();
 	bool isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
 	bool hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
 	void onShow(const event::Show& e) override;
+	void onHover(const event::Hover& e) override;
 	void onHoverScroll(const event::HoverScroll& e) override;
 };
 

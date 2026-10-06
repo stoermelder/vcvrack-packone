@@ -56,6 +56,72 @@ static const char* SLUG = "TestModule";
 
 // KeyCombo grammar
 
+
+TEST_CASE("KeyCombo accepts + as the key", "[Keymap]") {
+	CHECK(KeyCombo("+") == KeyCombo(KeyCombo::KEY_PLUS, 0));
+	CHECK(KeyCombo("Ctrl++") == KeyCombo(KeyCombo::KEY_PLUS, RACK_MOD_CTRL));
+	CHECK(KeyCombo("Ctrl+Shift++") == KeyCombo(KeyCombo::KEY_PLUS, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+	CHECK(KeyCombo("Ctrl++").toString() == "Ctrl++");
+	// The numpad key alone keeps its own names.
+	CHECK(KeyCombo("KP +") == KeyCombo(GLFW_KEY_KP_ADD, 0));
+	CHECK(KeyCombo("Ctrl+KP +") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
+	// A trailing separator after a modifier is still invalid.
+	CHECK_FALSE(KeyCombo("Ctrl+").valid());
+	CHECK_FALSE(KeyCombo("Ctrl+++").valid());
+	// Round-trips through the canonical spelling.
+	CHECK(KeyCombo(KeyCombo("Ctrl++").toString()) == KeyCombo("Ctrl++"));
+}
+
+TEST_CASE("KeyCombo + matches every plus key", "[Keymap]") {
+	KeyCombo plus("Ctrl++");
+	// Numpad.
+	CHECK(plus.matches(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
+	CHECK(plus.matches(GLFW_KEY_KP_ADD, RACK_MOD_CTRL, "+"));
+	// QWERTZ: a key of its own, labelled "+", at the US "]" position.
+	CHECK(plus.matches(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL, "+"));
+	CHECK_FALSE(plus.matches(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL | GLFW_MOD_SHIFT, "+"));
+	// US: Shift+=, with or without a name.
+	CHECK(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT, "="));
+	CHECK(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+	CHECK_FALSE(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL, "="));
+	// The US "=" position named otherwise (QWERTZ "´") is not plus.
+	CHECK_FALSE(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT, "'"));
+	// Mods still have to agree.
+	CHECK_FALSE(plus.matches(GLFW_KEY_KP_ADD, 0));
+
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.zoom", "Zoom in", "ctx", "Ctrl++");
+	CHECK(km->lookup(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL, GLFW_PRESS, {}, "+") == "a.zoom");
+	CHECK(km->lookup(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT, GLFW_PRESS, {}, "=") == "a.zoom");
+	CHECK(km->lookup(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL, GLFW_PRESS) == "");
+}
+
+TEST_CASE("KeyCombo letter bindings follow the layout-aware key name", "[Keymap]") {
+	KeyCombo z("Ctrl+Z");
+	// QWERTZ: the key labelled Z sits at the US Y position, and the US Z position is labelled Y.
+	CHECK(z.matches(GLFW_KEY_Y, RACK_MOD_CTRL, "z"));
+	CHECK_FALSE(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, "y"));
+	// Dvorak: the US Z position is labelled ";" - a punctuation name never falls back to the key code.
+	CHECK_FALSE(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, ";"));
+	// No name, or a non-Latin letter: physical key code.
+	CHECK(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL));
+	CHECK(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, "\xD1\x8F"));
+	// Non-letters are always physical, whatever the name says.
+	KeyCombo one("Ctrl+1");
+	CHECK(one.matches(GLFW_KEY_1, RACK_MOD_CTRL, "&"));
+	CHECK_FALSE(one.matches(GLFW_KEY_2, RACK_MOD_CTRL, "1"));
+}
+
+TEST_CASE("Keymap::lookup resolves letters by layout name when given", "[Keymap]") {
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.undo", "Undo", "ctx", "Ctrl+Z");
+	CHECK(km->lookup(GLFW_KEY_Y, RACK_MOD_CTRL, GLFW_PRESS, {}, "z") == "a.undo");
+	CHECK(km->lookup(GLFW_KEY_Z, RACK_MOD_CTRL, GLFW_PRESS, {}, "y") == "");
+	CHECK(km->lookup(GLFW_KEY_Z, RACK_MOD_CTRL, GLFW_PRESS) == "a.undo");
+}
+
 TEST_CASE("KeyCombo round-trips every table entry through toString/parse", "[Keymap]") {
 	const char* specs[] = {
 		"Space", "Escape", "Enter", "Tab", "Backspace", "Up", "Down", "Left", "Right",

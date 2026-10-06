@@ -1070,7 +1070,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	void onSelectKey(const SelectKeyEvent& e) override {
 		if (!module || !module->sim) return;
-		if (handlers.dispatch(e.key, e.mods, e.action)) e.consume(this);
+		if (handlers.dispatch(e.key, e.mods, e.action, e.keyName)) e.consume(this);
 	}
 
 	// Registers this widget's own behaviour against the shared keymap's action ids - called

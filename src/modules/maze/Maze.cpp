@@ -815,6 +815,11 @@ struct MazeGridWidget : FramebufferWidget {
 		FramebufferWidget::step();
 	}
 
+	// Suppress the inherited layer-0 blit: the cached image is painted once, in drawLayer(1)
+	// below. Left alone, FramebufferWidget::draw() would also run in layer 0, drawing the grid
+	// a second time and blending the dimmed layer-1 copy over it instead of over the panel.
+	void draw(const DrawArgs& args) override {}
+
 	void drawLayer(const DrawArgs& args, int layer) override {
 		// FramebufferWidget only caches draw() (layer 0) content -- its own
 		// drawLayer() is the plain Widget:: default, which does not paint the

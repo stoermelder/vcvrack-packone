@@ -101,6 +101,10 @@ struct BrowserSearchField : ui::TextField {
 
 	std::shared_ptr<Keymap> keymap = registerActions();
 	KeymapHandlers handlers{keymap, {"Browser", "Navigation"}};
+	// The hovered-module shortcuts, applied to the keyboard-selected module. Separate from
+	// `handlers` so its "ModelBox" actions can't shadow the field's own on a shared key. Declines
+	// without a selection, leaving the key to the hovered module box.
+	KeymapHandlers selectedModelHandlers{keymap, {"ModelBox"}};
 
 	DropdownChoiceContainer* openDropdown() {
 		return APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
@@ -111,19 +115,9 @@ struct BrowserSearchField : ui::TextField {
 		auto browse = handlers.scope([this]{ return openDropdown() == nullptr; });
 		browse.on("browser.v2.nav.up",   [this]{ browser->navigateSelection(GLFW_KEY_UP); });
 		browse.on("browser.v2.nav.down", [this]{ browser->navigateSelection(GLFW_KEY_DOWN); });
-		browse.onTry("browser.v2.nav.left", [this]() -> bool {
-			if (!pluginSettings.mbArrowKeyNavigation) return false;
-			browser->navigateSelection(GLFW_KEY_LEFT);
-			return true;
-		});
-		browse.onTry("browser.v2.nav.right", [this]() -> bool {
-			if (!pluginSettings.mbArrowKeyNavigation) return false;
-			browser->navigateSelection(GLFW_KEY_RIGHT);
-			return true;
-		});
-		browse.onTry("browser.close", [this]() -> bool {
-			// Sticky side view stays open; only closable from its own context menu item.
-			if (sideView) return false;
+		browse.on("browser.v2.nav.left",  [this]{ browser->navigateSelection(GLFW_KEY_LEFT); });
+		browse.on("browser.v2.nav.right", [this]{ browser->navigateSelection(GLFW_KEY_RIGHT); });
+		browse.on("browser.close", [this]{
 			Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 			overlay->hide();
 			return true;
@@ -161,6 +155,7 @@ struct BrowserSearchField : ui::TextField {
 			{"browser.v2.layout.brand",     &ModuleBrowser::brandButton},
 			{"browser.v2.layout.tag",       &ModuleBrowser::tagButton},
 			{"browser.v2.layout.customtag", &ModuleBrowser::customTagButton},
+			{"browser.v2.layout.width",     &ModuleBrowser::widthButton},
 		};
 		for (const Layout& l : kLayouts) {
 			ui::ChoiceButton* ModuleBrowser::* button = l.button;
@@ -178,6 +173,23 @@ struct BrowserSearchField : ui::TextField {
 				}
 			});
 		}
+
+		selectedModelHandlers.onTry("modelbox.favorite.toggle", [this]() -> bool {
+			if (!browser->selectedModel) return false;
+			toggleModelFavorite(browser->selectedModel);
+			if (browser->favorite) {
+				browser->refresh(false);
+				browser->dropHiddenSelection();
+			}
+			return true;
+		});
+		selectedModelHandlers.onTry("modelbox.hidden.toggle", [this]() -> bool {
+			if (!browser->selectedModel) return false;
+			toggleModelHidden(browser->selectedModel);
+			browser->refresh(false);
+			browser->dropHiddenSelection();
+			return true;
+		});
 	}
 
 	void step() override {
@@ -202,7 +214,11 @@ struct BrowserSearchField : ui::TextField {
 		dropDown = openDropdown();
 
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			if (handlers.dispatch(e.key, e.mods, e.action)) {
+			if (handlers.dispatch(e.key, e.mods, e.action, e.keyName)) {
+				e.consume(this);
+				return;
+			}
+			if (!dropDown && selectedModelHandlers.dispatch(e.key, e.mods, e.action, e.keyName)) {
 				e.consume(this);
 				return;
 			}
@@ -852,14 +868,21 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 	// Use effective tag IDs (with predefined tag modifications applied)
 	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
-		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
+		if (effectiveTagIds.find(tagId) == effectiveTagIds.end()) {
 			return false;
+		}
 	}
 
 	// Filter custom tags
 	for (const auto& ct : customTagFilter) {
-		if (!customTagHas(model, ct))
+		if (!customTagHas(model, ct)) {
 			return false;
+		}
+	}
+
+	// Filter tags typed into the search field ("t=prefix")
+	if (!textTagFiltersMatch(model, effectiveTagIds, textTagFilters)) {
+		return false;
 	}
 
 	// Filter hidden modules (does not use the Rack's "hidden" property)
@@ -897,6 +920,7 @@ void ModuleBrowser::updateZoom() {
 
 void ModuleBrowser::refresh(bool scrollTop) {
 	if (scrollTop) modelScroll->offset = math::Vec();
+	std::string searchQuery = textTagFiltersParse(search, textTagFilters);
 	prefilteredModelScores.clear();
 	// Filtering/sorting is user interaction; back off warming for a few frames.
 	prewarmer.reset();
@@ -974,7 +998,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		}
 	};
 
-	if (search.empty()) {
+	if (searchQuery.empty()) {
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);
 			prefilteredModelScores[m->model] = 1.f;
@@ -983,7 +1007,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		applyBrowserSort();
 	}
 	else {
-		auto results = modelDb.search(search);
+		auto results = modelDb.search(searchQuery);
 		for (auto& result : results) {
 			prefilteredModelScores[result.key] = result.score;
 		}
@@ -1111,6 +1135,23 @@ void ModuleBrowser::navigateSelection(int key) {
 	Rect r = next->box;
 	r.pos = r.pos.plus(modelContainer->box.pos).plus(modelMargin->box.pos);
 	modelScroll->scrollTo(r);
+}
+
+// A selected module that a filter change has just hidden must not stay the target of Enter and
+// of the hotkeys.
+void ModuleBrowser::dropHiddenSelection() {
+	if (!selectedModel) return;
+	for (Widget* w : modelContainer->children) {
+		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
+		if (mb->visible && mb->model == selectedModel) return;
+	}
+	selectedModel = nullptr;
+}
+
+// Moving the mouse hands the module hotkeys and Enter back to the hovered module.
+void ModuleBrowser::onHover(const event::Hover& e) {
+	if (e.mouseDelta.x != 0.f || e.mouseDelta.y != 0.f) selectedModel = nullptr;
+	OpaqueWidget::onHover(e);
 }
 
 void ModuleBrowser::clear() {

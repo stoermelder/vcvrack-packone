@@ -94,6 +94,22 @@ std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
 
 
+// Text Tag Filters
+//
+// "t=<prefix>" tokens typed into a browser's search field. A filter passes a model that has ANY
+// predefined or custom tag starting with the prefix (case-insensitive); all filters must pass.
+
+struct TextTagFilter {
+	std::set<int> tagIds;
+	std::set<std::string> customTags;
+};
+
+// Extracts the "t=" tokens from `search` into `filters` (replacing its contents) and returns
+// the remaining words as the free-text query. A bare "t=" is plain text.
+std::string textTagFiltersParse(const std::string& search, std::vector<TextTagFilter>& filters);
+bool textTagFiltersMatch(Model* model, const std::set<int>& effectiveTagIds, const std::vector<TextTagFilter>& filters);
+
+
 // Predefined Tags
 
 // Tag modifications: predefined tags that are added/removed per model

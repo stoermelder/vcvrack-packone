@@ -1459,7 +1459,7 @@ struct ModelBoxBase : widget::OpaqueWidget {
 					refreshBrowser();
 				});
 			}
-			if (keyHandlers.dispatch(e.key, e.mods, e.action)) e.consume(this);
+			if (keyHandlers.dispatch(e.key, e.mods, e.action, e.keyName)) e.consume(this);
 		}
 		OpaqueWidget::onHoverKey(e);
 	}
