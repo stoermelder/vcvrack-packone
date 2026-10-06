@@ -115,16 +115,8 @@ struct BrowserSearchField : ui::TextField {
 		auto browse = handlers.scope([this]{ return openDropdown() == nullptr; });
 		browse.on("browser.v2.nav.up",   [this]{ browser->navigateSelection(GLFW_KEY_UP); });
 		browse.on("browser.v2.nav.down", [this]{ browser->navigateSelection(GLFW_KEY_DOWN); });
-		browse.onTry("browser.v2.nav.left", [this]() -> bool {
-			if (!pluginSettings.mbArrowKeyNavigation) return false;
-			browser->navigateSelection(GLFW_KEY_LEFT);
-			return true;
-		});
-		browse.onTry("browser.v2.nav.right", [this]() -> bool {
-			if (!pluginSettings.mbArrowKeyNavigation) return false;
-			browser->navigateSelection(GLFW_KEY_RIGHT);
-			return true;
-		});
+		browse.on("browser.v2.nav.left",  [this]{ browser->navigateSelection(GLFW_KEY_LEFT); });
+		browse.on("browser.v2.nav.right", [this]{ browser->navigateSelection(GLFW_KEY_RIGHT); });
 		browse.on("browser.close", [this]{
 			Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 			overlay->hide();

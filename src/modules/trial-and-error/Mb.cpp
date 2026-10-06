@@ -7,6 +7,7 @@
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
 #include "Mb_manifests.hpp"
+#include "MbKeymap.hpp"
 #include "Mb_autotag.hpp"
 #include <sstream>
 #include "Mb_autotag_widgets.hpp"
@@ -1181,9 +1182,11 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		// A shortcut to the keymap: enabled while Left/Right have a binding. Disabling unbinds
+		// them (the search field then moves its text cursor), enabling restores the defaults.
 		menu->addChild(createCheckMenuItem("Arrow keys select modules (v2)", "",
-			[]() { return pluginSettings.mbArrowKeyNavigation; },
-			[]() { pluginSettings.mbArrowKeyNavigation ^= true; }
+			[]() { return arrowKeyNavigationEnabled(registerActions()); },
+			[]() { setArrowKeyNavigation(registerActions(), !arrowKeyNavigationEnabled(registerActions())); }
 		));
 		menu->addChild(createBoolPtrMenuItem("Use VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
 		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));

@@ -173,7 +173,7 @@ The keyboard shortcuts of the browser are stored in `<Rack user folder>/Stoermel
 | `browser.hidden.toggle` | `Shift+Space`, `Ctrl+Space` | Toggle listing of hidden modules |
 | `modelbox.favorite.toggle` | `Ctrl+F` | Toggle favorite status of the hovered module |
 | `modelbox.hidden.toggle` | `Ctrl+H` | Toggle hidden status of the hovered module |
-| `browser.v2.nav.up`, `.down`, `.left`, `.right` | `Up`, `Down`, `Left`, `Right` | Move the selection in the module grid (*v2 mod* only; `left`/`right` are subject to the option *Arrow keys select modules*) |
+| `browser.v2.nav.up`, `.down`, `.left`, `.right` | `Up`, `Down`, `Left`, `Right` | Move the selection in the module grid (*v2 mod* only; unbind `left`/`right` to use the keys for the text cursor, see option *Arrow keys select modules*) |
 | `browser.v2.layout.brand`, `.tag`, `.customtag`, `.width` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Open the Brand, Tag, Custom Tag or Width dropdown (*v2 mod* only) |
 
 ## Tips
@@ -194,7 +194,7 @@ The keyboard shortcuts of the browser are stored in `<Rack user folder>/Stoermel
 
 - **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
 
-- **Arrow keys select modules (v2)** — Enabled by default, `←`/`→` move the selection to the previous/next module in the *v2 mod* browser's grid instead of moving the text cursor within the search field (`↓`/`↑` always navigate the grid regardless of this setting). Disable this option if you'd rather have `←`/`→` behave like a normal text field and move the cursor while typing a search term.
+- **Arrow keys select modules (v2)** — Enabled by default, `←`/`→` move the selection to the previous/next module in the *v2 mod* browser's grid instead of moving the text cursor within the search field (`↓`/`↑` always navigate the grid regardless of this setting). Disable this option if you'd rather have `←`/`→` behave like a normal text field and move the cursor while typing a search term. The option is a shortcut to the key-mapping: disabling it unbinds `browser.v2.nav.left` and `browser.v2.nav.right` in `Mb.jsonc`, enabling it restores their default keys. It counts as enabled while either action has a binding, so custom bindings (e.g. `Ctrl+Left`) are kept until you disable it.
 
 - **Pre-render previews when idle** — Module previews are normally created the moment they first
 scroll into view, which can make scrolling feel sluggish on slower systems or with a large module
@@ -250,7 +250,7 @@ itself. Disabled by default.
 - v2.7.0
     - Added tag-filtering using "t=..." in the search field
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
-    - Added option to disable arrow keys selecting modules in *v2 mod* browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
     - Added option to pre-warm module preview
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk

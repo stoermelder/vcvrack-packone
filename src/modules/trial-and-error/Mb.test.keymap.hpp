@@ -146,6 +146,85 @@ TEST_CASE("MB keymap: rebinding replaces the default", "[Mb][Widget][Keymap]") {
 	}
 }
 
+// Unbinding Left/Right in the keymap hands those keys to the search field's text cursor, which
+// is what the "Arrow keys select modules" option does by other means.
+TEST_CASE("MB keymap: unbinding Left/Right moves the text cursor instead of the selection", "[Mb][Widget][Keymap]") {
+	KeymapFixture fx;
+	rack::ui::TextField* field = fx.browser->searchField;
+	fx.typeText("abc");
+	REQUIRE(field->cursor == 3);
+
+	SECTION("Bound (default): Left/Right navigate the results, cursor stays put") {
+		REQUIRE(fx.press(GLFW_KEY_LEFT));
+		REQUIRE(field->cursor == 3);
+		REQUIRE(fx.press(GLFW_KEY_RIGHT));
+		REQUIRE(field->cursor == 3);
+	}
+
+	SECTION("Unbound: Left/Right move the text cursor") {
+		fx.km->unbind("browser.v2.nav.left");
+		fx.km->unbind("browser.v2.nav.right");
+
+		fx.press(GLFW_KEY_LEFT);
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 1);
+		fx.press(GLFW_KEY_RIGHT);
+		REQUIRE(field->cursor == 2);
+	}
+
+	SECTION("Unbinding only Left leaves Right navigating the results") {
+		fx.km->unbind("browser.v2.nav.left");
+
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 2);
+		REQUIRE(fx.press(GLFW_KEY_RIGHT));
+		REQUIRE(field->cursor == 2);
+	}
+
+	SECTION("Up/Down keep navigating when Left/Right are unbound") {
+		fx.km->unbind("browser.v2.nav.left");
+		fx.km->unbind("browser.v2.nav.right");
+
+		REQUIRE(fx.press(GLFW_KEY_DOWN));
+		REQUIRE(fx.press(GLFW_KEY_UP));
+		REQUIRE(field->cursor == 3);
+	}
+}
+
+// The "Arrow keys select modules (v2)" menu option is a shortcut to the same two bindings.
+TEST_CASE("MB keymap: the arrow-key menu option binds and unbinds Left/Right", "[Mb][Widget][Keymap]") {
+	KeymapFixture fx;
+	rack::ui::TextField* field = fx.browser->searchField;
+	fx.typeText("abc");
+
+	REQUIRE(arrowKeyNavigationEnabled(fx.km));
+
+	SECTION("Disabling unbinds both actions and frees the text cursor") {
+		setArrowKeyNavigation(fx.km, false);
+		REQUIRE_FALSE(arrowKeyNavigationEnabled(fx.km));
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 2);
+	}
+
+	SECTION("Enabling restores the default keys") {
+		setArrowKeyNavigation(fx.km, false);
+		setArrowKeyNavigation(fx.km, true);
+		REQUIRE(arrowKeyNavigationEnabled(fx.km));
+		REQUIRE(fx.press(GLFW_KEY_LEFT));
+		REQUIRE(field->cursor == 3);
+	}
+
+	SECTION("A custom binding on one action counts as enabled") {
+		fx.km->unbind("browser.v2.nav.right");
+		fx.km->bind("browser.v2.nav.left", KeyCombo("Ctrl+Left"));
+		REQUIRE(arrowKeyNavigationEnabled(fx.km));
+		fx.press(GLFW_KEY_LEFT);
+		REQUIRE(field->cursor == 2);
+		REQUIRE(fx.press(GLFW_KEY_LEFT, RACK_MOD_CTRL));
+		REQUIRE(field->cursor == 2);
+	}
+}
+
 TEST_CASE("MB keymap: the *.always actions are unbound and ignore the search text", "[Mb][Widget][Keymap]") {
 	KeymapFixture fx;
 
