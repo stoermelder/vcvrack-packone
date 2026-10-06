@@ -61,6 +61,7 @@ static const KeyNameEntry kPrintableKeyNames[] = {
 	{GLFW_KEY_PERIOD, "."}, {GLFW_KEY_SLASH, "/"}, {GLFW_KEY_SEMICOLON, ";"},
 	{GLFW_KEY_EQUAL, "="}, {GLFW_KEY_LEFT_BRACKET, "["}, {GLFW_KEY_BACKSLASH, "\\"},
 	{GLFW_KEY_RIGHT_BRACKET, "]"}, {GLFW_KEY_GRAVE_ACCENT, "`"},
+	{KeyCombo::KEY_PLUS, "+"},
 };
 
 // Extra parse-only aliases so a user writing keyboard.hpp's keyName() spelling by analogy
@@ -72,9 +73,6 @@ static const KeyAlias kKeyAliases[] = {
 	{"PRINT", GLFW_KEY_PRINT_SCREEN},
 	{"KP /", GLFW_KEY_KP_DIVIDE}, {"KP *", GLFW_KEY_KP_MULTIPLY},
 	{"KP -", GLFW_KEY_KP_SUBTRACT}, {"KP +", GLFW_KEY_KP_ADD}, {"KP .", GLFW_KEY_KP_DECIMAL},
-	// GLFW has no plus key (on most layouts it is Shift+= or the numpad key), so a bare "+" names
-	// the numpad one.
-	{"+", GLFW_KEY_KP_ADD},
 	{"W1", GLFW_KEY_WORLD_1}, {"W2", GLFW_KEY_WORLD_2},
 };
 
@@ -181,7 +179,15 @@ static int layoutLetter(const std::string& keyName) {
 	return 0;
 }
 
-static bool comboMatchesKey(const KeyCombo& c, int fixedKey, const std::string& keyName) {
+static bool comboMatches(const KeyCombo& c, int fixedKey, int maskedMods, const std::string& keyName) {
+	if (c.key == KeyCombo::KEY_PLUS) {
+		// GLFW has no plus key code: it is the numpad key, a key of its own (QWERTZ, Nordic) or
+		// Shift+= (US). The Shift a US plus needs is not part of the binding.
+		if (fixedKey == GLFW_KEY_KP_ADD || keyName == "+") return maskedMods == c.mods;
+		bool equalKey = keyName.size() == 1 ? keyName == "=" : fixedKey == GLFW_KEY_EQUAL;
+		return equalKey && maskedMods == (c.mods | GLFW_MOD_SHIFT);
+	}
+	if (maskedMods != c.mods) return false;
 	if (c.key >= GLFW_KEY_A && c.key <= GLFW_KEY_Z) {
 		// GLFW_KEY_A..Z equal the ASCII capitals. A single-byte name is authoritative, as in Rack's
 		// isKeyCommand(): the key labelled ";" on Dvorak sits at the US-Z position but is not Z.
@@ -192,8 +198,7 @@ static bool comboMatchesKey(const KeyCombo& c, int fixedKey, const std::string& 
 
 bool KeyCombo::matches(int eventKey, int eventMods, const std::string& eventKeyName) const {
 	if (!valid()) return false;
-	return comboMatchesKey(*this, StoermelderPackOne::keyFix(eventKey), eventKeyName)
-		&& (eventMods & RACK_MOD_MASK) == mods;
+	return comboMatches(*this, StoermelderPackOne::keyFix(eventKey), eventMods & RACK_MOD_MASK, eventKeyName);
 }
 
 std::string KeyCombo::toString() const {
@@ -302,7 +307,7 @@ const std::string& Keymap::lookup(int key, int mods, int action, const Contexts&
 		if (action == GLFW_REPEAT && a.trigger != GLFW_REPEAT) continue;
 		if (!contexts.empty() && std::find(contexts.begin(), contexts.end(), a.context) == contexts.end()) continue;
 		for (const auto& c : a.combos) {
-			if (c.valid() && c.mods == maskedMods && comboMatchesKey(c, fixedKey, keyName)) return a.id;
+			if (c.valid() && comboMatches(c, fixedKey, maskedMods, keyName)) return a.id;
 		}
 	}
 	return EMPTY;

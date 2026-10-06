@@ -58,9 +58,11 @@ static const char* SLUG = "TestModule";
 
 
 TEST_CASE("KeyCombo accepts + as the key", "[Keymap]") {
-	CHECK(KeyCombo("+") == KeyCombo(GLFW_KEY_KP_ADD, 0));
-	CHECK(KeyCombo("Ctrl++") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
-	CHECK(KeyCombo("Ctrl+Shift++") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+	CHECK(KeyCombo("+") == KeyCombo(KeyCombo::KEY_PLUS, 0));
+	CHECK(KeyCombo("Ctrl++") == KeyCombo(KeyCombo::KEY_PLUS, RACK_MOD_CTRL));
+	CHECK(KeyCombo("Ctrl+Shift++") == KeyCombo(KeyCombo::KEY_PLUS, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+	CHECK(KeyCombo("Ctrl++").toString() == "Ctrl++");
+	// The numpad key alone keeps its own names.
 	CHECK(KeyCombo("KP +") == KeyCombo(GLFW_KEY_KP_ADD, 0));
 	CHECK(KeyCombo("Ctrl+KP +") == KeyCombo(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
 	// A trailing separator after a modifier is still invalid.
@@ -68,6 +70,31 @@ TEST_CASE("KeyCombo accepts + as the key", "[Keymap]") {
 	CHECK_FALSE(KeyCombo("Ctrl+++").valid());
 	// Round-trips through the canonical spelling.
 	CHECK(KeyCombo(KeyCombo("Ctrl++").toString()) == KeyCombo("Ctrl++"));
+}
+
+TEST_CASE("KeyCombo + matches every plus key", "[Keymap]") {
+	KeyCombo plus("Ctrl++");
+	// Numpad.
+	CHECK(plus.matches(GLFW_KEY_KP_ADD, RACK_MOD_CTRL));
+	CHECK(plus.matches(GLFW_KEY_KP_ADD, RACK_MOD_CTRL, "+"));
+	// QWERTZ: a key of its own, labelled "+", at the US "]" position.
+	CHECK(plus.matches(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL, "+"));
+	CHECK_FALSE(plus.matches(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL | GLFW_MOD_SHIFT, "+"));
+	// US: Shift+=, with or without a name.
+	CHECK(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT, "="));
+	CHECK(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+	CHECK_FALSE(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL, "="));
+	// The US "=" position named otherwise (QWERTZ "´") is not plus.
+	CHECK_FALSE(plus.matches(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT, "'"));
+	// Mods still have to agree.
+	CHECK_FALSE(plus.matches(GLFW_KEY_KP_ADD, 0));
+
+	Fixture f;
+	auto km = Keymaps::open(SLUG);
+	km->registerAction("a.zoom", "Zoom in", "ctx", "Ctrl++");
+	CHECK(km->lookup(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL, GLFW_PRESS, {}, "+") == "a.zoom");
+	CHECK(km->lookup(GLFW_KEY_EQUAL, RACK_MOD_CTRL | GLFW_MOD_SHIFT, GLFW_PRESS, {}, "=") == "a.zoom");
+	CHECK(km->lookup(GLFW_KEY_RIGHT_BRACKET, RACK_MOD_CTRL, GLFW_PRESS) == "");
 }
 
 TEST_CASE("KeyCombo letter bindings follow the layout-aware key name", "[Keymap]") {

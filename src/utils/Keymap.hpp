@@ -28,6 +28,10 @@ struct KeyCombo {
 	int key = GLFW_KEY_UNKNOWN;   // GLFW key code, already keyFix()'d
 	int mods = 0;                 // GLFW_MOD_* mask, RACK_MOD_MASK-normalised
 
+	// "+" has no GLFW key code, so it gets one GLFW leaves unused. It matches the numpad plus, a
+	// key labelled "+" (QWERTZ, Nordic) and Shift+= (US) - see matches().
+	enum { KEY_PLUS = '+' };
+
 	KeyCombo() {}
 	KeyCombo(int key, int mods = 0) : key(key), mods(mods) {}
 	// Implicit, so `registerAction(..., "Ctrl+Z")` just works. Parses the combo grammar:
@@ -48,7 +52,9 @@ struct KeyCombo {
 	// follows the key *labelled* Z on QWERTZ/AZERTY/Dvorak instead of the US key position, and
 	// a key labelled with punctuation never matches a letter. Only an empty or multi-byte name
 	// (a non-Latin layout's letter) falls back to the key-code match.
-	// Everything that is not a letter is always matched by key code.
+	// Everything that is not a letter is always matched by key code, except KEY_PLUS: it matches
+	// the numpad plus or a key named "+", and on US layouts the "=" key with Shift held on top of
+	// the binding's own mods (so "Ctrl++" fires on Ctrl+Shift+=).
 	bool matches(int eventKey, int eventMods, const std::string& eventKeyName = "") const;
 
 	// Canonical, portable spelling ("Ctrl+Shift+Z") — round-trips through the parser and is
