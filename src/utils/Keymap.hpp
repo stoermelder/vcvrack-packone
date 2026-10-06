@@ -44,9 +44,10 @@ struct KeyCombo {
 	// GLFW_MOD_CAPS_LOCK bit never breaks a match.
 	//
 	// `eventKeyName` is the event's layout-aware key name (Rack's e.keyName, glfwGetKeyName()).
-	// Letter bindings (A-Z) compare against it when it is a single ASCII letter, so Ctrl+Z
-	// follows the key *labelled* Z on QWERTZ/AZERTY/Dvorak instead of the US key position. Any
-	// other name (empty, or a non-Latin layout's letter) falls back to the key-code match.
+	// Letter bindings (A-Z) compare against it when it is a single character, so Ctrl+Z
+	// follows the key *labelled* Z on QWERTZ/AZERTY/Dvorak instead of the US key position, and
+	// a key labelled with punctuation never matches a letter. Only an empty or multi-byte name
+	// (a non-Latin layout's letter) falls back to the key-code match.
 	// Everything that is not a letter is always matched by key code.
 	bool matches(int eventKey, int eventMods, const std::string& eventKeyName = "") const;
 

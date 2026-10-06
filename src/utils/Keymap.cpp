@@ -183,9 +183,9 @@ static int layoutLetter(const std::string& keyName) {
 
 static bool comboMatchesKey(const KeyCombo& c, int fixedKey, const std::string& keyName) {
 	if (c.key >= GLFW_KEY_A && c.key <= GLFW_KEY_Z) {
-		// GLFW_KEY_A..Z equal the ASCII capitals.
-		int letter = layoutLetter(keyName);
-		if (letter) return letter == c.key;
+		// GLFW_KEY_A..Z equal the ASCII capitals. A single-byte name is authoritative, as in Rack's
+		// isKeyCommand(): the key labelled ";" on Dvorak sits at the US-Z position but is not Z.
+		if (keyName.size() == 1) return layoutLetter(keyName) == c.key;
 	}
 	return c.key == fixedKey;
 }

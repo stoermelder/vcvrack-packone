@@ -75,6 +75,8 @@ TEST_CASE("KeyCombo letter bindings follow the layout-aware key name", "[Keymap]
 	// QWERTZ: the key labelled Z sits at the US Y position, and the US Z position is labelled Y.
 	CHECK(z.matches(GLFW_KEY_Y, RACK_MOD_CTRL, "z"));
 	CHECK_FALSE(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, "y"));
+	// Dvorak: the US Z position is labelled ";" - a punctuation name never falls back to the key code.
+	CHECK_FALSE(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, ";"));
 	// No name, or a non-Latin letter: physical key code.
 	CHECK(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL));
 	CHECK(z.matches(GLFW_KEY_Z, RACK_MOD_CTRL, "\xD1\x8F"));
