@@ -14,7 +14,7 @@ enum FADE_LENGTH {
 template<int PORTS>
 struct IntermixBase {
 	typedef float (*IntermixMatrix)[PORTS];
-	virtual IntermixMatrix expGetCurrentMatrix() { return NULL; }
+	virtual IntermixMatrix expGetCurrentMatrix() = 0;
 	virtual int expGetChannelCount() { return 0; }
 	virtual void expSetFade(int i, float* fadeIn, float* fadeOut) { }
 };
@@ -91,6 +91,43 @@ struct IntermixChainModule : Module, ModuleChangeListener {
 
 	/** Subclasses with outputs reset them here when the chain disconnects. */
 	virtual void resetOutputs() { }
+};
+
+
+/** LED display showing MODULE::input (a 0-based row index into the chain
+ * head's matrix) as a 1-based two-digit number, with a right-click context
+ * menu to select it. Shared by IntermixEnv and IntermixFade, whose "input"
+ * displays are otherwise identical.
+ */
+template<typename MODULE, int PORTS>
+struct InputLedDisplay : StoermelderLedDisplay {
+	MODULE* module;
+
+	void step() override {
+		if (module) {
+			text = string::f("%02d", module->input + 1);
+		}
+		else {
+			text = "";
+		}
+		StoermelderLedDisplay::step();
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		StoermelderLedDisplay::onButton(e);
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Input"));
+		for (int i = 0; i < PORTS; i++) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->input, i));
+		}
+	}
 };
 
 

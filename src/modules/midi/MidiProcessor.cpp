@@ -1,18 +1,22 @@
 #include "MidiProcessor.hpp"
 #include <algorithm>
+#include <cassert>
 
 namespace StoermelderPackOne {
 
 MessageEx::MessageEx(const rack::midi::Message& msg) {
-	this->msg = msg;
-	this->frame = msg.frame;
+	source = &msg;
+	frame = msg.frame;
+	size = msg.getSize();
+	for (int i = 0; i < 3 && i < size; i++) bytes[i] = msg.bytes[i];
 }
 
+// Same fallbacks as rack::midi::Message for messages shorter than the accessor.
 uint8_t MessageEx::getChannel() const {
-	return msg.getChannel();
+	return size < 1 ? 0 : (bytes[0] & 0xf);
 }
 uint8_t MessageEx::getNote() const {
-	return msg.getNote();
+	return size < 2 ? 0 : bytes[1];
 }
 
 int16_t MessageEx::getValue() const {
@@ -24,7 +28,7 @@ int16_t MessageEx::getValue() const {
 		case Type::SONG_POINTER:
 			return extraValue;
 		default:
-			return msg.getValue();
+			return size < 3 ? 0 : bytes[2];
 	}
 }
 int16_t MessageEx::getParamNumber() const {
@@ -36,26 +40,18 @@ bool MessageEx::hasValue() const {
 }
 
 int MessageEx::getSysExSize() const {
-	return type == Type::SYSEX ? msg.getSize() : 0;
+	return type == Type::SYSEX ? size : 0;
 }
 
 unsigned char MessageEx::getSysExByte(int i) const {
-	return type == Type::SYSEX ? msg.bytes[i] : 0;
+	return type == Type::SYSEX ? source->bytes[i] : 0;
 }
 
 std::vector<unsigned char> MessageEx::getSysExBytes() const {
-	return type == Type::SYSEX ? msg.bytes : std::vector<unsigned char>();
+	return type == Type::SYSEX ? source->bytes : std::vector<unsigned char>();
 }
 
-// ownedInput is initialized first (members initialize in declaration order), so
-// its get() below is valid. Allocated only when nothing is injected.
-MidiProcessor::MidiProcessor(rack::midi::InputQueue* injected)
-	: ownedInput(injected ? nullptr : new rack::midi::InputQueue())
-	, input(injected ? injected : ownedInput.get()) {
-	reset();
-}
-
-void MidiProcessor::reset() {
+void MidiDecoder::reset() {
 	for (int i = 0; i < 16; ++i) {
 		ccNrpnParam[i] = -1;
 		ccRpnParam[i] = -1;
@@ -66,114 +62,58 @@ void MidiProcessor::reset() {
 	}
 }
 
-rack::midi::InputQueue& MidiProcessor::getInput() {
-	return *input;
-}
-
-
-void MidiProcessor::processBypass(int64_t frame) {
-	// Reuse the member scratch message so the audio thread never heap-allocates
-	// a `midi::Message` per pump.
-	rack::midi::Message& msg = scratchMidiMessage;
-	while (input->tryPop(&msg, frame)) {
-		(void)0;
-	}
-}
-
-void MidiProcessor::process(int64_t frame) {
-	rack::midi::Message& msg = scratchMidiMessage;
-	while (input->tryPop(&msg, frame)) {
-		processMessage(msg);
-	}
-}
-
-void MidiProcessor::processMessage(const rack::midi::Message& msg) {
-	uint8_t status = msg.getStatus();
-	MessageEx m = MessageEx(msg);
-	switch (status) {
-		case 0x9:   // note on
-			m.type = MessageEx::Type::NOTE_ON;
-			notify(m);
-			break;
-		case 0x8:   // note off
-			m.type = MessageEx::Type::NOTE_OFF;
-			notify(m);
-			break;
-		case 0xa:   // key pressure
-			m.type = MessageEx::Type::KEY_PRESSURE;
-			notify(m);
-			break;
-		case 0xb:   // cc
-			m.type = MessageEx::Type::CC;
-			// Must be queried before processCc() below, which mutates the state
-			// it reads: for CC 6/38 the question is whether a parameter was
-			// active when this message arrived, not after it landed. Do not
-			// reorder these -- the raw CC deliberately notifies before its
-			// assembled counterpart.
-			m.isComponent = isComponentCc(msg);
-			notify(m);
-			processCc(msg); // extended CC handling
-			break;
-		case 0xc:   // program change
-			m.type = MessageEx::Type::PROGRAM_CHANGE;
-			notify(m);
-			break;
-		case 0xd:   // channel pressure
-			m.type = MessageEx::Type::CHANNEL_PRESSURE;
-			notify(m);
-			break;
-		case 0xe:   // pitch wheel
-			m.type = MessageEx::Type::PITCH_BEND;
-			m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-			notify(m);
-			break;
-		case 0xf: { // system
-			uint8_t sys = msg.getChannel();
-			switch (sys) {
-				case 0x0: // sysex
-					m.type = MessageEx::Type::SYSEX;
-					notify(m);
-					break;
-				case 0x2: // song pointer
-					m.type = MessageEx::Type::SONG_POINTER;
-					m.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-					notify(m);
-					break;
-				case 0x3: // song select
-					m.type = MessageEx::Type::SONG_SELECT;
-					notify(m);
-					break;
-				case 0x8: // timing clock
-					m.type = MessageEx::Type::CLOCK;
-					notify(m);
-					break;
-				case 0xa: // start
-					m.type = MessageEx::Type::START;
-					notify(m);
-					break;
-				case 0xb: // continue
-					m.type = MessageEx::Type::CONTINUE;
-					notify(m); 
-					break;
-				case 0xc: // stop
-					m.type = MessageEx::Type::STOP;
-					notify(m);
-					break;
-				case 0xf: // reset
-					m.type = MessageEx::Type::RESET;
-					notify(m);
-					break;
-				default:
-					break;
+bool MessageEx::decodeBasic(const rack::midi::Message& msg, MessageEx& out) {
+	if (msg.getSize() < 1) return false;
+	switch (msg.getStatus()) {
+		case 0x9: out.type = Type::NOTE_ON; return true;
+		case 0x8: out.type = Type::NOTE_OFF; return true;
+		case 0xa: out.type = Type::KEY_PRESSURE; return true;
+		case 0xb: out.type = Type::CC; return true;
+		case 0xc: out.type = Type::PROGRAM_CHANGE; return true;
+		case 0xd: out.type = Type::CHANNEL_PRESSURE; return true;
+		case 0xe:
+			out.type = Type::PITCH_BEND;
+			out.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
+			return true;
+		case 0xf:
+			switch (msg.getChannel()) {
+				case 0x0: out.type = Type::SYSEX; return true;
+				case 0x2:
+					out.type = Type::SONG_POINTER;
+					out.extraValue = ((uint16_t)msg.getValue() << 7) | msg.getNote();
+					return true;
+				case 0x3: out.type = Type::SONG_SELECT; return true;
+				case 0x8: out.type = Type::CLOCK; return true;
+				case 0xa: out.type = Type::START; return true;
+				case 0xb: out.type = Type::CONTINUE; return true;
+				case 0xc: out.type = Type::STOP; return true;
+				case 0xf: out.type = Type::RESET; return true;
+				default: return false;
 			}
-			break;
-		}
 		default:
-			break;
+			return false;
 	}
 }
 
-bool MidiProcessor::isComponentCc(const rack::midi::Message& msg) const {
+void MidiDecoder::processMessage(const rack::midi::Message& msg) {
+	MessageEx m = MessageEx(msg);
+	if (!MessageEx::decodeBasic(msg, m)) return;
+	if (m.type == MessageEx::Type::CC) {
+		// Must be queried before processCc() below, which mutates the state
+		// it reads: for CC 6/38 the question is whether a parameter was
+		// active when this message arrived, not after it landed. Do not
+		// reorder these -- the raw CC deliberately notifies before its
+		// assembled counterpart.
+		m.isComponent = isComponentCc(msg);
+		notify(m);
+		processCc(msg); // extended CC handling
+	}
+	else {
+		notify(m);
+	}
+}
+
+bool MidiDecoder::isComponentCc(const rack::midi::Message& msg) const {
 	uint8_t ch = msg.getChannel();
 	uint8_t cc = msg.getNote();
 
@@ -189,7 +129,7 @@ bool MidiProcessor::isComponentCc(const rack::midi::Message& msg) const {
 	return false;
 }
 
-void MidiProcessor::processCc(const rack::midi::Message& msg) {
+void MidiDecoder::processCc(const rack::midi::Message& msg) {
 	uint8_t ch = msg.getChannel();
 	uint8_t cc = msg.getNote();
 	uint8_t value = msg.bytes[2];
@@ -258,6 +198,9 @@ void MidiProcessor::processCc(const rack::midi::Message& msg) {
 	if (cc == 6 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
 		// Store MSB for potential LSBs (CC 38) that may follow; do not clear immediately
 		ccDataEntryMsb[ch] = value;
+		// A 7-bit device sends no CC 38, so in MSB mode the coarse value is a change
+		// of its own; the LSB reads as 0, as after any new MSB.
+		if (isMsbDataEntry(ch)) notifyDataEntry(msg, ch, int16_t(value) * 128);
 	} 
 	else if (cc == 38 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
 		int16_t finalValue;
@@ -267,28 +210,14 @@ void MidiProcessor::processCc(const rack::midi::Message& msg) {
 		else {
 			finalValue = value; // LSB-only
 		}
-
-		MessageEx m = MessageEx(msg);
-		if (ccRpnParam[ch] >= 0) {
-			m.type = MessageEx::Type::RPN;
-			m.paramNumber = ccRpnParam[ch];
-			m.extraValue = finalValue;
-			notify(m);
-		}
-		if (ccNrpnParam[ch] >= 0) {
-			m.type = MessageEx::Type::NRPN;
-			m.paramNumber = ccNrpnParam[ch];
-			m.extraValue = finalValue;
-			notify(m);
-		}
+		notifyDataEntry(msg, ch, finalValue);
 	}
 
 	// 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
 	if (cc < 32) {
-		// CC 0-31: Store as MSB for potential 14-bit CC
-		// This is not according to standard, but to avoid spurious 14-bit CC messages
-		// after a MIDI reset, we ignore MSBs with value = 0.
-		if (value > 0 || cc14bitMsb[ch][cc] != -1) cc14bitMsb[ch][cc] = value;
+		// CC 0-31: Store as MSB for potential 14-bit CC. An MSB of 0 counts too: a
+		// 14-bit value below 128 is sent as MSB 0 plus its LSB.
+		cc14bitMsb[ch][cc] = value;
 	} 
 	else if (32 <= cc && cc < 64) {
 		// CC 32-63: LSB for 14-bit CC
@@ -304,18 +233,39 @@ void MidiProcessor::processCc(const rack::midi::Message& msg) {
 	}
 }
 
-void MidiProcessor::notify(const MessageEx& m) {
+bool MidiDecoder::isMsbDataEntry(uint8_t ch) const {
+	uint16_t mask = ccRpnParam[ch] >= 0 ? msbDataEntryRpnMask : msbDataEntryNrpnMask;
+	return (mask >> ch) & 1;
+}
+
+void MidiDecoder::notifyDataEntry(const rack::midi::Message& msg, uint8_t ch, int16_t value) {
+	MessageEx m = MessageEx(msg);
+	if (ccRpnParam[ch] >= 0) {
+		m.type = MessageEx::Type::RPN;
+		m.paramNumber = ccRpnParam[ch];
+		m.extraValue = value;
+		notify(m);
+	}
+	if (ccNrpnParam[ch] >= 0) {
+		m.type = MessageEx::Type::NRPN;
+		m.paramNumber = ccNrpnParam[ch];
+		m.extraValue = value;
+		notify(m);
+	}
+}
+
+void MidiDecoder::notify(const MessageEx& m) {
 	for (auto& handler : handlers) {
 		bool b = handler->processMidi(m);
 		if (b) break;
 	}
 }
 
-void MidiProcessor::subscribe(MidiProcessorHandler* handler) {
+void MidiDecoder::subscribe(MidiProcessorHandler* handler) {
 	handlers.push_back(handler);
 }
 
-void MidiProcessor::unsubscribe(MidiProcessorHandler* handler) {
+void MidiDecoder::unsubscribe(MidiProcessorHandler* handler) {
 	auto it = std::find(handlers.begin(), handlers.end(), handler);
 	if (it != handlers.end()) {
 		handlers.erase(it);

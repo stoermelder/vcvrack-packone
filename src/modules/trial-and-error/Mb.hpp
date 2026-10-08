@@ -89,6 +89,22 @@ std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
 
 
+// Text Tag Filters
+//
+// "t=<prefix>" tokens typed into a browser's search field. A filter passes a model that has ANY
+// predefined or custom tag starting with the prefix (case-insensitive); all filters must pass.
+
+struct TextTagFilter {
+	std::set<int> tagIds;
+	std::set<std::string> customTags;
+};
+
+// Extracts the "t=" tokens from `search` into `filters` (replacing its contents) and returns
+// the remaining words as the free-text query. A bare "t=" is plain text.
+std::string textTagFiltersParse(const std::string& search, std::vector<TextTagFilter>& filters);
+bool textTagFiltersMatch(Model* model, const std::set<int>& effectiveTagIds, const std::vector<TextTagFilter>& filters);
+
+
 // Predefined Tags
 
 // Tag modifications: predefined tags that are added/removed per model
@@ -119,7 +135,9 @@ std::set<std::string> getEffectiveTagNames(Model* model);
 // Magnifier overlay for module preview zoom
 
 struct MagnifierOverlay : widget::TransparentWidget {
-	widget::FramebufferWidget* fb = NULL;
+	// The NanoVG image to sample — either a live FramebufferWidget's own image (fb->getFramebuffer()->image)
+	// or a PreviewPixelCache::Entry's uploaded image (entry->image(vg)); either way, just a plain handle.
+	int nvgImage = -1;
 	Vec sourceAbsPos;
 	Vec sourceSize;
 	Vec mousePos;
@@ -160,9 +178,7 @@ struct MagnifierOverlay : widget::TransparentWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (!enabled || !initialized || !fb) return;
-		NVGLUframebuffer* framebuf = fb->getFramebuffer();
-		if (!framebuf || framebuf->image < 0) return;
+		if (!enabled || !initialized || nvgImage < 0) return;
 
 		// Circle center in overlay-local coords
 		Vec center = displayCenter() - box.pos;
@@ -177,7 +193,7 @@ struct MagnifierOverlay : widget::TransparentWidget {
 		float ex = sourceSize.x * magnification;
 		float ey = sourceSize.y * magnification;
 
-		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, framebuf->image, 1.f);
+		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, nvgImage, 1.f);
 
 		// Clip the circle fill to the zoomed texture rectangle [ox,oy,ex,ey].
 		// Outside that rect the image pattern would clamp to edge pixels (solid
@@ -254,6 +270,8 @@ struct DropdownChoiceContainer : widget::OpaqueWidget {
 	std::string filterTextActive;
 	std::map<widget::Widget*, std::string> itemTexts;
 	widget::Widget* selectedItem = nullptr;
+	// The button that opened this dropdown.
+	widget::Widget* opener = nullptr;
 
 	DropdownChoiceContainer() {
 		scroll = new ui::ScrollWidget;
@@ -483,6 +501,7 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 
 	// Create menu container
 	TContainer* container = new TContainer;
+	container->opener = button;
 	float menuX = browserPos.x + browser->box.size.x * 0.15f;
 	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
 	container->box.pos = Vec(menuX, menuY);

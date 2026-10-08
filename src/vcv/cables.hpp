@@ -36,7 +36,13 @@ struct CableAccess {
 	virtual void removeCable(CableWidget* cw, bool addToHistory) {}
 	// color: cable color; a fully transparent color (the default color::BLACK_TRANSPARENT)
 	// means "use Rack's default next cable color".
-	virtual void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) {}
+	// Returns the history::CableAdd describing the new cable, or nullptr if no cable was
+	// created. Ownership follows `addToHistory`: when true the action has already been pushed
+	// and the returned pointer is only an identity, borrowed and not to be deleted; when false
+	// the caller owns it and must push or delete it. That is what lets a caller building one
+	// ComplexAction for a whole load (Strip's group load, vcvsFromJson) collect the cable
+	// actions into it instead of pushing one undo entry per cable.
+	virtual ::rack::history::CableAdd* addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) { return nullptr; }
 	// Enumerate all complete (both ends patched) cables in the rack.
 	virtual const std::vector<CableWidget*> getCompleteCables() const { return {}; }
 
@@ -44,8 +50,11 @@ struct CableAccess {
 	virtual bool hasCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId) const {
 		return findCable(outModuleId, outPortId, inModuleId, inPortId) != nullptr;
 	}
+	// The fire-and-forget form: no history action reaches the caller, so when addToHistory is
+	// false — nobody is going to push it — the action is discarded here rather than leaked.
 	virtual void addCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory) {
-		addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory);
+		::rack::history::CableAdd* h = addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory);
+		if (!addToHistory) delete h;
 	}
 	virtual void removeCable(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory) {
 		CableWidget* cw = findCable(outModuleId, outPortId, inModuleId, inPortId);
@@ -62,7 +71,7 @@ struct RackCableAccess final : CableAccess {
 	CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) const override;
 	void removeCable(CableWidget* cw, bool addToHistory) override;
 	const std::vector<CableWidget*> getCompleteCables() const override;
-	void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) override;
+	::rack::history::CableAdd* addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory, NVGcolor color = color::BLACK_TRANSPARENT) override;
 };
 // The shared production instance, defined in cables.cpp.
 extern RackCableAccess rackAccess;
@@ -101,8 +110,8 @@ static std::vector<CableWidget*> getCompleteCables() {
 }
 
 P1_UNUSED
-static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true, NVGcolor color = color::BLACK_TRANSPARENT) {
-	cableAccessFor().addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory, color);
+static ::rack::history::CableAdd* addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true, NVGcolor color = color::BLACK_TRANSPARENT) {
+	return cableAccessFor().addCableToPort(outModuleId, outPortId, inModuleId, inPortId, addToHistory, color);
 }
 
 P1_UNUSED

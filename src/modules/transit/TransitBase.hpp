@@ -18,7 +18,8 @@ enum class SLOT_CMD {
 	SHIFT_BACK,
 	SHIFT_FRONT,
 	SET_FIRST,
-	SET_LAST
+	SET_LAST,
+	INDEX
 };
 
 enum class CTRLMODE {
@@ -115,7 +116,7 @@ struct TransitBase : Module, StripIdFixModule {
 
 	Slot slot[NUM_PRESETS];
 
-	virtual int sendSlotCmd(SLOT_CMD cmd, int i) { return -1; }
+	virtual int sendSlotCmd(SLOT_CMD cmd, int i) = 0;
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
@@ -185,6 +186,36 @@ struct TransitBase : Module, StripIdFixModule {
 	}
 };
 
+struct TransitPadMaster {
+	virtual int getSelectedSlot() = 0;
+	virtual std::string getSlotLabel(int i) = 0;
+	/** Owner module and local index of a global slot index, across chained +T's. */
+	virtual bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) = 0;
+	/** Total slots reachable from this host (presetTotal), across chained +T's. */
+	virtual int getSlotCount() = 0;
+	/** Whether the given global slot index holds a saved preset. */
+	virtual bool isSlotUsed(int i) = 0;
+	/** Applies the slot's saved values to every bound target parameter, as
+	 *  Shift+clicking that slot's button would. No effect while the pad is
+	 *  actively driving the same parameters -- switch it off first. */
+	virtual void loadSlot(int i) = 0;
+};
+
+struct TransitPadInterface {
+	TransitPadMaster* masterModule = nullptr;
+	struct TransitPadSource {
+		float weight;
+		/** [Stored to JSON] */
+		int id;
+		/** [Stored to JSON] per-set pad-point geometry; used only when node-position mode is on. */
+		float x = 0.f, y = 0.f, radius = 1.f, amount = 1.f;
+	};
+
+	virtual const std::vector<TransitPadSource>& getPadFactors() = 0;
+	virtual bool isPadActive() = 0;
+};
+
+
 template <int NUM_PRESETS>
 struct TransitParamQuantity : SwitchQuantity {
 	TransitBase<NUM_PRESETS>* module;
@@ -198,11 +229,21 @@ struct TransitParamQuantity : SwitchQuantity {
 	}
 };
 
-template <int NUM_PRESETS>
-struct TransitLedButton : VCVButton {
-	TransitBase<NUM_PRESETS>* module;
+
+struct TransitSnapshotButton {
 	int id;
+	// Returns the absolute index of the snapshot
+	virtual int getSlotIndex() = 0;
+};
+
+template <int NUM_PRESETS>
+struct TransitLedButton : TransitSnapshotButton, VCVButton {
+	TransitBase<NUM_PRESETS>* module;
 	bool eventConsumed = true;
+
+	int getSlotIndex() override {
+		return module->sendSlotCmd(SLOT_CMD::INDEX, id);
+	}
 
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS) {
@@ -212,7 +253,7 @@ struct TransitLedButton : VCVButton {
 				eventConsumed = true;
 			}
 			else {
-				LEDButton::onButton(e);
+				VCVButton::onButton(e);
 				eventConsumed = false;
 			}
 		}
@@ -223,7 +264,7 @@ struct TransitLedButton : VCVButton {
 			eventConsumed = false;
 			return;
 		}
-		LEDButton::onDragStart(e);
+		VCVButton::onDragStart(e);
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -407,10 +448,39 @@ struct TransitLedButton : VCVButton {
 				{ color::BLUE, "Blue" },
 				{ color::WHITE, "White" }
 			};
-			Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
+			Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true, nullptr,
+				[=]() { module->slotColorSet[id] = true; }
+			);
 		}));
 	}
 };
+
+// RedGreenBlueLight blends its 3 base colors via color::screen(), which
+// desaturates an (r, g, b) triplet instead of reproducing it. Paints the
+// brightnesses as a plain RGB color instead, like TransitPad's LED.
+template <typename TBase = GrayModuleLightWidget>
+struct TTransitLedLightWidget : TBase {
+	void step() override {
+		float r = 0.f, g = 0.f, b = 0.f;
+		if (this->module) {
+			if (!this->module->isBypassed() && this->firstLightId >= 0 && this->firstLightId + 3 <= (int) this->module->lights.size()) {
+				auto gamma = [](float v) {
+					v = std::isfinite(v) ? math::clamp(v, 0.f, 1.f) : 0.f;
+					return std::sqrt(v);
+				};
+				r = gamma(this->module->lights[this->firstLightId + 0].getBrightness());
+				g = gamma(this->module->lights[this->firstLightId + 1].getBrightness());
+				b = gamma(this->module->lights[this->firstLightId + 2].getBrightness());
+			}
+		}
+		else {
+			r = g = b = 1.f;
+		}
+		this->color = nvgRGBAf(r, g, b, 1.f);
+		widget::Widget::step();
+	}
+};
+using TransitLedLightWidget = TTransitLedLightWidget<>;
 
 } // namespace Transit
 } // namespace StoermelderPackOne

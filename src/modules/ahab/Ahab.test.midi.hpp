@@ -8,7 +8,8 @@
 
 
 TEST_CASE("MIDI Driver note event handling", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -48,11 +49,11 @@ TEST_CASE("MIDI Driver note event handling", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver zero duration note handling", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -90,11 +91,11 @@ TEST_CASE("MIDI Driver zero duration note handling", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver scheduled note-off countdown", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -141,11 +142,11 @@ TEST_CASE("MIDI Driver scheduled note-off countdown", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver CC event handling", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -179,11 +180,11 @@ TEST_CASE("MIDI Driver CC event handling", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver pitchbend event handling", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -216,11 +217,11 @@ TEST_CASE("MIDI Driver pitchbend event handling", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver output disabled", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -252,11 +253,11 @@ TEST_CASE("MIDI Driver output disabled", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver note channel mapping", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -291,11 +292,11 @@ TEST_CASE("MIDI Driver note channel mapping", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver CC offset", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -328,11 +329,11 @@ TEST_CASE("MIDI Driver CC offset", "[MIDI][Ahab]") {
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Virtual note delivery", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Enable virtual MIDI driver
@@ -381,11 +382,11 @@ TEST_CASE("MIDI Virtual note delivery", "[MIDI][Ahab]") {
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Virtual with both outputs enabled", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Enable both virtual MIDI and regular MIDI output
@@ -432,11 +433,11 @@ TEST_CASE("MIDI Virtual with both outputs enabled", "[MIDI][Ahab]") {
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Virtual multiple ports", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Enable virtual MIDI driver
@@ -480,11 +481,11 @@ TEST_CASE("MIDI Virtual multiple ports", "[MIDI][Ahab]") {
 	}
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Virtual disabled", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Ensure virtual MIDI driver is disabled
@@ -522,11 +523,11 @@ TEST_CASE("MIDI Virtual disabled", "[MIDI][Ahab]") {
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI note ordering - scheduled note-offs before new notes", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -601,11 +602,11 @@ TEST_CASE("MIDI note ordering - scheduled note-offs before new notes", "[MIDI][A
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI note ordering - multiple simultaneous note transitions", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	
 	// Setup mock MIDI output
@@ -690,7 +691,6 @@ TEST_CASE("MIDI note ordering - multiple simultaneous note transitions", "[MIDI]
 	cleanupMockMidiOutput(m, mockDevice);
 	
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Virtual reset - sends note-off to all notes and channels", "[MIDI][Ahab]") {
@@ -746,7 +746,8 @@ TEST_CASE("MIDI Virtual reset - guards and port isolation", "[MIDI][Ahab]") {
 }
 
 TEST_CASE("Sim reset command drops pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
@@ -773,11 +774,11 @@ TEST_CASE("Sim reset command drops pending note-offs and blasts All Notes Off", 
 	cleanupMockMidiOutput(m, mockDevice);
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Field replace drops pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
@@ -804,11 +805,11 @@ TEST_CASE("Field replace drops pending note-offs and blasts All Notes Off", "[MI
 	cleanupMockMidiOutput(m, mockDevice);
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("onReset sends All Notes Off via virtual MIDI", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Enable virtual MIDI driver and subscribe a mock on port 0
@@ -835,11 +836,11 @@ TEST_CASE("onReset sends All Notes Off via virtual MIDI", "[MIDI][Ahab]") {
 
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Clear field flushes pending note-offs and blasts All Notes Off", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Enable virtual MIDI driver and subscribe mocks on both MIDI outputs
@@ -871,11 +872,11 @@ TEST_CASE("Clear field flushes pending note-offs and blasts All Notes Off", "[MI
 	cleanupMockMidiOutput(m, mockDevice);
 	cleanupMockVirtualMidiInput(mockVirtualInput);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI output preserves the outgoing message channel", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 
 	// Simulate the bug: a non-negative port channel (e.g. restored from a preset)
@@ -919,14 +920,14 @@ TEST_CASE("MIDI output preserves the outgoing message channel", "[MIDI][Ahab]") 
 	oevent_list_deinit(&olist);
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 // MIDI edge cases: byte-level clamping/guards in the module's
 // MIDI routing that the happy-path tests above don't cover.
 
 TEST_CASE("MIDI Driver CC offset clamps at 127", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -982,11 +983,11 @@ TEST_CASE("MIDI Driver CC offset clamps at 127", "[MIDI][Ahab]") {
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver note octave overflow stays in 7 bits", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -1029,11 +1030,11 @@ TEST_CASE("MIDI Driver note octave overflow stays in 7 bits", "[MIDI][Ahab]") {
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver velocity clamps to 7 bits", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -1055,11 +1056,11 @@ TEST_CASE("MIDI Driver velocity clamps to 7 bits", "[MIDI][Ahab]") {
 
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("MIDI Driver duration-0 note is held when overwriteZeroNoteDuration is off", "[MIDI][Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
 	Test::registerModule(m);
 	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
 	m->midiOutEnabled = true;
@@ -1085,7 +1086,6 @@ TEST_CASE("MIDI Driver duration-0 note is held when overwriteZeroNoteDuration is
 	oevent_list_deinit(&olist);
 	cleanupMockMidiOutput(m, mockDevice);
 	Test::unregisterModule(m);
-	Test::destroyModule(m);
 }
 
 TEST_CASE("Ahab::Midi::sendToPort guards out-of-range device IDs", "[MIDI][Ahab]") {

@@ -8,7 +8,7 @@ namespace Rack {
  */
 struct ViewportCenterSmooth {
 	Vec source, target;
-	float sourceZoom, targetZoom;
+	float sourceZoom = 0.f, targetZoom = 0.f;
 	int framecount = 0;
 	int frame = 0;
 

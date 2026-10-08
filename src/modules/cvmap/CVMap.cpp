@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../vcv/api.hpp"
 #include "MapModuleBase.hpp"
 #include "CVMap.hpp"
@@ -504,16 +505,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	void enableLearn(LEARN_MODE mode) {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learnMode != LEARN_MODE::OFF) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setLearnCursor(learnMode != LEARN_MODE::OFF);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void appendContextMenu(Menu* menu) override {

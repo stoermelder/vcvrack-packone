@@ -11,6 +11,7 @@
 - [MIDI triggering](#midi-triggering)
 - [MIDI learn](#midi-learn)
 - [MIDI feedback and controller presets](#midi-feedback-and-controller-presets)
+- [Caveats](#caveats)
 - [Changelog](#changelog)
 
 ### Overview
@@ -275,8 +276,27 @@ SPLICE-KIT uses four color sets (0–3): set 0 = red, set 1 = blue, set 2 = oran
 
 Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, Launchpad MK2, APC Mini, APC Mini MK2, and Ableton Push 2) can automatically configure the MIDI input mappings to match: select **Apply input mappings from preset**. This clears any existing MIDI input assignments and maps each cell and scene button to its corresponding note or CC number from the preset.
 
+### Caveats
+
+**Creating or removing a cable briefly pauses audio for the whole patch.** This is not a SPLICE-KIT quirk — it's how VCV Rack's engine works for any cable change, whether made by SPLICE-KIT, another module, or dragging a cable by hand. Adding or removing a cable requires exclusive access to the patch graph, which means audio processing for *every* module stops for an instant while the change is made, then resumes. For a single cable this pause is far too short to hear.
+
+The difference with SPLICE-KIT is that many of its features can change several cables in rapid succession rather than one at a time:
+
+- **Switching scenes** removes the old scene's cables and creates the new scene's cables, one by one.
+- **Randomize** (module-level) can reassign all 64 buttons and rewire connections between them.
+- **Randomize** (per-scene, Full or Sparse) can create up to dozens of cables in one go.
+- **Sequential learn**, **scene copy/paste**, and MIDI-triggered scene switching can also touch many cables quickly.
+
+Each of these cables is still added or removed one at a time behind the scenes — there is no single pause covering the whole batch. With only a handful of cables this is inaudible, but a large scene switch or a full Randomize can add up to a short burst of brief pauses in immediate succession, which may be audible as a click, a stutter, or a moment of timing jitter, especially at small buffer sizes.
+
+**What this means in practice:**
+
+- Rewiring a patch while it's silent, being set up, or between songs is unaffected — it's the same as editing cables by hand.
+- Switching scenes or randomizing **while audio is live and being listened to** (rehearsing, recording, or performing) carries a small but real risk of an audible glitch, roughly in proportion to how many cables change at once. A scene that only changes one or two cables is safer than one that rewires most of the grid.
+- MIDI-triggered scene switches happen off the audio thread already, so SPLICE-KIT itself never freezes waiting on this — but the momentary engine pause for each cable change still happens and can still be heard.
+- If you plan to switch scenes or trigger Randomize live, it's worth testing that specific transition beforehand at your actual buffer size to confirm it's clean, rather than discovering an audible click during a performance.
 
 ## Changelog
 
-- v2.x.x
+- v2.6.0
     - Initial release of SPLICE-KIT

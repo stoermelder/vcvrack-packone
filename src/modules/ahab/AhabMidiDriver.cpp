@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/engine.hpp"
 
 namespace StoermelderPackOne {
 namespace Ahab {
@@ -92,7 +93,7 @@ void resetMidi(int deviceId) {
 			m.setChannel(ch);
 			m.setNote(note);
 			m.setValue(0);
-			m.setFrame(APP->engine->getFrame());
+			m.setFrame(vcv::engine::getFrame());
 			midiDriver->devices[deviceId].injectMessage(m);
 		}
 	}

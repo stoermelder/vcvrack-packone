@@ -3,7 +3,8 @@
 #include "EightFaceMk2Base.hpp"
 
 namespace StoermelderPackOne {
-namespace EightFaceMk2 {
+namespace EightFace {
+namespace mk2 {
 
 template <int NUM_PRESETS>
 struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
@@ -121,7 +122,8 @@ struct EightFaceMk2ExWidget : ThemedModuleWidget<EightFaceMk2ExModule<NUM_PRESET
 	}
 };
 
-} // namespace EightFaceMk2
+} // namespace mk2
+} // namespace EightFace
 } // namespace StoermelderPackOne
 
-Model* modelEightFaceMk2Ex = createModel<StoermelderPackOne::EightFaceMk2::EightFaceMk2ExModule<8>, StoermelderPackOne::EightFaceMk2::EightFaceMk2ExWidget<8>>("EightFaceMk2Ex");
+Model* modelEightFaceMk2Ex = createModel<StoermelderPackOne::EightFace::mk2::EightFaceMk2ExModule<8>, StoermelderPackOne::EightFace::mk2::EightFaceMk2ExWidget<8>>("EightFaceMk2Ex");

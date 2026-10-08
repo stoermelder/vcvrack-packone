@@ -1,6 +1,6 @@
 #pragma once
 #include <rack.hpp>
-#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 
 
 namespace StoermelderPackOne {
@@ -68,7 +68,7 @@ struct SirenDropHandler {
 
 	// Called on the UI thread when a drag ends. The drop is only fired when the
 	// cursor is over another module widget — empty rack space is ignored.
-	void endDrag(Vec dropPos, TaskWorker* worker) {
+	void endDrag(Vec dropPos, ITaskWorker* worker) {
 		if (!active) return;
 		active = false;
 		std::string path = std::move(dragPath);
@@ -82,13 +82,17 @@ struct SirenDropHandler {
 			: [path]() { return path; };
 
 		converting.store(true, std::memory_order_relaxed);
-		worker->work([this, task, dropPos]() {
+		bool queued = worker->work([this, task, dropPos]() {
 			std::string readyPath = task();
 			converting.store(false, std::memory_order_relaxed);
 			pendingDropPath = readyPath;
 			pendingDropPos = dropPos;
 			dropPending.store(true, std::memory_order_release);
 		});
+		// Queue full: clear the flag we just set so the "converting" overlay
+		// doesn't stick around forever for a drop that was silently dropped
+		// instead of queued.
+		if (!queued) converting.store(false, std::memory_order_relaxed);
 	}
 
 	// Call from widget::step() on the UI thread. Fires handleDrop once the

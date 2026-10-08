@@ -3,7 +3,7 @@
 #include "SirenAudio.hpp"
 #include "SirenDropHandler.hpp"
 #include "../../ui/HoverScrollLock.hpp"
-#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include <vector>
 
 
@@ -88,7 +88,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	std::string dragDisplayName;
 
 	SirenDropHandler* dropHandler = nullptr;
-	TaskWorker* worker = nullptr;
+	ITaskWorker* worker = nullptr;
 
 	// owned state
 	float inPoint = 0.f;

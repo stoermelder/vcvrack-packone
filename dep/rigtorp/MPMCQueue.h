@@ -73,7 +73,11 @@ template <typename T> struct AlignedAllocator {
   }
 
   void deallocate(T *p, std::size_t) {
-#ifdef WIN32
+  // Local patch to an upstream bug: allocate() above uses `_WIN32` but this
+  // guard used bare `WIN32`, which MinGW-w64 does not define. The result was
+  // free() on an _aligned_malloc'd pointer -- heap corruption on destruction
+  // of any queue. Keep both guards spelled `_WIN32` when updating this file.
+#ifdef _WIN32
     _aligned_free(p);
 #else
     free(p);

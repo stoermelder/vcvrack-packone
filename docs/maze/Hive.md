@@ -38,3 +38,5 @@ A lush example of how HIVE and MAZE can work together:
   - Fixed broken reset-behavior
 - v2.5.0
   - Fixed broken SHIFT/R- input
+- v2.7.0
+  - Improved rendering performance

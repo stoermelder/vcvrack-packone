@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.6.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.7.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -69,6 +69,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [STRIP-BAY](./docs/strip/Strip.md#stoermelder-strip-bay): a companion module for STRIP for keeping input/output connections while replacing strips
 - [STRIP++](./docs/strip/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/glue/Glue.md) labels
 - [TRANSIT](./docs/transit/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
+- [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander): an XY-pad expander for TRANSIT for morphing between snapshots in two dimensions
 - [X4](./docs/cvmap/X4.md): dual multiple for parameter-mapping
 
 ![Intro image](./docs/intro.png)
@@ -91,13 +92,16 @@ Follow the [build instructions](https://vcvrack.com/manual/Building#Building-Rac
 
 ## Testing
 
-The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next to the code they cover as `*.test.cpp`, with larger suites split into `*.test.hpp` fragments; each `*.test.cpp` is built into its own binary under `build/test/` and linked against the plugin, with AddressSanitizer enabled.
+The unit tests use [Catch2](https://github.com/catchorg/Catch2). Tests live next to the code they cover as `*.test.cpp`, with larger suites split into `*.test.hpp` fragments; each `*.test.cpp` is built into its own binary under `build/test/` and linked against the plugin, with AddressSanitizer enabled by default.
 
 ```bash
-make testrun                   # build and run all tests
-make testrun SUCCESS=1         # also print passing assertions
-make test-one NAME=<Module>    # rebuild and run a single test binary
-make test                      # build only, don't run
+make testrun                             # build and run all tests (parallel, JOBS=8 by default)
+make testrun JOBS=4                      # ...with a different fan-out
+make testrun SUCCESS=1                   # also print passing assertions
+make testrun-one NAME=<Module>           # build (if needed) and run a single test binary
+make testrun-one NAME=<Module> FILTER='[tag]'  # ...only TEST_CASEs matching a Catch2 tag/name filter
+make test                                # build only, don't run
+make test SANITIZER=undefined            # build with UBSan instead of ASan (also: thread)
 ```
 
 The test binaries are always compiled with `DEBUGPLUGIN`, and they link the plugin, so the plugin has to be built the same way: use `make DEBUGPLUGIN=1` for it. Modules reach the VCV Rack API through a swappable access layer (`src/vcv/`) that the tests replace with mocks, and that seam only exists in a debug build. Note that toggling the flag does not invalidate existing object files, so run `make clean` when switching between a release and a debug build.

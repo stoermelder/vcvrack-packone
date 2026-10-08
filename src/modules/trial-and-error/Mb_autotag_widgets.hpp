@@ -8,13 +8,9 @@
 namespace StoermelderPackOne {
 namespace Mb {
 
-// ─── ModelLabel: a clickable label widget showing a VCV Rack module ────────
-//
-// One row in the auto-tag confirm dialog. The label shows the module's brand
-// + name; left-click opens the VCV library page for it, right-click opens
-// the module's context menu. This widget is Mb-specific; the Siren analog
-// (in `SirenAutoTagDialog`) shows a sample filename instead.
-
+// One row in the auto-tag confirm dialog: brand + name, left-click opens the VCV library
+// page, right-click opens the module's context menu. Mb-specific; SirenAutoTagDialog's
+// analog shows a sample filename instead.
 struct ModelLabel : MenuItem {
 	plugin::Model* model;
 	NVGcolor lineColor = bndGetTheme()->regularTheme.textColor;
@@ -44,13 +40,8 @@ struct ModelLabel : MenuItem {
 };
 
 
-// ─── Adapter: turn an `AutoTagResult` into the dialog's input shape ─────────
-//
-// AutoTagResult uses `std::set<plugin::Model*>` as the per-tag payload. The
-// generic dialog wants `std::vector<ui::TagGroup<plugin::Model*>>`. This
-// adapter is the 1-to-1 mapping; the apply callback re-implements the
-// `customTagAdd(model, tag)` writeback the old `AutoTagResult::apply()` did.
-
+// Adapts AutoTagResult's per-tag std::set<Model*> payload into the generic dialog's
+// std::vector<ui::TagGroup<Model*>> input shape.
 inline std::vector<ui::TagGroup<plugin::Model*>> autoTagResultToGroups(const AutoTagResult& result) {
 	std::vector<ui::TagGroup<plugin::Model*>> groups;
 	groups.reserve(result.assignments.size());
@@ -78,16 +69,12 @@ autoTagBuildLabelCallback() {
 }
 
 
-// ─── Backward-compat aliases ────────────────────────────────────────────────
-//
-// The original Mb code used these names. We keep them as type aliases so
-// existing call sites in Mb.cpp don't need to change.
-
+// Kept as aliases so existing call sites in Mb.cpp don't need to change.
 using AutoTagConfirmWidget = ui::TagConfirmDialog<plugin::Model*>;
 using AsyncTagResultWidget = ui::AsyncTagConfirmDialog<plugin::Model*>;
 
 
-// ─── Openers used by Mb.cpp's menu items ────────────────────────────────────
+// Openers used by Mb.cpp's menu items.
 
 inline void openAutoTagConfirmDialog(std::shared_ptr<AutoTagResult> result) {
 	if (!result || result->assignments.empty()) {

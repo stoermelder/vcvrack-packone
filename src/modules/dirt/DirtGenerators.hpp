@@ -33,6 +33,10 @@ struct CrosstalkGenerator {
 	dsp::BiquadFilter eqLow[PORT_MAX_CHANNELS];
 	dsp::BiquadFilter eqHigh[PORT_MAX_CHANNELS];
 
+	CrosstalkGenerator() {
+		reset();
+	}
+
 	void reset() {
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
 			eqLow[i].setParameters(dsp::BiquadFilter::LOWSHELF, 400.f / APP->engine->getSampleRate(), 1.f, 15.f);

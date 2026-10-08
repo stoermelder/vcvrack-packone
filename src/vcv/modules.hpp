@@ -49,7 +49,11 @@ struct ModuleAccess {
 	// Lifecycle — was moduleFromJson + moduleToRack.
 	virtual int64_t addModule(const ModuleRef& ref, Vec pos) { return -1; }
 	virtual void removeModule(int64_t moduleId) {}
+	// Force-positions moduleId at pos, shoving any other module aside, same as a real drag-in.
 	virtual void setModuleWidgetPos(int64_t moduleId, Vec pos) {}
+	// Moves moduleId to the nearest non-colliding position to pos, without disturbing anything
+	// else — the right choice for placing a module beside one that must not move.
+	virtual void setModuleWidgetPosNearest(int64_t moduleId, Vec pos) {}
 
 	// Preset application — wraps ModuleWidget::fromJson.
 	virtual void applyPreset(int64_t moduleId, json_t* moduleJ) {}
@@ -64,6 +68,7 @@ struct RackModuleAccess final : ModuleAccess {
 	int64_t addModule(const ModuleRef& ref, Vec pos) override;
 	void removeModule(int64_t moduleId) override;
 	void setModuleWidgetPos(int64_t moduleId, Vec pos) override;
+	void setModuleWidgetPosNearest(int64_t moduleId, Vec pos) override;
 	void applyPreset(int64_t moduleId, json_t* moduleJ) override;
 	json_t* toJson(int64_t moduleId) const override;
 };
@@ -110,6 +115,11 @@ static void removeModule(int64_t moduleId) {
 P1_UNUSED
 static void setModuleWidgetPos(int64_t moduleId, Vec pos) {
 	moduleAccessFor().setModuleWidgetPos(moduleId, pos);
+}
+
+P1_UNUSED
+static void setModuleWidgetPosNearest(int64_t moduleId, Vec pos) {
+	moduleAccessFor().setModuleWidgetPosNearest(moduleId, pos);
 }
 
 P1_UNUSED

@@ -1,7 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include <ui/ScrollWidget.hpp>
-#include <osdialog.h>
+#include "../vcv/ui.hpp"
 #include <atomic>
 #include <functional>
 #include <map>
@@ -316,7 +316,9 @@ struct AsyncTagConfirmDialog : widget::OpaqueWidget {
 			loadingOverlay->requestDelete();
 
 			if (result->empty()) {
-				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+				StoermelderPackOne::vcv::ui::message(
+					StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::OK,
+				    "No new tag assignments found.");
 				requestDelete();
 				return;
 			}

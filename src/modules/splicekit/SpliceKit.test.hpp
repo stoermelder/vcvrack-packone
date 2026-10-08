@@ -4,14 +4,12 @@
 // Included by every SpliceKit*.test.cpp file; each test file builds its
 // own binary (see plugin-test.mk), so the test context is per-binary.
 
-#include "../../test/test_plugin.hpp"
-#include "../../test/test_context.hpp"
+#include "../../test/framework.hpp"
 #include "SpliceKit.cpp"
 
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::SpliceKit;
 
-SYNC_MODEL(modelSpliceKit, "SpliceKit");
 Test::TestContext<> testContext;
 
 // Shadows Test::createModule to put taskProcessorUi in sync mode right after construction.
@@ -36,7 +34,6 @@ static MidiOutPreset makeNoteOnPreset(int note = 36, int value = 127) {
 	}
 	return preset;
 }
-
 
 // ---- Mock cable registry ----
 // Production routes cables through vcv::hasCable/addCable/removeCable (vcv_cables.hpp), which

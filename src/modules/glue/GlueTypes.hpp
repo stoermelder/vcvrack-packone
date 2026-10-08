@@ -76,5 +76,13 @@ struct CableLabel {
 	bool cacheValid = false;
 };
 
+// The cache key (cachedOutputPos/cachedInputPos) only tracks the cable's endpoints, not
+// which end the label is anchored to - so toggling atInput must invalidate the cache
+// itself, or the label stays stuck at the old tFinal/angle/offset until the cable moves.
+inline void setCableLabelAtInput(CableLabel* cl, bool atInput) {
+	cl->atInput = atInput;
+	cl->cacheValid = false;
+}
+
 } // namespace Glue
 } // namespace StoermelderPackOne

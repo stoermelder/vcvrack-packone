@@ -7,7 +7,7 @@
 #include "SirenBpmDetector.hpp"
 #include "SirenWaveformCanvas.hpp"
 #include "SirenDummyPreview.hpp"
-#include "../../utils/TaskWorker.hpp"
+#include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/InfoWindow.hpp"
 
 
@@ -94,7 +94,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::atomic<bool>* modulePlaying = nullptr;
 
 	SirenDropHandler* dropHandler = nullptr;
-	TaskWorker* worker = nullptr;
+	ITaskWorker* worker = nullptr;
 
 	std::function<void()> onMetadataChanged;
 	std::function<void(const std::string&)> onSetSearchQuery;
@@ -129,7 +129,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		return isPreviewActive() && previewIsRepitch;
 	}
 
-	void init(TaskWorker* tw, SirenDropHandler* dh) {
+	void init(ITaskWorker* tw, SirenDropHandler* dh) {
 		worker = tw;
 		dropHandler = dh;
 
@@ -241,7 +241,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
-		worker->work([this, id, ts, src, pw, gen]() {
+		bool queued = worker->work([this, id, ts, src, pw, gen]() {
 			AudioWaveformCache built;
 			bool ok = src->buildWaveformCache(id, ts, pw, built);
 			if (ok) src->saveWaveformCache(id, built);
@@ -250,6 +250,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			pendingCache.valid = ok;
 			pendingCacheReady.store(true, std::memory_order_release);
 		});
+		// Queue full (bursty selection changes, e.g. holding an arrow key):
+		// clear the flag we just set so the "Building waveform…" overlay
+		// doesn't stick around forever for a task that will never run.
+		if (!queued) cacheBuilding = false;
 
 		if (startPlay) startPlaybackFrom(0.f);
 	}
@@ -328,7 +332,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
-		worker->work([this, srcCopy, idCopy, trimIn, trimOut, pw, buildFn]() {
+		bool queued = worker->work([this, srcCopy, idCopy, trimIn, trimOut, pw, buildFn]() {
 			AudioPreviewResult result;
 			buildFn(srcCopy, idCopy, trimIn, trimOut, pw, result);
 			if (result.ok && !result.samples.empty()) {
@@ -351,6 +355,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 			pendingLoopReady.store(true, std::memory_order_release);
 		});
+		// Queue full: undo the "building" state we just set so the preview
+		// overlay doesn't get stuck showing "Generating…" for a task that
+		// was silently dropped instead of queued.
+		if (!queued) {
+			previewBuilding = false;
+			previewIsRepitch = false;
+		}
 	}
 
 	void cancelPreview() {
@@ -729,7 +740,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::string idCopy = currentNode.relativePath;
 		std::string relPathCopy = relPath;
 		std::shared_ptr<DataSource> ds = source;
-		worker->work([this, idCopy, relPathCopy, ds]() {
+		bool queued = worker->work([this, idCopy, relPathCopy, ds]() {
 			float confidence = 0.f;
 			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);
 			MetadataStore* meta = ds ? ds->getMetadata() : nullptr;
@@ -739,6 +750,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 			bpm.store(result);
 		});
+		// Queue full: undo the "-1 == detecting" sentinel so a dropped task
+		// doesn't permanently block re-detection and hide the BPM readout.
+		if (!queued) bpm.store(0.f);
 	}
 
 	void startPlaybackFrom(float pos) {

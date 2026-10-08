@@ -1,3 +1,56 @@
+## 2.7.0
+
+### New modules
+
+- Module [TRANSIT-PAD](./docs/transit/Transit.md#transit-pad-expander)
+    - XY-pad expander for TRANSIT: place snapshots freely on a 2D pad and blend them with a movable mix point. Eight snapshot-sets with colors and labels, CV/MIDI-mappable mix position, and recordable motion-sequences
+
+### Changes and Fixes
+
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed "Autoload" setting not saved and not reliable working
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
+    - Fixed crash in Rack plugin for certain modules if no plugin-window is open
+    - Fixed a background worker that could stall indefinitely
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
+    - Added reusable tiny Snippets to the context menu
+- Module [ARENA](./docs/arena/Arena.md)
+    - Added more preset generators for SEQ-EDIT
+    - Fixed wrong values for mix-ports on preset load
+    - Fixed missing voltage-mode options in the context menu of the mix-ports
+    - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
+    - Fixed "Scale" out-mode using the configured number of mix-ports
+    - Fixed broken "Clear" in SEQ-EDIT mode
+- Module [DIRT](./docs/dirt/Dirt.md)
+    - Fixed broken "Initialize" on Crush defects
+- Module [GLUE](./docs/glue/Glue.md)
+    - Fixed lost cable labels on "Consolidate GLUE"
+- Modules [MAZE](./docs/maze/Maze.md) and [HIVE](./docs/maze/Hive.md)
+    - Improved rendering performance
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added tag-filtering using "t=..." in the search field
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
+    - Added option to pre-warm module previews
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Improved performance (no memory allocation on dsp, lock-free MIDI-input)
+    - Added scrollbar to display widget
+- Module [SIREN](./docs/siren/Siren.md)
+    - Fixed a background worker that could stall indefinitely
+    - Fixed broken "Cancel tag classification"
+- Module [SPLICE-KIT](./docs/splicekit/SpliceKit.md)
+    - Added built-in usage tutorial
+- Module [STRIP](./docs/strip/Strip.md)
+    - Reduced resource consumption (one shared worker for all STRIP modules)
+    - Fixed a background worker that could stall indefinitely
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Added color setting for mapping indicators
+
 ## 2.6.0
 
 ### New modules
@@ -13,7 +66,7 @@
     - Added clock divider/multiplier for clock input
     - Added MIDI Panic option
     - Added context menu options for selections
-    - Major enhacements for [Random generator](./docs/ahab/AhabRandomizer.md)
+    - Major enhacements for [Random generator](./docs/ahab/AhabGenerator.md)
     - Fixed reset behavior on loading files or examples
     - Fixed broken MIDI channel on MIDI operators
     - Fixed concurrent usage of UDP and OSC output

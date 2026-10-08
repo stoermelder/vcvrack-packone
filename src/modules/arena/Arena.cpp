@@ -359,7 +359,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 				float v = inputs[IN + j].getVoltage();
 				switch (outputMode[j]) {
 					case OUTPUTMODE::SCALE: {
-						v *= outNorm[j] / MIX_PORTS;
+						// Divided by the *active* mix count, not MIX_PORTS: each active
+						// MIX-port contributes at most 1/n so the sum reaches 100% at most.
+						v *= outNorm[j] / std::max<uint8_t>(1, mixportsUsed);
 						v = clamp(v, -10.f, 10.f);
 						break;
 					}
@@ -417,8 +419,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 		return v;
 	}
 
-	/** XySeqModule: MIX-0 is reserved for the master sequence, never a per-port one. */
-	bool seqPortUsed(int port) override {
+	/** XySeqModule: a MIX port beyond the active count has no sequence UI: its
+	 * led display is blank, its context menu is empty, and clicking it is a no-op. */
+	bool seqPortHidden(int port) override {
 		return port + 1 > mixportsUsed;
 	}
 
@@ -559,9 +562,18 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XyScreenCursor, XySeqModu
 		}
 
 		json_t* inportsUsedJ = json_object_get(rootJ, "inportsUsed");
-		if (inportsUsedJ) inportsUsed = json_integer_value(inportsUsedJ);
+		if (inportsUsedJ) inportsUsed = clamp((int)json_integer_value(inportsUsedJ), 1, IN_PORTS);
 		json_t* mixportsUsedJ = json_object_get(rootJ, "mixportsUsed");
-		if (mixportsUsedJ) mixportsUsed = json_integer_value(mixportsUsedJ);
+		if (mixportsUsedJ) mixportsUsed = clamp((int)json_integer_value(mixportsUsedJ), 1, MIX_PORTS);
+
+		// Rack's own Module::fromJson() already restored MIX_X_POS/MIX_Y_POS via
+		// paramsFromJson() (which runs before dataFromJson()). Without this, the
+		// UI shadow (mixUiX/mixUiY) and filter (mixXfilter/mixYfilter) stay at
+		// whatever the constructor left them at, and the first process() call
+		// would overwrite the just-restored params with that stale shadow.
+		for (uint8_t i = 0; i < MIX_PORTS; i++) {
+			setCursorXyImmediate(i, paramQuantities[MIX_X_POS + i]->getValue(), paramQuantities[MIX_Y_POS + i]->getValue());
+		}
 	}
 };
 
@@ -618,7 +630,7 @@ struct ArenaOutputModeMenuItem : MenuItem {
 		{ OUTPUTMODE::CLIP_UNI, "Clip 0..10V" },
 		{ OUTPUTMODE::CLIP_BI, "Clip -5..5V" },
 		{ OUTPUTMODE::FOLD_UNI, "Fold 0..10V" },
-		{ OUTPUTMODE::FOLD_BI, "Fold 0..10V" }
+		{ OUTPUTMODE::FOLD_BI, "Fold -5..5V" }
 	};
 
 	ArenaOutputModeMenuItem(MODULE* module, int id) {
@@ -772,7 +784,7 @@ struct ArenaOpLedDisplay : StoermelderLedDisplay {
 
 	void onButton(const event::Button& e) override {
 		if (id + 1 > module->inportsUsed) return;
-		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
 		}

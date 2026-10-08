@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../vcv/ui.hpp"
 
 namespace StoermelderPackOne {
 namespace Spin {
@@ -155,7 +156,7 @@ struct SpinContainer : widget::Widget {
 
 	void onHoverScroll(const event::HoverScroll& e) override {
 		auto now = std::chrono::system_clock::now();
-		if (!module->isBypassed() && (APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam() && now - lastHoverScroll > std::chrono::milliseconds{scrollLock}) {
+		if (!module->isBypassed() && (vcv::ui::getWindowMods() & RACK_MOD_MASK) == module->mods && testParam() && now - lastHoverScroll > std::chrono::milliseconds{scrollLock}) {
 			module->delta = e.scrollDelta.y;
 			e.consume(this);
 		}

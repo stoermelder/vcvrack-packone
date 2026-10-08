@@ -1,9 +1,13 @@
-#include "../test/test_plugin.hpp"
-#include "../test/test_context.hpp"
+#include "../test/framework.hpp"
 #include "MpmcTaskWorker.hpp"
 #include <future>
 #include <thread>
 #include <chrono>
+#include <mutex>
+
+void testPluginInit(rack::Plugin* p) {
+	pluginInstance = p;
+}
 
 using namespace StoermelderPackOne;
 

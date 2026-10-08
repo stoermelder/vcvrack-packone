@@ -32,6 +32,23 @@ All three options show a confirmation dialog listing the proposed tag assignment
 
 MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
 
+## Filtering tags by search text (*v1 mod* and *v2 mod*)
+
+Tags can also be filtered directly from the search field by typing `t=` followed by the beginning of a tag name:
+
+| Search text | Result |
+| --- | --- |
+| `t=vco` | Only modules tagged "VCO" |
+| `t=fil` | Only modules with any tag starting with "fil", e.g. "Filter" or a custom tag "Filterbank" |
+| `t=vco bog` | Modules tagged "VCO", additionally searched for "bog" with the normal fuzzy search |
+| `t=vco t=fil` | Modules that have a tag starting with "vco" *and* a tag starting with "fil" |
+
+- A prefix matches both predefined tags (including their aliases and your own additions/removals, see above) and custom tags. Matching is case-insensitive.
+- A module passes a `t=` filter if it has *any* tag starting with the prefix. With several `t=` entries, a module must pass *all* of them.
+- The `t=` entries can be placed anywhere in the search text, the remaining words are used for the normal search.
+- A prefix without any matching tag shows no modules, a lone `t=` without a prefix is treated as normal search text.
+- The filter is combined with the Brand, Tag, Custom Tag and other filters of the browser.
+
 
 ## Width filter (*v2 mod*)
 
@@ -39,7 +56,7 @@ The *v2 mod* browser includes a **Width** filter button in the header bar. Modul
 
 ### Filtering by width
 
-Click the **Width** button to open a dropdown listing all HP values known for installed modules. Clicking an entry cycles through three filter modes:
+Click the **Width** button (or press `Ctrl/Cmd`+`4`) to open a dropdown listing all HP values known for installed modules. Clicking an entry cycles through three filter modes:
 
 | Click | Mode | Effect |
 |-------|------|--------|
@@ -67,9 +84,20 @@ This information is not part of the plugin manifest and is not available locally
 
 The Sort menu also has two **Width** entries (*narrow → wide* / *wide → narrow*), which sort modules by their HP width instead of by the selected sort option above. Clicking an active width entry again disables it and returns to the previous sort option. Modules with unknown width (see [Width filter](#width-filter-v2-mod)) are sorted to the end. 
 
+### Usage data ("Last used" / "Most used")
+
+MB tracks its own "recently used" and "most used" statistics per module, separate from and in addition to the ones Rack's built-in module browser keeps. This is necessary because MB's own browser and Rack's browser are otherwise entirely separate — modules placed through Rack's browser (or through Rack's `Ctrl+Shift+drag` cloning, template presets, etc.) don't count towards MB's own stats and vice versa.
+
+If you already have usage history from Rack's built-in browser and want to carry it over, use **Import usage data from Rack's browser** in the *Browser settings* submenu of the context menu. It offers two modes:
+
+- **Add to existing usage data** — adds Rack's "most used" counts on top of MB's own, and keeps the more recent of the two "last used" timestamps per module. Only run this once per import, since running it again keeps adding the same numbers a second time.
+- **Overwrite existing usage data** — replaces MB's "most used" count for each module also known to Rack's browser, while still keeping the more recent "last used" timestamp of either. Safe to run repeatedly.
+
+This is a one-time import, not a live sync — MB does not read Rack's usage data afterwards.
+
 ## *v2_mod* keyboard shortcuts
 
-The *v2-mod* browser variant supports keyboard navigation and shortcuts:
+The *v2-mod* browser variant supports keyboard navigation and shortcuts. Most of them can be changed, see [Customizing shortcuts](#customizing-shortcuts) below.
 
 **Navigation** (when search field is focused or in the module grid):
 | Key | Action |
@@ -78,8 +106,8 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | `Shift`+*Click* | Add module, keep browser open |
 | `↓` | Move down in the module grid |
 | `↑` | Move up in the module grid |
-| `→` | Move to the next module in the row |
-| `←` | Move to the previous module in the row |
+| `→` | Move to the next module in the row (or move the text cursor right, see below) |
+| `←` | Move to the previous module in the row (or move the text cursor left, see below) |
 | `Enter` | Add the selected module to the rack |
 | `Escape` | Close the browser |
 | `Backspace` | Clear search and filters (when search is empty) |
@@ -88,6 +116,7 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | `Ctrl/Cmd`+`1` | Open Brand filter dropdown |
 | `Ctrl/Cmd`+`2` | Open Tag filter dropdown |
 | `Ctrl/Cmd`+`3` | Open Custom Tag filter dropdown |
+| `Ctrl/Cmd`+`4` | Open Width filter dropdown |
 
 **Module hover shortcuts** (hover over a module):
 | Key | Action |
@@ -103,6 +132,49 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | *Any key* | Filter items by typing (incremental filter) |
 | `Backspace` | Clear filter text (show all items) |
 | `Enter` | Toggle selection of the highlighted item |
+
+The keys inside the dropdown menus are fixed and cannot be customized.
+
+The *v1-mod* browser uses the same shortcuts for `Escape`, `Backspace`, `Space`, `Shift`+`Space` and the module hover shortcuts.
+
+## Customizing shortcuts
+
+The keyboard shortcuts of the browser are stored in `<Rack user folder>/Stoermelder-P1/keymaps/Mb.jsonc`. The file is created the first time MB is used and can be edited with any text editor; Rack has to be restarted afterwards. It is a JSON file which additionally allows `//` comments (many editors treat `.jsonc` files this way), and every entry is preceded by a comment with a description of the action:
+
+```jsonc
+{
+  "slug": "Mb",
+  "version": 1,
+  "bindings": {
+    // Close browser (Browser)
+    "browser.close": "Escape",
+
+    // Toggle hidden (empty search) (Browser)
+    "browser.hidden.toggle": ["Shift+Space", "Ctrl+Space"],
+
+    // Clear filters (any search) (Browser)
+    "browser.clear.always": null
+  }
+}
+```
+
+- A shortcut is written as modifiers and a key joined by `+`, e.g. `Ctrl+Shift+K`. Modifiers are `Ctrl`, `Shift` and `Alt`; on Mac `Ctrl` stands for the `Cmd` key. Use an array to assign several shortcuts to one action, and `null` to remove all shortcuts of an action.
+- The descriptive comments are rewritten whenever MB saves the file, comments of your own are not kept.
+- If a new version of MB adds shortcuts, they are added with their default to your existing file, the shortcuts you have changed are kept.
+- If the file cannot be read (e.g. a typo in the JSON), MB uses the default shortcuts and does not overwrite the file, so you can fix it.
+
+| Action | Default | Effect |
+|--------|---------|--------|
+| `browser.close` | `Escape` | Close the browser |
+| `browser.clear` | `Backspace` | Clear search and filters, only when the search is empty |
+| `browser.clear.always` | *(none)* | Clear search and filters, also when the search field contains text |
+| `browser.favorite.toggle` | `Space` | Toggle Favorites filter, only when the search is empty |
+| `browser.favorite.toggle.always` | *(none)* | Toggle Favorites filter, also when the search field contains text |
+| `browser.hidden.toggle` | `Shift+Space`, `Ctrl+Space` | Toggle listing of hidden modules |
+| `modelbox.favorite.toggle` | `Ctrl+F` | Toggle favorite status of the hovered module |
+| `modelbox.hidden.toggle` | `Ctrl+H` | Toggle hidden status of the hovered module |
+| `browser.v2.nav.up`, `.down`, `.left`, `.right` | `Up`, `Down`, `Left`, `Right` | Move the selection in the module grid (*v2 mod* only; unbind `left`/`right` to use the keys for the text cursor, see option *Arrow keys select modules*) |
+| `browser.v2.layout.brand`, `.tag`, `.customtag`, `.width` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Open the Brand, Tag, Custom Tag or Width dropdown (*v2 mod* only) |
 
 ## Tips
 
@@ -121,6 +193,16 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 - **Favorite modes** — MB supports two favorite modes (VCV Rack / MB) controlling how favorites are stored and displayed.
 
 - **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
+
+- **Arrow keys select modules (v2)** — Enabled by default, `←`/`→` move the selection to the previous/next module in the *v2 mod* browser's grid instead of moving the text cursor within the search field (`↓`/`↑` always navigate the grid regardless of this setting). Disable this option if you'd rather have `←`/`→` behave like a normal text field and move the cursor while typing a search term. The option is a shortcut to the key-mapping: disabling it unbinds `browser.v2.nav.left` and `browser.v2.nav.right` in `Mb.jsonc`, enabling it restores their default keys. It counts as enabled while either action has a binding, so custom bindings (e.g. `Ctrl+Left`) are kept until you disable it.
+
+- **Pre-render previews when idle** — Module previews are normally created the moment they first
+scroll into view, which can make scrolling feel sluggish on slower systems or with a large module
+library. When this option is enabled, MB instead prepares previews in the background while the
+browser sits idle, so they are already available once you scroll to them. Previews look exactly
+the same either way; only the moment they are prepared changes. Preparation pauses as soon as you
+scroll, search or zoom, and uses only leftover time within a frame, so it never delays the browser
+itself. Disabled by default.
 
 ## Changelog
 
@@ -165,3 +247,10 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed module placement when "Smart Rearrangement" is disabled
     - Fixed broken sorting option "Last used"
     - Fixed module preview in *v1 mod* browser
+- v2.7.0
+    - Added tag-filtering using "t=..." in the search field
+    - Added option to import "recently used"/"most used" statistics from Rack's own module browser
+    - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
+    - Added option to pre-warm module preview
+    - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
+    - Fixed "Newest" module manifest download if Rack user folder is on different disk

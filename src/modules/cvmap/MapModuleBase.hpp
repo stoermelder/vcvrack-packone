@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../../utils/cursor.hpp"
 #include "../../pluginsettings.hpp"
 #include "../../utils/StripIdFixModule.hpp"
 #include "../../utils/ScaledMapParam.hpp"
@@ -289,7 +290,7 @@ struct MapModuleChoice : LedDisplayChoice {
 
 	~MapModuleChoice() {
 		if (module && module->learningId == id) {
-			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			cursor::resetCursor();
 		}
 	}
 
@@ -345,8 +346,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 
-		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+		cursor::setCrosshairCursor();
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -368,13 +368,13 @@ struct MapModuleChoice : LedDisplayChoice {
 					int paramId = pq->paramId;
 					module->learnParam(id, moduleId, paramId);
 					hscrollCharOffset = 0;
-					if (APP->window) glfwSetCursor(APP->window->win, NULL);
+					cursor::resetCursor();
 					return;
 				}
 			}
 		}
 		module->disableLearn(id);
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		cursor::resetCursor();
 	}
 
 	void step() override {
