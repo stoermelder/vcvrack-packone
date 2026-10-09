@@ -22,9 +22,7 @@ MB can automatically assign custom tags to modules using keyword matching. The c
 
 **Auto-generate custom tags** — Uses a curated rule set with ~70 tag categories covering synthesis techniques (Wavetable, FM Synthesis, Phase Modulation), filter types (Ladder Filter, Comb Filter), modulation utilities (Attenuverter, Comparator, Shift Register), effects (Bitcrusher, Tape, Spring Reverb), and more. Keywords are matched via fuzzy substring search against module names and descriptions.
 
-**Auto-generate 'Free'/'Commercial' tags** — Reads the `license` field of every installed plugin (as given in its plugin.json) and assigns "Free" if it is a known open source license identifier (SPDX, e.g. `GPL-3.0-or-later`, `MIT`, `Apache-2.0`, also in expressions like `MIT OR Apache-2.0`) and "Commercial" for everything else, e.g. `proprietary`. Plugins without a license field are skipped. No network access is needed. The assumption is only as good as the plugin's manifest.
-
-**Auto-generate 'MetaModule' tag** — Connects to https://metamodule.info to download a list of MetaModule-compatible plugins and assigns the "MetaModule" tag to matching modules.
+**Auto-generate 'Free'/'Commercial' tags** — Assigns "Free" to plugins with a known open source license in their plugin.json (SPDX identifier, e.g. `GPL-3.0-or-later`, `MIT`, `Apache-2.0`, also in expressions like `MIT OR Apache-2.0`). For all other plugins, including closed-source ones with an unknown or `proprietary` license, MB checks Rack's `licenses` folder (in your Rack user directory): if a `<plugin slug>.vcvkey` file exists, you own a license for the plugin and it is tagged "Commercial", otherwise "Free". Plugins you haven't purchased or are not distrubuted in the VCV Library are therefore tagged "Free" as well. No network access is needed.
 
 **Auto-generate tag from search** — Enter a custom search term (which becomes the tag name) and modules matching that query are tagged accordingly. For example, searching "Sequencer" would show all untagged modules containing "sequencer" in name/description.
 

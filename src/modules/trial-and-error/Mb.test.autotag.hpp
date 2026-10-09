@@ -951,30 +951,39 @@ TEST_CASE("licenseIsFree", "[Mb]") {
 }
 
 TEST_CASE("customTagLicense", "[Mb]") {
-	rack::plugin::Plugin freeP, commP, unknownP;
-	freeP.slug = "free-plugin";   freeP.license = "GPL-3.0-or-later";
-	commP.slug = "comm-plugin";   commP.license = "proprietary";
-	unknownP.slug = "unk-plugin"; unknownP.license = "";
-	rack::plugin::Model mFree, mComm, mUnknown;
-	mFree.plugin = &freeP;       mFree.slug = "f";    mFree.name = "F";
-	mComm.plugin = &commP;       mComm.slug = "c";    mComm.name = "C";
-	mUnknown.plugin = &unknownP; mUnknown.slug = "u"; mUnknown.name = "U";
-	freeP.models.push_back(&mFree);
-	commP.models.push_back(&mComm);
-	unknownP.models.push_back(&mUnknown);
-	std::vector<plugin::Plugin*> plugins = {&freeP, &commP, &unknownP};
+	rack::plugin::Plugin openP, keyP, noKeyP, emptyP;
+	openP.slug = "open-plugin";  openP.license = "GPL-3.0-or-later";
+	keyP.slug = "paid-plugin";   keyP.license = "proprietary";
+	noKeyP.slug = "free-closed"; noKeyP.license = "proprietary";
+	emptyP.slug = "no-license";  emptyP.license = "";
+	rack::plugin::Model mOpen, mKey, mNoKey, mEmpty;
+	mOpen.plugin = &openP;   mOpen.slug = "a";  mOpen.name = "A";
+	mKey.plugin = &keyP;     mKey.slug = "b";   mKey.name = "B";
+	mNoKey.plugin = &noKeyP; mNoKey.slug = "c"; mNoKey.name = "C";
+	mEmpty.plugin = &emptyP; mEmpty.slug = "d"; mEmpty.name = "D";
+	openP.models.push_back(&mOpen);
+	keyP.models.push_back(&mKey);
+	noKeyP.models.push_back(&mNoKey);
+	emptyP.models.push_back(&mEmpty);
+	std::vector<plugin::Plugin*> plugins = {&openP, &keyP, &noKeyP, &emptyP};
+	std::vector<std::string> asked;
+	auto hasKey = [&](const std::string& slug) { asked.push_back(slug); return slug == "paid-plugin" || slug == "open-plugin"; };
 
 	customTagReset();
-	auto result = customTagLicense(plugins);
-	REQUIRE(result.total == 2);
-	REQUIRE(result.assignments["Free"] == std::set<plugin::Model*>{&mFree});
-	REQUIRE(result.assignments["Commercial"] == std::set<plugin::Model*>{&mComm});
+	auto result = customTagLicense(plugins, hasKey);
+	REQUIRE(result.total == 4);
+	REQUIRE(result.assignments["Free"] == std::set<plugin::Model*>{&mOpen, &mNoKey, &mEmpty});
+	REQUIRE(result.assignments["Commercial"] == std::set<plugin::Model*>{&mKey});
+
+	SECTION("Open source license wins over a key file") {
+		REQUIRE(result.assignments["Free"].count(&mOpen) == 1);
+	}
 
 	SECTION("Already tagged models are skipped") {
-		customTagAdd(&mFree, "Free");
-		auto again = customTagLicense(plugins);
-		REQUIRE(again.total == 1);
-		REQUIRE(again.assignments.count("Free") == 0);
+		customTagAdd(&mKey, "Commercial");
+		auto again = customTagLicense(plugins, hasKey);
+		REQUIRE(again.total == 3);
+		REQUIRE(again.assignments.count("Commercial") == 0);
 	}
 
 	customTagReset();

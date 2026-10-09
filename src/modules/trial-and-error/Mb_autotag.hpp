@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstdio>
+#include <functional>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -259,9 +260,15 @@ AutoTagResult customTagMetamodule(std::set<std::pair<std::string, std::string>> 
 // ("proprietary", "LicenseRef-...", non-commercial Creative Commons, unknown ids) is not.
 bool licenseIsFree(const std::string& license);
 
-// Assigns "Free" to modules of plugins with an open source license and "Commercial" to all others.
-// Plugins without a license field are skipped, as nothing is known about them.
-AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins = rack::plugin::plugins);
+// True if Rack's user "licenses" folder holds a "<slug>.vcvkey" file, i.e. the user owns a license
+// for the plugin. Only paid plugins have one.
+bool licenseKeyExists(const std::string& pluginSlug);
+
+// Assigns "Free" or "Commercial" to all modules. Plugins with a known open source license are free.
+// For all others (closed source can still be free of charge) the license key file decides:
+// a key for the plugin slug makes it commercial, otherwise it is free.
+AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins = rack::plugin::plugins,
+	std::function<bool(const std::string&)> hasLicenseKey = licenseKeyExists);
 
 } // namespace Mb
 } // namespace StoermelderPackOne

@@ -197,11 +197,15 @@ bool licenseIsFree(const std::string& license) {
 	return false;
 }
 
-AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins) {
+bool licenseKeyExists(const std::string& pluginSlug) {
+	if (pluginSlug.empty()) return false;
+	return vcv::fs::exists(vcv::fs::getUserDirectory("licenses/" + pluginSlug + ".vcvkey"));
+}
+
+AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins, std::function<bool(const std::string&)> hasLicenseKey) {
 	AutoTagResult result;
 	for (plugin::Plugin* p : plugins) {
-		if (string::trim(p->license).empty()) continue;
-		const std::string tag = licenseIsFree(p->license) ? "Free" : "Commercial";
+		const std::string tag = (licenseIsFree(p->license) || !hasLicenseKey(p->slug)) ? "Free" : "Commercial";
 		for (plugin::Model* model : p->models) {
 			if (customTagHas(model, tag, true)) continue;
 			result.assignments[tag].insert(model);
