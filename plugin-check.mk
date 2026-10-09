@@ -23,6 +23,7 @@ CHECK_FLAGS := $(filter -I% -D%,$(FLAGS))
 # Machine-generated sources: nobody edits them, and SirenTagClassifier.cpp alone is
 # 89k lines and was half of all findings.
 CHECK_EXCLUDE := src/modules/siren/SirenTagClassifier.cpp
+CHECK_EXCLUDE += $(wildcard src/**/**/*.test.*.?pp)
 
 CHECK_SOURCES := $(wildcard src/*.?pp src/**/*.?pp src/**/**/*.?pp)
 CHECK_SOURCES := $(filter-out $(CHECK_EXCLUDE),$(CHECK_SOURCES))

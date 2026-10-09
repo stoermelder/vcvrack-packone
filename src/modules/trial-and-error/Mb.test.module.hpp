@@ -919,6 +919,29 @@ TEST_CASE("Text tag filters parse t= tokens", "[Mb]") {
 		REQUIRE(textTagFiltersMatch(model, effective, filters));
 	}
 
+	SECTION("Width tokens: w=, w<=, w>= with unknown widths never passing") {
+		std::set<int> effective;
+		modelWidthSet(model, 8);
+		REQUIRE(textTagFiltersParse("w=8 osc W>=3 w<=10", filters) == "osc");
+		REQUIRE(filters.size() == 3);
+		REQUIRE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("w=7", filters);
+		REQUIRE_FALSE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("w<=7", filters);
+		REQUIRE_FALSE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("w>=9", filters);
+		REQUIRE_FALSE(textTagFiltersMatch(model, effective, filters));
+		textTagFiltersParse("w>=8 w<=8", filters);
+		REQUIRE(textTagFiltersMatch(model, effective, filters));
+		modelWidthSet(model, -1);
+		REQUIRE_FALSE(textTagFiltersMatch(model, effective, filters));
+	}
+
+	SECTION("Malformed width tokens are plain text") {
+		REQUIRE(textTagFiltersParse("w= w=x w<= w>=1a w=12345", filters) == "w= w=x w<= w>=1a w=12345");
+		REQUIRE(filters.empty());
+	}
+
 	customTagReset();
 	cleanupMockModels();
 }

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstdio>
+#include <functional>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -253,6 +254,21 @@ std::set<std::pair<std::string, std::string>> parseMetamoduleYaml(const std::str
 // Assigns "MetaModule" tag to all modules from MetaModule-compatible plugins.
 AutoTagResult customTagMetamodule(std::set<std::pair<std::string, std::string>> metamoduleModules = parseMetamoduleYaml(),
 	const std::vector<Plugin*>& plugins = rack::plugin::plugins);
+
+// True if the SPDX license expression (as in plugin.json "license") consists of known open source
+// licenses: "A OR B" is free if any alternative is, "A AND B" only if all are. Anything else
+// ("proprietary", "LicenseRef-...", non-commercial Creative Commons, unknown ids) is not.
+bool licenseIsFree(const std::string& license);
+
+// True if Rack's user "licenses" folder holds a "<slug>.vcvkey" file, i.e. the user owns a license
+// for the plugin. Only paid plugins have one.
+bool licenseKeyExists(const std::string& pluginSlug);
+
+// Assigns "Free" or "Commercial" to all modules. Plugins with a known open source license are free.
+// For all others (closed source can still be free of charge) the license key file decides:
+// a key for the plugin slug makes it commercial, otherwise it is free.
+AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins = rack::plugin::plugins,
+	std::function<bool(const std::string&)> hasLicenseKey = licenseKeyExists);
 
 } // namespace Mb
 } // namespace StoermelderPackOne

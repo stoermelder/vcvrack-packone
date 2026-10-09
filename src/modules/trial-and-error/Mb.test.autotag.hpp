@@ -928,3 +928,63 @@ TEST_CASE("openAutoTagConfirmDialog routes through the UI message", "[Mb][ui]") 
 		CHECK(mock.ui.messages[0].msg == "No new tag assignments found.");
 	}
 }
+
+
+TEST_CASE("licenseIsFree", "[Mb]") {
+	SECTION("Open source SPDX identifiers") {
+		for (const char* l : {"MIT", "GPL-3.0-or-later", "GPL-3.0-only", "GPL-3.0+", "GPL-2.0", "LGPL-2.1-or-later",
+				"AGPL-3.0-only", "Apache-2.0", "BSD-3-Clause", "ISC", "MPL-2.0", "CC0-1.0", "Unlicense", "CC-BY-SA-4.0", "gpl-3.0-or-later"})
+			REQUIRE(licenseIsFree(l));
+	}
+	SECTION("Everything else is commercial") {
+		for (const char* l : {"proprietary", "Proprietary", "LicenseRef-Commercial", "CC-BY-NC-4.0", "CC-BY-ND-4.0", "EULA", "", "All rights reserved"})
+			REQUIRE_FALSE(licenseIsFree(l));
+	}
+	SECTION("Expressions") {
+		REQUIRE(licenseIsFree("MIT OR proprietary"));
+		REQUIRE(licenseIsFree("(MIT OR Apache-2.0)"));
+		REQUIRE(licenseIsFree("MIT AND BSD-3-Clause"));
+		REQUIRE_FALSE(licenseIsFree("MIT AND proprietary"));
+		REQUIRE(licenseIsFree("GPL-3.0-or-later WITH GCC-exception-3.1"));
+		REQUIRE_FALSE(licenseIsFree("proprietary OR LicenseRef-X"));
+	}
+}
+
+TEST_CASE("customTagLicense", "[Mb]") {
+	rack::plugin::Plugin openP, keyP, noKeyP, emptyP;
+	openP.slug = "open-plugin";  openP.license = "GPL-3.0-or-later";
+	keyP.slug = "paid-plugin";   keyP.license = "proprietary";
+	noKeyP.slug = "free-closed"; noKeyP.license = "proprietary";
+	emptyP.slug = "no-license";  emptyP.license = "";
+	rack::plugin::Model mOpen, mKey, mNoKey, mEmpty;
+	mOpen.plugin = &openP;   mOpen.slug = "a";  mOpen.name = "A";
+	mKey.plugin = &keyP;     mKey.slug = "b";   mKey.name = "B";
+	mNoKey.plugin = &noKeyP; mNoKey.slug = "c"; mNoKey.name = "C";
+	mEmpty.plugin = &emptyP; mEmpty.slug = "d"; mEmpty.name = "D";
+	openP.models.push_back(&mOpen);
+	keyP.models.push_back(&mKey);
+	noKeyP.models.push_back(&mNoKey);
+	emptyP.models.push_back(&mEmpty);
+	std::vector<plugin::Plugin*> plugins = {&openP, &keyP, &noKeyP, &emptyP};
+	std::vector<std::string> asked;
+	auto hasKey = [&](const std::string& slug) { asked.push_back(slug); return slug == "paid-plugin" || slug == "open-plugin"; };
+
+	customTagReset();
+	auto result = customTagLicense(plugins, hasKey);
+	REQUIRE(result.total == 4);
+	REQUIRE(result.assignments["Free"] == std::set<plugin::Model*>{&mOpen, &mNoKey, &mEmpty});
+	REQUIRE(result.assignments["Commercial"] == std::set<plugin::Model*>{&mKey});
+
+	SECTION("Open source license wins over a key file") {
+		REQUIRE(result.assignments["Free"].count(&mOpen) == 1);
+	}
+
+	SECTION("Already tagged models are skipped") {
+		customTagAdd(&mKey, "Commercial");
+		auto again = customTagLicense(plugins, hasKey);
+		REQUIRE(again.total == 3);
+		REQUIRE(again.assignments.count("Commercial") == 0);
+	}
+
+	customTagReset();
+}

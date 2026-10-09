@@ -18,15 +18,15 @@ MB maintains its own custom tag system separate from Rack's built-in tags. Custo
 
 ### Auto-generate custom tags
 
-MB can automatically assign custom tags to modules using keyword matching. The context menu offers three auto-tagging options:
+MB can automatically assign custom tags to modules using keyword matching. The context menu offers four auto-tagging options:
 
 **Auto-generate custom tags** — Uses a curated rule set with ~70 tag categories covering synthesis techniques (Wavetable, FM Synthesis, Phase Modulation), filter types (Ladder Filter, Comb Filter), modulation utilities (Attenuverter, Comparator, Shift Register), effects (Bitcrusher, Tape, Spring Reverb), and more. Keywords are matched via fuzzy substring search against module names and descriptions.
 
-**Auto-generate 'MetaModule' tag** — Connects to https://metamodule.info to download a list of MetaModule-compatible plugins and assigns the "MetaModule" tag to matching modules.
+**Auto-generate 'Free'/'Commercial' tags** — Assigns "Free" to plugins with a known open source license in their plugin.json (SPDX identifier, e.g. `GPL-3.0-or-later`, `MIT`, `Apache-2.0`, also in expressions like `MIT OR Apache-2.0`). For all other plugins, including closed-source ones with an unknown or `proprietary` license, MB checks Rack's `licenses` folder (in your Rack user directory): if a `<plugin slug>.vcvkey` file exists, you own a license for the plugin and it is tagged "Commercial", otherwise "Free". Plugins you haven't purchased or are not distrubuted in the VCV Library are therefore tagged "Free" as well. No network access is needed.
 
 **Auto-generate tag from search** — Enter a custom search term (which becomes the tag name) and modules matching that query are tagged accordingly. For example, searching "Sequencer" would show all untagged modules containing "sequencer" in name/description.
 
-All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
+All options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
 
 ## Predefined tags
 
@@ -48,6 +48,19 @@ Tags can also be filtered directly from the search field by typing `t=` followed
 - The `t=` entries can be placed anywhere in the search text, the remaining words are used for the normal search.
 - A prefix without any matching tag shows no modules, a lone `t=` without a prefix is treated as normal search text.
 - The filter is combined with the Brand, Tag, Custom Tag and other filters of the browser.
+
+### Width in the search field
+
+Module width (in HP) can be filtered the same way:
+
+| Search text | Result |
+| --- | --- |
+| `w=8` | Only modules exactly 8 HP wide |
+| `w<=8` | Modules 8 HP or narrower |
+| `w>=8` | Modules 8 HP or wider |
+
+- Combine `w>=4 w<=8` for a range, or with `t=` and normal search words, in any order.
+- Only modules with a known width are shown, see "Populating width data" below. A `w=` token without a number is treated as normal search text.
 
 
 ## Width filter (*v2 mod*)
@@ -249,6 +262,8 @@ itself. Disabled by default.
     - Fixed module preview in *v1 mod* browser
 - v2.7.0
     - Added tag-filtering using "t=..." in the search field
+    - Added width-filtering using "w=3", "w<=3" and "w>=3" in the search field
+    - Added auto-generation of "Free"/"Commercial" tags based on plugin licenses
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
     - Added option to pre-warm module preview
