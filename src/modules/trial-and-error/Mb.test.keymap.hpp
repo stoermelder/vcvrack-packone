@@ -361,6 +361,21 @@ TEST_CASE("MB keymap: layout dropdown shortcuts", "[Mb][Widget][Keymap]") {
 		REQUIRE(fx.overlay->visible);
 	}
 
+	SECTION("Backspace in an open dropdown resets its selection, but first clears type-ahead text") {
+		auto* open = fx.openDropdownFor(&fx.brandStub);
+		int resets = 0;
+		open->resetSelection = [&]() { resets++; };
+
+		open->filterText = "abc";
+		REQUIRE(fx.press(GLFW_KEY_BACKSPACE));
+		REQUIRE(open->filterText.empty());
+		REQUIRE(resets == 0);
+
+		REQUIRE(fx.press(GLFW_KEY_BACKSPACE));
+		REQUIRE(resets == 1);
+		REQUIRE_FALSE(open->parent->requestedDelete);
+	}
+
 	SECTION("A rebound shortcut opens the dropdown, the old one no longer does") {
 		fx.km->bind("browser.v2.layout.brand", KeyCombo("Ctrl+B"));
 

@@ -293,7 +293,10 @@ struct BrandButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items, [this]() {
+			browser->brand = "";
+			browser->refresh();
+		});
 	}
 
 	void step() override {
@@ -349,7 +352,10 @@ struct TagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items, [this]() {
+			browser->tagIds = {};
+			browser->refresh();
+		});
 	}
 
 	void step() override {
@@ -417,7 +423,10 @@ struct CustomTagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items, [this]() {
+			browser->customTagFilter = {};
+			browser->refresh();
+		});
 	}
 
 	void step() override {
@@ -512,7 +521,11 @@ struct WidthButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<ModuleBrowser>(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items, [this]() {
+			browser->widthFilterRef = 0;
+			browser->widthFilterMode = 0;
+			browser->refresh();
+		});
 	}
 
 	void step() override {
