@@ -276,6 +276,8 @@ struct DropdownChoiceContainer : widget::OpaqueWidget {
 	widget::Widget* selectedItem = nullptr;
 	// The button that opened this dropdown.
 	widget::Widget* opener = nullptr;
+	// Backspace (with no type-ahead text to clear) resets the selection made in this dropdown.
+	std::function<void()> resetSelection;
 
 	DropdownChoiceContainer() {
 		scroll = new ui::ScrollWidget;
@@ -402,8 +404,13 @@ struct DropdownChoiceContainer : widget::OpaqueWidget {
 					e.consume(this);
 					return;
 				case GLFW_KEY_BACKSPACE:
-					filterText.clear();
-					updateList();
+					if (filterText.empty() && resetSelection) {
+						resetSelection();
+					}
+					else {
+						filterText.clear();
+						updateList();
+					}
 					e.consume(this);
 					return;
 				default:
@@ -497,7 +504,7 @@ struct DropdownChoiceItem : ui::Button {
 };
 
 template <typename TBrowser, typename TContainer = DropdownChoiceContainer>
-static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
+static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items, std::function<void()> resetSelection = nullptr) {
 	static_assert(std::is_base_of<widget::Widget, TBrowser>::value, "TBrowser must be a widget type");
 
 	auto browser = APP->scene->getFirstDescendantOfType<TBrowser>();
@@ -506,6 +513,7 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 	// Create menu container
 	TContainer* container = new TContainer;
 	container->opener = button;
+	container->resetSelection = std::move(resetSelection);
 	float menuX = browserPos.x + browser->box.size.x * 0.15f;
 	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
 	container->box.pos = Vec(menuX, menuY);
