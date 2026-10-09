@@ -1,6 +1,7 @@
 #include "Mb_autotag.hpp"
 #include "../../vcv/api.hpp"
 #include <sstream>
+#include <cstring>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -131,6 +132,81 @@ AutoTagResult customTagMetamodule(std::set<std::pair<std::string, std::string>> 
 				result.total++;
 				result.perTag["MetaModule"]++;
 			}
+		}
+	}
+	return result;
+}
+
+// Known open source licenses (OSI approved or FSF free), SPDX ids lowercased with the
+// "-only"/"-or-later"/"+" suffixes of the GNU family removed.
+static const std::set<std::string>& freeLicenseIds() {
+	static const std::set<std::string> ids = {
+		"gpl-2.0", "gpl-3.0", "lgpl-2.0", "lgpl-2.1", "lgpl-3.0", "agpl-3.0",
+		"mit", "mit-0", "x11", "isc", "zlib", "unlicense", "cc0-1.0", "wtfpl", "bsl-1.0", "0bsd",
+		"apache-1.1", "apache-2.0",
+		"bsd-2-clause", "bsd-3-clause", "bsd-3-clause-clear", "bsd-4-clause", "bsd-2-clause-patent",
+		"mpl-1.1", "mpl-2.0", "epl-1.0", "epl-2.0", "eupl-1.1", "eupl-1.2", "osl-3.0", "artistic-2.0",
+		"cc-by-3.0", "cc-by-4.0", "cc-by-sa-3.0", "cc-by-sa-4.0",
+		"ofl-1.1", "ncsa", "postgresql", "python-2.0", "libpng-2.0", "bsd-1-clause", "afl-3.0",
+		"ecl-2.0", "cecill-2.1", "gpl-2.0-with-classpath-exception", "ms-pl", "ms-rl", "ipl-1.0", "cpl-1.0",
+	};
+	return ids;
+}
+
+static bool licenseIdIsFree(std::string id) {
+	id = string::lowercase(string::trim(id));
+	while (!id.empty() && (id.front() == '(' || id.front() == ')')) id.erase(0, 1);
+	while (!id.empty() && (id.back() == '(' || id.back() == ')')) id.pop_back();
+	// "GPL-3.0-or-later WITH exception": the exception does not change the license family
+	size_t with = id.find(" with ");
+	if (with != std::string::npos) id = id.substr(0, with);
+	if (id.empty()) return false;
+	if (id.back() == '+') id.pop_back();
+	for (const char* suffix : {"-or-later", "-only"}) {
+		size_t n = std::strlen(suffix);
+		if (id.size() > n && id.compare(id.size() - n, n, suffix) == 0) {
+			id.erase(id.size() - n);
+			break;
+		}
+	}
+	return freeLicenseIds().count(id) > 0;
+}
+
+// Splits `s` at every case-insensitive occurrence of the whole word `op` (e.g. " or ").
+static std::vector<std::string> licenseSplit(const std::string& s, const std::string& op) {
+	std::vector<std::string> parts;
+	std::string lower = string::lowercase(s);
+	size_t start = 0, pos;
+	while ((pos = lower.find(op, start)) != std::string::npos) {
+		parts.push_back(s.substr(start, pos - start));
+		start = pos + op.size();
+	}
+	parts.push_back(s.substr(start));
+	return parts;
+}
+
+bool licenseIsFree(const std::string& license) {
+	// Operator precedence in SPDX: AND binds tighter than OR; parentheses are not nested in practice
+	for (const std::string& orPart : licenseSplit(license, " or ")) {
+		bool all = true;
+		for (const std::string& andPart : licenseSplit(orPart, " and ")) {
+			if (!licenseIdIsFree(andPart)) { all = false; break; }
+		}
+		if (all) return true;
+	}
+	return false;
+}
+
+AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins) {
+	AutoTagResult result;
+	for (plugin::Plugin* p : plugins) {
+		if (string::trim(p->license).empty()) continue;
+		const std::string tag = licenseIsFree(p->license) ? "Free" : "Commercial";
+		for (plugin::Model* model : p->models) {
+			if (customTagHas(model, tag, true)) continue;
+			result.assignments[tag].insert(model);
+			result.total++;
+			result.perTag[tag]++;
 		}
 	}
 	return result;

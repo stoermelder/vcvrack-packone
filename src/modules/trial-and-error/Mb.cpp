@@ -1227,6 +1227,16 @@ struct MbWidget : ThemedModuleWidget<MbModule> {
 			auto result = std::make_shared<AutoTagResult>(customTagAuto());
 			openAutoTagConfirmDialog(result);
 		}));
+		menu->addChild(createMenuItem("Auto-generate 'Free'/'Commercial' tags", "", []() {
+			auto result = std::make_shared<AutoTagResult>(customTagLicense());
+			if (result->total == 0) {
+				StoermelderPackOne::vcv::ui::message(
+					StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::OK,
+					"No modules to tag, all are already tagged \"Free\" or \"Commercial\".");
+				return;
+			}
+			openAutoTagConfirmDialog(result);
+		}));
 		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
 			if (!StoermelderPackOne::vcv::ui::message(
 					StoermelderPackOne::vcv::MessageType::INFO, StoermelderPackOne::vcv::MessageButtons::YES_NO,

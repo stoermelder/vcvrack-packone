@@ -928,3 +928,54 @@ TEST_CASE("openAutoTagConfirmDialog routes through the UI message", "[Mb][ui]") 
 		CHECK(mock.ui.messages[0].msg == "No new tag assignments found.");
 	}
 }
+
+
+TEST_CASE("licenseIsFree", "[Mb]") {
+	SECTION("Open source SPDX identifiers") {
+		for (const char* l : {"MIT", "GPL-3.0-or-later", "GPL-3.0-only", "GPL-3.0+", "GPL-2.0", "LGPL-2.1-or-later",
+				"AGPL-3.0-only", "Apache-2.0", "BSD-3-Clause", "ISC", "MPL-2.0", "CC0-1.0", "Unlicense", "CC-BY-SA-4.0", "gpl-3.0-or-later"})
+			REQUIRE(licenseIsFree(l));
+	}
+	SECTION("Everything else is commercial") {
+		for (const char* l : {"proprietary", "Proprietary", "LicenseRef-Commercial", "CC-BY-NC-4.0", "CC-BY-ND-4.0", "EULA", "", "All rights reserved"})
+			REQUIRE_FALSE(licenseIsFree(l));
+	}
+	SECTION("Expressions") {
+		REQUIRE(licenseIsFree("MIT OR proprietary"));
+		REQUIRE(licenseIsFree("(MIT OR Apache-2.0)"));
+		REQUIRE(licenseIsFree("MIT AND BSD-3-Clause"));
+		REQUIRE_FALSE(licenseIsFree("MIT AND proprietary"));
+		REQUIRE(licenseIsFree("GPL-3.0-or-later WITH GCC-exception-3.1"));
+		REQUIRE_FALSE(licenseIsFree("proprietary OR LicenseRef-X"));
+	}
+}
+
+TEST_CASE("customTagLicense", "[Mb]") {
+	rack::plugin::Plugin freeP, commP, unknownP;
+	freeP.slug = "free-plugin";   freeP.license = "GPL-3.0-or-later";
+	commP.slug = "comm-plugin";   commP.license = "proprietary";
+	unknownP.slug = "unk-plugin"; unknownP.license = "";
+	rack::plugin::Model mFree, mComm, mUnknown;
+	mFree.plugin = &freeP;       mFree.slug = "f";    mFree.name = "F";
+	mComm.plugin = &commP;       mComm.slug = "c";    mComm.name = "C";
+	mUnknown.plugin = &unknownP; mUnknown.slug = "u"; mUnknown.name = "U";
+	freeP.models.push_back(&mFree);
+	commP.models.push_back(&mComm);
+	unknownP.models.push_back(&mUnknown);
+	std::vector<plugin::Plugin*> plugins = {&freeP, &commP, &unknownP};
+
+	customTagReset();
+	auto result = customTagLicense(plugins);
+	REQUIRE(result.total == 2);
+	REQUIRE(result.assignments["Free"] == std::set<plugin::Model*>{&mFree});
+	REQUIRE(result.assignments["Commercial"] == std::set<plugin::Model*>{&mComm});
+
+	SECTION("Already tagged models are skipped") {
+		customTagAdd(&mFree, "Free");
+		auto again = customTagLicense(plugins);
+		REQUIRE(again.total == 1);
+		REQUIRE(again.assignments.count("Free") == 0);
+	}
+
+	customTagReset();
+}

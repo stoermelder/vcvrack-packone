@@ -254,5 +254,14 @@ std::set<std::pair<std::string, std::string>> parseMetamoduleYaml(const std::str
 AutoTagResult customTagMetamodule(std::set<std::pair<std::string, std::string>> metamoduleModules = parseMetamoduleYaml(),
 	const std::vector<Plugin*>& plugins = rack::plugin::plugins);
 
+// True if the SPDX license expression (as in plugin.json "license") consists of known open source
+// licenses: "A OR B" is free if any alternative is, "A AND B" only if all are. Anything else
+// ("proprietary", "LicenseRef-...", non-commercial Creative Commons, unknown ids) is not.
+bool licenseIsFree(const std::string& license);
+
+// Assigns "Free" to modules of plugins with an open source license and "Commercial" to all others.
+// Plugins without a license field are skipped, as nothing is known about them.
+AutoTagResult customTagLicense(const std::vector<Plugin*>& plugins = rack::plugin::plugins);
+
 } // namespace Mb
 } // namespace StoermelderPackOne

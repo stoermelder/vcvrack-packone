@@ -22,11 +22,13 @@ MB can automatically assign custom tags to modules using keyword matching. The c
 
 **Auto-generate custom tags** — Uses a curated rule set with ~70 tag categories covering synthesis techniques (Wavetable, FM Synthesis, Phase Modulation), filter types (Ladder Filter, Comb Filter), modulation utilities (Attenuverter, Comparator, Shift Register), effects (Bitcrusher, Tape, Spring Reverb), and more. Keywords are matched via fuzzy substring search against module names and descriptions.
 
+**Auto-generate 'Free'/'Commercial' tags** — Reads the `license` field of every installed plugin (as given in its plugin.json) and assigns "Free" if it is a known open source license identifier (SPDX, e.g. `GPL-3.0-or-later`, `MIT`, `Apache-2.0`, also in expressions like `MIT OR Apache-2.0`) and "Commercial" for everything else, e.g. `proprietary`. Plugins without a license field are skipped. No network access is needed. The assumption is only as good as the plugin's manifest.
+
 **Auto-generate 'MetaModule' tag** — Connects to https://metamodule.info to download a list of MetaModule-compatible plugins and assigns the "MetaModule" tag to matching modules.
 
 **Auto-generate tag from search** — Enter a custom search term (which becomes the tag name) and modules matching that query are tagged accordingly. For example, searching "Sequencer" would show all untagged modules containing "sequencer" in name/description.
 
-All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
+All options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
 
 ## Predefined tags
 
@@ -263,6 +265,7 @@ itself. Disabled by default.
 - v2.7.0
     - Added tag-filtering using "t=..." in the search field
     - Added width-filtering using "w=3", "w<=3" and "w>=3" in the search field
+    - Added auto-generation of "Free"/"Commercial" tags based on plugin licenses
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
     - Added option to pre-warm module preview
