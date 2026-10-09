@@ -18,7 +18,7 @@ MB maintains its own custom tag system separate from Rack's built-in tags. Custo
 
 ### Auto-generate custom tags
 
-MB can automatically assign custom tags to modules using keyword matching. The context menu offers three auto-tagging options:
+MB can automatically assign custom tags to modules using keyword matching. The context menu offers four auto-tagging options:
 
 **Auto-generate custom tags** — Uses a curated rule set with ~70 tag categories covering synthesis techniques (Wavetable, FM Synthesis, Phase Modulation), filter types (Ladder Filter, Comb Filter), modulation utilities (Attenuverter, Comparator, Shift Register), effects (Bitcrusher, Tape, Spring Reverb), and more. Keywords are matched via fuzzy substring search against module names and descriptions.
 
