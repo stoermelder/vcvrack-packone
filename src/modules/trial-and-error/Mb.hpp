@@ -91,12 +91,16 @@ std::set<std::string> customTagsAll();
 
 // Text Tag Filters
 //
-// "t=<prefix>" tokens typed into a browser's search field. A filter passes a model that has ANY
+// "t=<prefix>" tokens (and "w=N"/"w<=N"/"w>=N" width tokens) typed into a browser's search field. A filter passes a model that has ANY
 // predefined or custom tag starting with the prefix (case-insensitive); all filters must pass.
 
 struct TextTagFilter {
 	std::set<int> tagIds;
 	std::set<std::string> customTags;
+	// Width filter from "w=N", "w<=N", "w>=N" (0 = this is a tag filter): 1 exact, 2 <=, 3 >= in HP.
+	// Models with unknown width never pass.
+	int widthMode = 0;
+	int widthHp = 0;
 };
 
 // Extracts the "t=" tokens from `search` into `filters` (replacing its contents) and returns

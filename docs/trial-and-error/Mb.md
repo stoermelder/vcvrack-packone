@@ -49,6 +49,19 @@ Tags can also be filtered directly from the search field by typing `t=` followed
 - A prefix without any matching tag shows no modules, a lone `t=` without a prefix is treated as normal search text.
 - The filter is combined with the Brand, Tag, Custom Tag and other filters of the browser.
 
+### Width in the search field
+
+Module width (in HP) can be filtered the same way:
+
+| Search text | Result |
+| --- | --- |
+| `w=8` | Only modules exactly 8 HP wide |
+| `w<=8` | Modules 8 HP or narrower |
+| `w>=8` | Modules 8 HP or wider |
+
+- Combine `w>=4 w<=8` for a range, or with `t=` and normal search words, in any order.
+- Only modules with a known width are shown, see "Populating width data" below. A `w=` token without a number is treated as normal search text.
+
 
 ## Width filter (*v2 mod*)
 
@@ -249,6 +262,7 @@ itself. Disabled by default.
     - Fixed module preview in *v1 mod* browser
 - v2.7.0
     - Added tag-filtering using "t=..." in the search field
+    - Added width-filtering using "w=3", "w<=3" and "w>=3" in the search field
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
     - Added option to pre-warm module preview

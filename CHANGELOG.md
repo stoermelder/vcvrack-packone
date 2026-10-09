@@ -32,6 +32,7 @@
     - Improved rendering performance
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added tag-filtering using "t=..." in the search field
+    - Added width-filtering using "w=3", "w<=3" and "w>=3" in the search field
     - Added option to import "recently used"/"most used" statistics from Rack's own module browser
     - Added option to disable arrow keys selecting modules in *v2 mod* browser (#469)
     - Added option to pre-warm module previews

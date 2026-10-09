@@ -337,6 +337,21 @@ std::set<std::string> customTagsAll() {
 
 // Text tag filters
 
+// Parses "w=N", "w<=N" and "w>=N" (lowercased token); modes match the v2 width filter (1: =, 2: <=, 3: >=).
+static bool textWidthFilterParseToken(const std::string& token, int& mode, int& hp) {
+	size_t pos;
+	if (token.compare(0, 2, "w=") == 0) { mode = 1; pos = 2; }
+	else if (token.compare(0, 3, "w<=") == 0) { mode = 2; pos = 3; }
+	else if (token.compare(0, 3, "w>=") == 0) { mode = 3; pos = 3; }
+	else return false;
+	if (token.size() == pos || token.size() - pos > 4) return false;
+	for (size_t i = pos; i < token.size(); i++) {
+		if (token[i] < '0' || token[i] > '9') return false;
+	}
+	hp = std::atoi(token.c_str() + pos);
+	return true;
+}
+
 std::string textTagFiltersParse(const std::string& search, std::vector<TextTagFilter>& filters) {
 	filters.clear();
 	std::string query;
@@ -344,7 +359,14 @@ std::string textTagFiltersParse(const std::string& search, std::vector<TextTagFi
 	std::string token;
 	while (ss >> token) {
 		std::string lower = string::lowercase(token);
-		if (lower.size() > 2 && lower.compare(0, 2, "t=") == 0) {
+		int widthMode = 0, widthHp = 0;
+		if (textWidthFilterParseToken(lower, widthMode, widthHp)) {
+			TextTagFilter f;
+			f.widthMode = widthMode;
+			f.widthHp = widthHp;
+			filters.push_back(std::move(f));
+		}
+		else if (lower.size() > 2 && lower.compare(0, 2, "t=") == 0) {
 			std::string prefix = lower.substr(2);
 			TextTagFilter f;
 			for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
@@ -371,6 +393,14 @@ std::string textTagFiltersParse(const std::string& search, std::vector<TextTagFi
 
 bool textTagFiltersMatch(Model* model, const std::set<int>& effectiveTagIds, const std::vector<TextTagFilter>& filters) {
 	for (const auto& f : filters) {
+		if (f.widthMode != 0) {
+			int hp = modelWidthGet(model);
+			if (hp < 0) return false;
+			if (f.widthMode == 1 && hp != f.widthHp) return false;
+			if (f.widthMode == 2 && hp > f.widthHp) return false;
+			if (f.widthMode == 3 && hp < f.widthHp) return false;
+			continue;
+		}
 		bool match = false;
 		for (int id : f.tagIds) {
 			if (effectiveTagIds.find(id) != effectiveTagIds.end()) { match = true; break; }
