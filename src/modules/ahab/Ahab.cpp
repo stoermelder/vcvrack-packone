@@ -8,10 +8,12 @@
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabUdpOutput.hpp"
+#include "AhabUdpInput.hpp"
 #include "AhabKeymap.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
 #include "AhabEditorState.hpp"
+#include "AhabCommander.hpp"
 #include "Ahab.generator.hpp"
 #include <array>
 #include <memory>
@@ -66,6 +68,10 @@ struct AhabModule : Module {
 	// the other's socket (tests inject fakes).
 	std::unique_ptr<AhabOoscOutput> udpOutput;
 	std::unique_ptr<AhabOoscOutput> oscOutput;
+
+	// Orca-style text commands received over UDP; drained on the DSP thread.
+	/** [Stored to JSON as the "udpInput" subobject] */
+	std::unique_ptr<AhabUdpInput> udpInput;
 
 	// Phase accumulator for simulation step timing
 	float clockPhase = 0.0f;
@@ -144,12 +150,18 @@ struct AhabModule : Module {
 		
 		this->udpOutput = std::unique_ptr<AhabOoscOutput>(udpOutput);
 		this->oscOutput = std::unique_ptr<AhabOoscOutput>(oscOutput);
+		this->udpInput.reset(new AhabUdpInput);
+		this->udpInput->setHandler([this](const Datagram& d) {
+			AhabCommander<AhabModule>::execute(*this, d.data, d.len);
+		});
 
 		ResetEvent e;
 		onReset(e);
 	}
 
 	~AhabModule() override {
+		// Join the receiver before anything it feeds goes away.
+		udpInput->stop();
 		delete sim;
 	}
 
@@ -178,12 +190,28 @@ struct AhabModule : Module {
 		clkDivider.reset();
 		clkMultiplier.reset();
 		clkRatio = -1;
+		udpInput->reset();
 		sim->setFieldSize(25, 49);
 		sim->reset();
 		// Full reset wipes edit history (unlike "Clear", which is undoable).
 		sim->resetUndo();
 
 		Module::onReset(e);
+	}
+
+	// Start/stop. Shared by the RUN button, the toggle request and UDP commands.
+	// Idempotent: does nothing if already in the requested state.
+	void setRunning(bool run) {
+		if (simRunning == run) return;
+		simRunning = run;
+		clockPhase = 0.0;
+		if (run) {
+			clkInConnectTrigger.state = dsp::SchmittTrigger::LOW;
+			clkInDisconnectTrigger.state = dsp::SchmittTrigger::LOW;
+		}
+		else {
+			sim->notifyTick();
+		}
 	}
 
 	void processExternalClock() {
@@ -229,19 +257,11 @@ struct AhabModule : Module {
 	void process(const ProcessArgs &args) override {
 		// Ensure any UI-requested publishes are processed on the DSP thread
 		sim->process();
+		// At most one UDP command per call; effects land between two frames, in arrival order.
+		udpInput->poll();
 
 		if (simRunToggleRequest || simRunTrigger.process(params[RUN_PARAM].getValue())) {
-			if (simRunning) {
-				simRunning = false;
-				clockPhase = 0.0;
-				sim->notifyTick();
-			}
-			else {
-				simRunning = true;
-				clockPhase = 0.0;
-				clkInConnectTrigger.state = dsp::SchmittTrigger::LOW;
-				clkInDisconnectTrigger.state = dsp::SchmittTrigger::LOW;
-			}
+			setRunning(!simRunning);
 			simRunToggleRequest = false;
 		}
 
@@ -255,7 +275,7 @@ struct AhabModule : Module {
 
 		// Reset input
 		if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
-			sim->resetTickNumber();
+			sim->setTickNumber(0);
 		}
 
 		// Auto-advance simulation based on BPM when running and no external clock
@@ -452,6 +472,7 @@ struct AhabModule : Module {
 		json_object_set_new(rootJ, "gridStepRow", json_integer(gridStepRow));
 		json_object_set_new(rootJ, "clkRatio", json_integer(clkRatioSetting));
 		json_object_set_new(rootJ, "generator", AhabGenerator::Config::toJson(lastGenerator));
+		json_object_set_new(rootJ, "udpInput", udpInput->toJson());
 		return rootJ;
 	}
 
@@ -493,6 +514,8 @@ struct AhabModule : Module {
 			json_t* legacySeedJ = json_object_get(rootJ, "lastRandomizerSeed");
 			if (legacySeedJ && json_is_integer(legacySeedJ)) lastGenerator.seed = (uint32_t)json_integer_value(legacySeedJ);
 		}
+		// Patches without the key load with input off.
+		udpInput->fromJson(json_object_get(rootJ, "udpInput"));
 	}
 };
 
@@ -1128,7 +1151,7 @@ struct AhabSimWidget : OpaqueWidget {
 			notifyUiChanged();
 		});
 		handlers.on("edit.comment.toggle", [this]{ toggleCommentBlock(); });
-		handlers.on("sim.tick.reset", [this]{ module->sim->resetTickNumber(); });
+		handlers.on("sim.tick.reset", [this]{ module->sim->setTickNumber(0); });
 
 		// Navigation: dy/dx/gridStep/extend/move are exactly the dispatcher's own locals,
 		// factored into one shared body so the 32 registrations below don't repeat it.
@@ -1634,6 +1657,24 @@ struct AhabSimWidget : OpaqueWidget {
 			m->addChild(createMenuItem("Apply", "", [this, addrField, portField]() { 
 				module->oscOutput->setDestination(addrField->text, portField->text); 
 			}));
+		}));
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("UDP input", "", [this](ui::Menu* m) {
+			m->addChild(createBoolMenuItem("Enabled", "",
+				[=]() { return module->udpInput->isEnabled(); },
+				[=](bool v) { module->udpInput->setEnabled(v); }
+			));
+			m->addChild(createBoolMenuItem("Listen locally only", "",
+				[=]() { return !module->udpInput->isBindAll(); },
+				[=](bool v) { module->udpInput->setBindAll(!v); }
+			));
+			auto* portField = Rack::createTextField(module->udpInput->getPort(), "Port");
+			m->addChild(portField);
+			m->addChild(createMenuItem("Apply", "", [this, portField]() {
+				module->udpInput->setPort(portField->text);
+			}));
+			m->addChild(createMenuLabel(module->udpInput->getStatusText()));
 		}));
 
 		menu->addChild(new MenuSeparator());

@@ -55,6 +55,42 @@ This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third oc
 AHAB has a third custom operator `+`, which can be placed to create a manual *bang*. For technical reasons ORCA-C has no support for the *bang* operator `*`, and so does AHAB.
 
 
+## UDP input
+
+AHAB can be controlled from the outside, like ORCA: when *UDP input* is enabled, every UDP datagram that arrives on the configured port is executed as a command. This allows other tools - another ORCA, Pure Data, controllers or live-coding scripts - to drive AHAB, even while the editor is closed.
+
+The settings are found in the context menu under *UDP input*:
+
+- **Enabled** — UDP input is off by default and stored with the patch.
+- **Listen locally only** — enabled by default: AHAB only accepts datagrams from the same computer (`127.0.0.1`). Disable this to accept them from other computers in your network, too.
+- **Port** — default is `49160`, the same as in ORCA. Confirm a new port with *Apply*.
+- The last line shows the current status: *Listening* with the number of received and dropped datagrams, or the reason why the port could not be opened (e.g. *port in use*, when another AHAB or ORCA is already listening on it).
+
+A command is a single datagram of the form `name:value`. Parts of a value are separated by `;`. Command names are case-insensitive and can be shortened to their first two letters (`fr:42`). Unknown commands are ignored and nothing is ever sent back to the sender. Datagrams longer than 256 bytes are dropped, a trailing line break is ignored. AHAB executes at most one command per audio sample and in the order they arrive. Changes made by commands cannot be undone.
+
+For example, using `nc` on macOS or Linux:
+
+```
+echo "frame:0" | nc -u -w0 127.0.0.1 49160
+echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
+```
+
+**Supported commands**
+
+| Command | Description |
+| --- | --- |
+| `play` | Starts the simulation, like the Run button. |
+| `stop` | Stops the simulation. |
+| `run` | Executes a single step, like the Clock button. |
+| `frame:N` | Sets the frame counter to `N`. |
+| `skip:N` | Advances the frame counter by `N`. |
+| `rewind:N` | Moves the frame counter back by `N`, but not below 0. |
+| `write:text;x;y` | Writes `text` into the grid with its first character at column `x`, row `y` (both counted from 0 at the top left corner). Both coordinates are required. Text running over the edge of the grid is cut off. Spaces are written as `.` (empty cells). Text with other non-printable characters is rejected, and it must not contain `;`. |
+| `cc:N` | Sets the offset (0-127) added to the control number of the MIDI CC operator `!`, like the *CC* options in the MIDI menu. |
+| `pg:channel;bank;sub;program` | Sends a MIDI program change on `channel` (0-15), preceded by bank select MSB (`bank`, CC 0) and LSB (`sub`, CC 32). `bank`, `sub` and `program` are optional and left out if empty (`pg:3;;;12` sends only the program change). |
+
+Commands of ORCA which depend on the editor's cursor, selection or clipboard (`find`, `select`, `copy`, `paste`, `erase`, `time`) and the theme (`color`) are not available. Commands for tempo, the UDP/OSC output destinations and loading examples are currently not supported either.
+
 ## Random generator
 
 Select a region of the grid and run the context menu command *Random generator* — AHAB composes a complete multi-voice arrangement in a shared key and groove, written as ordinary editable ORCA glyphs. See [**AHAB Generator**](./AhabGenerator.md) for how it works, what it produces and its limitations.
@@ -157,3 +193,4 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
 - v2.7.0
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
     - Added reusable tiny Snippets to the context menu
+    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`)

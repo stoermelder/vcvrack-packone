@@ -125,7 +125,7 @@ public:
 	float readDspInput(size_t port_num) const;
 
 	Usz getTickNumber() const { return tick_number_.load(); }
-	void resetTickNumber() { tick_number_.store(0); }
+	void setTickNumber(Usz tick) { tick_number_.store(tick); }
 
 	// Trigger the tick callback immediately without advancing the simulation.
 	// Useful to request a UI redraw after manual edits to the field.
