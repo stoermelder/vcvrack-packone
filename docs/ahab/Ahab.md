@@ -70,7 +70,7 @@ The settings are found in the context menu under *UDP input*:
 - **Port** — default is `49160`, the same as in ORCA. Confirm a new port with *Apply*.
 - The last line shows the current status: *Listening* with the number of received and dropped datagrams, or the reason why the port could not be opened (e.g. *port in use*, when another AHAB or ORCA is already listening on it).
 
-A command is a single datagram of the form `name:value`. Parts of a value are separated by `;`. Command names are case-insensitive and can be shortened to their first two letters (`fr:42`). Unknown commands are ignored and nothing is ever sent back to the sender. Datagrams longer than 256 bytes are dropped, a trailing line break is ignored. AHAB executes at most one command per audio sample and in the order they arrive. Changes made by commands cannot be undone.
+A command is a single datagram of the form `name:value`. Parts of a value are separated by `;`. Command names are case-insensitive and can be shortened to their first two letters (`fr:42`). Unknown commands are ignored and nothing is ever sent back to the sender. Datagrams longer than 256 bytes are dropped. A command ends at the first line break (`\n` or `\r`) or NUL character, and anything after it is ignored. AHAB executes at most one command per audio sample and in the order they arrive. Changes made by commands cannot be undone.
 
 For example, using `nc` on macOS or Linux:
 

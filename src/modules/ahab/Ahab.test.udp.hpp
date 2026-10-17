@@ -997,6 +997,23 @@ TEST_CASE("UDP input receives over a loopback socket", "[Ahab][Udp][Socket]") {
 	REQUIRE(pump([&]() { return m->sim->getTickNumber() == 12; }));
 	REQUIRE(m->udpInput->getStatusText() == "Listening (1 received, 1 dropped)");
 
+	// A NUL (a C string sent with its terminator) ends the message like a line break,
+	// so the last part is not rejected as containing a non-printable character.
+	tx.send(port, std::string("write:Z\0", 8));
+	REQUIRE(pump([&]() { return glyphAt(m, 0, 0) == 'Z'; }));
+
+	// The first \n, \r or NUL ends the message; what follows is ignored.
+	tx.send(port, "frame:21\nframe:99");
+	REQUIRE(pump([&]() { return m->sim->getTickNumber() == 21; }));
+	tx.send(port, std::string("frame:22\0frame:99", 17));
+	REQUIRE(pump([&]() { return m->sim->getTickNumber() == 22; }));
+	tx.send(port, "frame:23\rframe:99");
+	REQUIRE(pump([&]() { return m->sim->getTickNumber() == 23; }));
+	// Nothing before the terminator: nothing to run.
+	tx.send(port, "\nframe:50");
+	tx.send(port, "frame:24");
+	REQUIRE(pump([&]() { return m->sim->getTickNumber() == 24; }));
+
 	// A second listener on the same port fails visibly.
 	{
 		AhabUdpInput second;
@@ -1014,7 +1031,7 @@ TEST_CASE("UDP input receives over a loopback socket", "[Ahab][Udp][Socket]") {
 		m->process({});
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
-	REQUIRE(m->sim->getTickNumber() == 12);
+	REQUIRE(m->sim->getTickNumber() == 24);
 
 	Test::unregisterModule(m);
 }

@@ -65,7 +65,11 @@ void AhabUdpInput::run() {
 		if (n <= 0) continue;   // timeout or transient error
 		// Longer than the payload limit: dropped, never truncated.
 		if ((size_t)n > sizeof(Datagram::data)) { dropped++; continue; }
-		while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) n--;
+		// The message ends at the first line break or NUL, so a terminator (also a C
+		// string's) and anything after it are not part of the command.
+		int end = 0;
+		while (end < n && buf[end] != '\n' && buf[end] != '\r' && buf[end] != '\0') end++;
+		n = end;
 		if (n == 0) continue;
 		if (queue.full()) { dropped++; continue; }
 		Datagram d;
