@@ -130,6 +130,46 @@ TEST_CASE("Ahab Widget: Space in insert mode advances the cursor instead of togg
 	REQUIRE(m->simRunning == true);
 }
 
+TEST_CASE("Ahab Widget: a remote select reaches the widget and repaints the display", "[ahab][widget]") {
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	primeAhabWidget(h, mw);
+
+	// Stopped, so nothing but the select itself can mark the display dirty.
+	REQUIRE(exec(m, "stop"));
+	h.dspStep();
+	auto* fb = dynamic_cast<FramebufferWidget*>(mw->simWidget->parent);
+	REQUIRE(fb != nullptr);
+	fb->dirty = false;
+
+	// Sent as a command from the DSP side, with no widget code involved.
+	REQUIRE(exec(m, "select:5;3;4;2"));
+
+	// What draw() renders is the widget's snapshot of the module's state.
+	AhabEditorState s = mw->simWidget->editor();
+	REQUIRE(s.cursor_x == 5); REQUIRE(s.cursor_y == 3);
+	REQUIRE(s.sel_x == 5); REQUIRE(s.sel_y == 3); REQUIRE(s.sel_w == 4); REQUIRE(s.sel_h == 2);
+
+	// The next DSP block publishes a tick, which dirties the framebuffer so the new
+	// selection is drawn even though the simulation is stopped.
+	h.dspStep();
+	REQUIRE(fb->dirty);
+}
+
+TEST_CASE("Ahab Widget: keys continue from a selection set by a remote command", "[ahab][widget]") {
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	primeAhabWidget(h, mw);
+
+	REQUIRE(exec(m, "select:5;3"));
+	REQUIRE(h.events().keyPress(GLFW_KEY_RIGHT));
+	AhabEditorState s = mw->simWidget->editor();
+	REQUIRE(s.cursor_x == 6);
+	REQUIRE(s.cursor_y == 3);
+}
+
 TEST_CASE("Ahab Widget: Backspace clears the selection", "[ahab][widget]") {
 	Test::Harness h;
 	AhabModule* m = h.addModule<AhabModule>("Ahab");

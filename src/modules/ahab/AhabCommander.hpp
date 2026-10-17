@@ -17,13 +17,10 @@
 namespace StoermelderPackOne {
 namespace Ahab {
 
-// Executes Orca-style text commands (`name:value;part;part`) on the DSP thread.
-// A template on the module type so it can be included before AhabModule is
-// defined: handler bodies are only instantiated where they are used, by which
-// time the module is complete. Adding a command means adding one handler and
-// one row in `rows`.
-template <typename MODULE>
-struct AhabCommander {
+// A parsed command datagram: the name and the `;`-separated parts of the value.
+// Shared by the commander and by the UDP receiver, which has to recognise `inject`
+// to load its file on the receiver thread. Allocation-free.
+struct AhabCommandLine {
 	static constexpr int MAX_PARTS = 4;
 
 	// Allocation-free counterpart of Orca's `Param`: views into the caller's buffer.
@@ -48,10 +45,67 @@ struct AhabCommander {
 		}
 	};
 
+	char name[16];
+	size_t nameLen = 0;
+	Args args;
+
+	// The name is the text before the first `:` with only word characters kept,
+	// lowercased; one longer than any command, or empty, fails.
+	bool parse(const char* text, size_t len) {
+		const char* colon = (const char*)memchr(text, ':', len);
+		size_t nameEnd = colon ? (size_t)(colon - text) : len;
+
+		nameLen = 0;
+		for (size_t i = 0; i < nameEnd; i++) {
+			unsigned char c = (unsigned char)text[i];
+			if (!isalnum(c) && c != '_') continue;
+			if (nameLen >= sizeof(name) - 1) return false;
+			name[nameLen++] = (char)tolower(c);
+		}
+		name[nameLen] = '\0';
+		if (nameLen == 0) return false;
+
+		args = Args();
+		if (colon) {
+			const char* p = colon + 1;
+			const char* end = text + len;
+			while (args.parts < MAX_PARTS) {
+				const char* sep = (const char*)memchr(p, ';', end - p);
+				const char* partEnd = sep ? sep : end;
+				args.part[args.parts] = p;
+				args.partLen[args.parts] = (size_t)(partEnd - p);
+				args.parts++;
+				if (!sep) break;
+				p = sep + 1;
+			}
+		}
+		return true;
+	}
+
+	// The command's full name, or (unless `alias` is false) its first two characters.
+	bool is(const char* full, bool alias = true) const {
+		return strcmp(full, name) == 0 || (alias && nameLen == 2 && strncmp(full, name, 2) == 0);
+	}
+};
+
+// Executes Orca-style text commands (`name:value;part;part`) on the DSP thread.
+// A template on the module type so it can be included before AhabModule is
+// defined: handler bodies are only instantiated where they are used, by which
+// time the module is complete. Adding a command means adding one handler and
+// one row in `rows`.
+template <typename MODULE>
+struct AhabCommander {
+	using Args = AhabCommandLine::Args;
+
 	using Handler = std::function<void(MODULE&, const Args&)>;
 	// `noAlias` is left out (false) by most rows: the command then also answers to its
 	// first two characters.
-	struct Row { const char* name; Handler fn; bool noAlias; };
+	struct Row {
+		const char* name;
+		Handler fn;
+		bool noAlias;
+		Row(const char* name, Handler fn, bool noAlias = false) : name(name), fn(std::move(fn)), noAlias(noAlias) {}
+	};
 
 	// Registration order matters for two-letter aliases (first match wins).
 	// A function-local table, as C++11 has no inline variables; the handlers
@@ -78,46 +132,18 @@ struct AhabCommander {
 			// `co` is ORCA's `color`, so copy has no two-letter alias.
 			{ "copy", &AhabCommander::copy, true },
 			{ "paste", &AhabCommander::paste },
-			{ nullptr, nullptr, false }
+			{ nullptr, nullptr }
 		};
 		return table;
 	}
 
 	// Returns true if a command was recognised and its handler ran.
 	static bool execute(MODULE& m, const char* text, size_t len) {
-		const char* colon = (const char*)memchr(text, ':', len);
-		size_t nameEnd = colon ? (size_t)(colon - text) : len;
-
-		// Name: word characters only, lowercased. Longer than any command is unknown.
-		char name[16];
-		size_t n = 0;
-		for (size_t i = 0; i < nameEnd; i++) {
-			unsigned char c = (unsigned char)text[i];
-			if (!isalnum(c) && c != '_') continue;
-			if (n >= sizeof(name) - 1) return false;
-			name[n++] = (char)tolower(c);
-		}
-		name[n] = '\0';
-		if (n == 0) return false;
-
-		Args args;
-		if (colon) {
-			const char* p = colon + 1;
-			const char* end = text + len;
-			while (args.parts < MAX_PARTS) {
-				const char* sep = (const char*)memchr(p, ';', end - p);
-				const char* partEnd = sep ? sep : end;
-				args.part[args.parts] = p;
-				args.partLen[args.parts] = (size_t)(partEnd - p);
-				args.parts++;
-				if (!sep) break;
-				p = sep + 1;
-			}
-		}
-
+		AhabCommandLine line;
+		if (!line.parse(text, len)) return false;
 		for (const Row* r = rows(); r->name; r++) {
-			if (strcmp(r->name, name) == 0 || (n == 2 && !r->noAlias && strncmp(r->name, name, 2) == 0)) {
-				r->fn(m, args);
+			if (line.is(r->name, !r->noAlias)) {
+				r->fn(m, line.args);
 				return true;
 			}
 		}
