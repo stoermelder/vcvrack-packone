@@ -345,6 +345,74 @@ TEST_CASE("Commander cc sets the CC offset, clamped to 0..127", "[Ahab][Commande
 	Test::unregisterModule(m);
 }
 
+TEST_CASE("Commander udp sets the UDP output and input ports", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	ScriptedUdpInput* in = injectScriptedInput(m);
+
+	REQUIRE(exec(m, "udp:5000;6000"));
+	REQUIRE(m->udpOutput->getPort() == "5000");
+	REQUIRE(m->udpOutput->getAddress() == "127.0.0.1");
+	REQUIRE(in->getPort() == "6000");
+	REQUIRE(in->changes == 1);
+	REQUIRE(m->oscOutput->getPort() == "49162");
+
+	// A single part leaves the input alone; the alias works.
+	REQUIRE(exec(m, "ud:5001"));
+	REQUIRE(m->udpOutput->getPort() == "5001");
+	REQUIRE(in->getPort() == "6000");
+	REQUIRE(in->changes == 1);
+
+	// Invalid ports change nothing.
+	REQUIRE(exec(m, "udp:0;70000"));
+	REQUIRE(exec(m, "udp:abc;-1"));
+	REQUIRE(m->udpOutput->getPort() == "5001");
+	REQUIRE(in->getPort() == "6000");
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander osc sets the OSC output port", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "osc:7000"));
+	REQUIRE(m->oscOutput->getPort() == "7000");
+	REQUIRE(m->oscOutput->getAddress() == "127.0.0.1");
+	REQUIRE(m->udpOutput->getPort() == "49161");
+
+	REQUIRE(exec(m, "os:7001"));
+	REQUIRE(m->oscOutput->getPort() == "7001");
+	REQUIRE(exec(m, "osc:99999"));
+	REQUIRE(exec(m, "osc:"));
+	REQUIRE(m->oscOutput->getPort() == "7001");
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander ip sets the address of both outputs", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "ip:192.168.1.5"));
+	REQUIRE(m->udpOutput->getAddress() == "192.168.1.5");
+	REQUIRE(m->oscOutput->getAddress() == "192.168.1.5");
+	REQUIRE(m->udpOutput->getPort() == "49161");
+	REQUIRE(m->oscOutput->getPort() == "49162");
+
+	// Empty and malformed addresses are rejected.
+	REQUIRE(exec(m, "ip:"));
+	REQUIRE(exec(m, "ip:a b"));
+	REQUIRE(exec(m, "ip"));
+	REQUIRE(m->udpOutput->getAddress() == "192.168.1.5");
+	REQUIRE(m->oscOutput->getAddress() == "192.168.1.5");
+
+	Test::unregisterModule(m);
+}
+
 TEST_CASE("Commander pg sends bank select and program change", "[Ahab][Commander]") {
 	Test::ModuleScaffold<AhabModule> mods;
 	AhabModule* m = mods.create("Ahab");

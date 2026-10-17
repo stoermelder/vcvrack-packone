@@ -7,8 +7,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <string>
 #include <midi.hpp>
 #include "AhabSim.hpp"
+#include "AhabUdpOutput.hpp"
 
 namespace StoermelderPackOne {
 namespace Ahab {
@@ -61,6 +63,9 @@ struct AhabCommander {
 			{ "write", &AhabCommander::write },
 			{ "cc", &AhabCommander::cc },
 			{ "pg", &AhabCommander::pg },
+			{ "udp", &AhabCommander::udp },
+			{ "osc", &AhabCommander::osc },
+			{ "ip", &AhabCommander::ip },
 			{ nullptr, nullptr }
 		};
 		return table;
@@ -195,7 +200,43 @@ struct AhabCommander {
 		}
 	}
 
+	// udp:out;in — UDP output port (address kept) and UDP input port. Either part
+	// may be omitted; a part that isn't a valid port number is ignored. The input
+	// rebinds itself on its receiver thread.
+	static void udp(MODULE& m, const Args& a) {
+		int32_t v;
+		if (a.getInt(0, v) && isPortNumber(v)) {
+			m.udpOutput->setDestination(m.udpOutput->getAddress(), std::to_string(v));
+		}
+		if (a.getInt(1, v) && isPortNumber(v)) {
+			m.udpInput->setPort(std::to_string(v));
+		}
+	}
+
+	// osc:port — OSC output port (address kept).
+	static void osc(MODULE& m, const Args& a) {
+		int32_t v;
+		if (a.getInt(0, v) && isPortNumber(v)) {
+			m.oscOutput->setDestination(m.oscOutput->getAddress(), std::to_string(v));
+		}
+	}
+
+	// ip:addr — address of both outputs (ports kept). Empty or whitespace-containing
+	// addresses are rejected.
+	static void ip(MODULE& m, const Args& a) {
+		if (a.parts < 1) return;
+		std::string addr(a.part[0], a.partLen[0]);
+		trimStr(addr);
+		if (addr.empty() || containsWhitespace(addr)) return;
+		m.udpOutput->setDestination(addr, m.udpOutput->getPort());
+		m.oscOutput->setDestination(addr, m.oscOutput->getPort());
+	}
+
 private:
+	static bool isPortNumber(int32_t v) {
+		return v >= 1 && v <= 65535;
+	}
+
 	static int32_t clampValue(int32_t v, int32_t lo, int32_t hi) {
 		return v < lo ? lo : (v > hi ? hi : v);
 	}

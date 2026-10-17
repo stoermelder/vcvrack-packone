@@ -3,7 +3,7 @@
 ### Changes and Fixes
 
 - Module [AHAB](./docs/ahab/Ahab.md)
-    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`)
+    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `udp`, `osc`, `ip`)
     - Changed operator `=` (OSC) to read its message up to the first `.`
 
 ## 2.7.0

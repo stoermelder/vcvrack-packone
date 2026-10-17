@@ -88,8 +88,11 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `write:text;x;y` | Writes `text` into the grid with its first character at column `x`, row `y` (both counted from 0 at the top left corner). Both coordinates are required. Text running over the edge of the grid is cut off. Spaces are written as `.` (empty cells). Text with other non-printable characters is rejected, and it must not contain `;`. |
 | `cc:N` | Sets the offset (0-127) added to the control number of the MIDI CC operator `!`, like the *CC* options in the MIDI menu. |
 | `pg:channel;bank;sub;program` | Sends a MIDI program change on `channel` (0-15), preceded by bank select MSB (`bank`, CC 0) and LSB (`sub`, CC 32). `bank`, `sub` and `program` are optional and left out if empty (`pg:3;;;12` sends only the program change). |
+| `udp:out;in` | Sets the port (1-65535) of the *UDP* output (`out`) and of the UDP input (`in`); either can be left out. The input rebinds to the new port right away, so further commands must be sent there. |
+| `osc:port` | Sets the port of the *OSC* output. |
+| `ip:address` | Sets the address of both the *UDP* and the *OSC* output. |
 
-Commands of ORCA which depend on the editor's cursor, selection or clipboard (`find`, `select`, `copy`, `paste`, `erase`, `time`) and the theme (`color`) are not available. Commands for tempo, the UDP/OSC output destinations and loading examples are currently not supported either.
+Commands of ORCA which depend on the editor's cursor, selection or clipboard (`find`, `select`, `copy`, `paste`, `erase`, `time`) and the theme (`color`) are not available. Commands for tempo and loading examples are currently not supported either.
 
 ## Random generator
 
@@ -197,5 +200,5 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
 - v2.7.0
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
     - Added reusable tiny Snippets to the context menu
-    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`)
+    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `udp`, `osc`, `ip`)
     - Changed operator `=` (OSC) to read its message up to the first `.`
