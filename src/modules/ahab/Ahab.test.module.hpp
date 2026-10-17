@@ -43,7 +43,7 @@ TEST_CASE("Operator description strings", "[Ahab]") {
 	REQUIRE(w.getOperatorDescription(';', 0) ==
 		"udp: Sends UDP message\n  →1+: string");
 	REQUIRE(w.getOperatorDescription('=', 0) ==
-		"osc: Sends OSC message\n  →1: path\n  →2: len\n  →3+: in");
+		"osc: Sends OSC message\n  →1: path\n  →2+: message");
 
 	// Unknown glyphs fall back to "<glyph>: variable / unknown operator".
 	REQUIRE(w.getOperatorDescription('a', 0) == "a: variable / unknown operator");

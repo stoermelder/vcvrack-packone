@@ -783,7 +783,7 @@ struct AhabSimWidget : OpaqueWidget {
 			t['!'] = "  →1: channel\n  →2: knob\n  →3: value";
 			t['?'] = "  →1: channel\n  →2: lsb\n  →3: msb";
 			t[';'] = "  →1+: string";
-			t['='] = "  →1: path\n  →2: len\n  →3+: in";
+			t['='] = "  →1: path\n  →2+: message";
 			t['A'] = "  ←1: a\n  →1: b\n  ↓1: output";
 			t['B'] = "  ←1: a\n  →1: b\n  ↓1: output";
 			t['C'] = "  ←1: rate\n  →1: mod\n  ↓1: output";

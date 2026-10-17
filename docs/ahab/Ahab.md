@@ -117,6 +117,10 @@ Features missing in AHAB compared to ORCA:
 
 - Hotkey Ctrl/Cmd+`P` to trigger the operator at the cursor is not available, as ORCA-C does not support this feature. AHAB has a special "pending bang" operator `+`, which will give you a similar result, when placing next to an operator.
 
+Behavior that differs from ORCA-C:
+
+- The operator `=` (OSC) behaves like in ORCA, not like in ORCA-C. The glyph right of `=` is the path; the message is read from the glyphs after the path up to the first `.` and each glyph is sent as an integer (e.g. `=fBC.` sends `/f` with values 11 and 12). ORCA-C uses the second glyph as a length parameter instead and locks that many cells to the right, which disables any operators placed there.
+
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -194,3 +198,4 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
     - Added reusable tiny Snippets to the context menu
     - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`)
+    - Changed operator `=` (OSC) to read its message up to the first `.`

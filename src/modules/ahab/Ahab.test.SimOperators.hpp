@@ -470,9 +470,9 @@ TEST_CASE("ORCA ';' operator emits a udp_string event", "[AhabSim][UDP]") {
 TEST_CASE("ORCA '=' operator emits an osc_ints event", "[AhabSim][UDP]") {
 	AhabSim sim;
 
-	// '=' = OSC operator: path glyph 'f', length 2, values 'B'(11) 'C'(12).
+	// '=' = OSC operator: path glyph 'f', message 'B'(11) 'C'(12) up to the '.'.
 	Usz h, w;
-	REQUIRE(sim.loadRectFromOrcaRequest("=f2BC\n*....", 0, 0, h, w, true) == true);
+	REQUIRE(sim.loadRectFromOrcaRequest("=fBC.\n*....", 0, 0, h, w, true) == true);
 	sim.process();
 	sim.stepRequest();
 	sim.process();
@@ -484,6 +484,42 @@ TEST_CASE("ORCA '=' operator emits an osc_ints event", "[AhabSim][UDP]") {
 	REQUIRE(oe->osc_ints.count == 2);
 	REQUIRE(oe->osc_ints.numbers[0] == 11);
 	REQUIRE(oe->osc_ints.numbers[1] == 12);
+}
+
+TEST_CASE("ORCA '=' operator locks its message only up to the first '.'", "[AhabSim][UDP]") {
+	AhabSim sim;
+
+	// The message ends at the first '.': the 'D' after it is not part of the
+	// message and must stay an active operator (D with no inputs bangs below).
+	// A large glyph like '9' must not reserve cells to its right.
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("=f9.D\n*....\n.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	REQUIRE(sim.getEventCount() == 1);
+	const Oevent* oe = &sim.getEvents()->buffer[0];
+	REQUIRE(oe->any.oevent_type == Oevent_type_osc_ints);
+	REQUIRE(oe->osc_ints.glyph == 'f');
+	REQUIRE(oe->osc_ints.count == 1);
+	REQUIRE(oe->osc_ints.numbers[0] == 9);
+	REQUIRE(sim.getFieldBuffer()[1 * sim.getFieldWidth() + 4] == '*');
+}
+
+TEST_CASE("ORCA '=' operator with empty message sends path only", "[AhabSim][UDP]") {
+	AhabSim sim;
+
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("=f..\n*...", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	REQUIRE(sim.getEventCount() == 1);
+	const Oevent* oe = &sim.getEvents()->buffer[0];
+	REQUIRE(oe->any.oevent_type == Oevent_type_osc_ints);
+	REQUIRE(oe->osc_ints.count == 0);
 }
 
 // End-to-end through the module, captured by the injected recording fake: the
@@ -526,9 +562,9 @@ TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
 	Test::registerModule(m);
 	m->simRunning = false;
 
-	// '=' = OSC operator: path glyph 'f', length 2, values 'B'(11) 'C'(12).
+	// '=' = OSC operator: path glyph 'f', message 'B'(11) 'C'(12) up to the '.'.
 	Usz h, w;
-	REQUIRE(m->sim->loadRectFromOrcaRequest("=f2BC\n*....", 0, 0, h, w, false) == true);
+	REQUIRE(m->sim->loadRectFromOrcaRequest("=fBC.\n*....", 0, 0, h, w, false) == true);
 	m->process({});
 
 	// One tick: the '=' operator sends "/f" with ints 11, 12 (index_of of
