@@ -332,3 +332,111 @@ TEST_CASE("simLoad()/simClear() call sequence", "[AhabEditorState]") {
 	s.getSelectionRect(sy, sx, sh, sw);
 	CHECK(sy == 0); CHECK(sx == 0); CHECK(sh == 1); CHECK(sw == 1);
 }
+
+
+// --- AhabSharedEditorState: the atomic word that carries the state across threads ---
+
+#include <atomic>
+#include <thread>
+
+using StoermelderPackOne::Ahab::AhabSharedEditorState;
+
+static bool sameEditorState(const AhabEditorState& a, const AhabEditorState& b) {
+	return a.cursor_y == b.cursor_y && a.cursor_x == b.cursor_x
+		&& a.sel_anchor_y == b.sel_anchor_y && a.sel_anchor_x == b.sel_anchor_x
+		&& a.sel_y == b.sel_y && a.sel_x == b.sel_x && a.sel_h == b.sel_h && a.sel_w == b.sel_w
+		&& a.insertMode == b.insertMode;
+}
+
+static bool editorInvariantHolds(const AhabEditorState& s) {
+	return s.sel_h >= 1 && s.sel_w >= 1
+		&& s.cursor_y >= s.sel_y && s.cursor_y < s.sel_y + s.sel_h
+		&& s.cursor_x >= s.sel_x && s.cursor_x < s.sel_x + s.sel_w;
+}
+
+TEST_CASE("shared state starts as a default AhabEditorState", "[AhabSharedEditorState]") {
+	AhabSharedEditorState shared;
+	CHECK(sameEditorState(shared.load(), AhabEditorState()));
+}
+
+TEST_CASE("shared state round-trips every field at 0 and at the maximum", "[AhabSharedEditorState]") {
+	AhabSharedEditorState shared;
+	const Usz maxes[] = { 0, 1, 99, 100 };
+	for (Usz v : maxes) {
+		for (int field = 0; field < 9; field++) {
+			// One field at a time, so a bit bleeding into a neighbour shows up.
+			AhabEditorState s;
+			s.cursor_y = s.cursor_x = s.sel_anchor_y = s.sel_anchor_x = s.sel_y = s.sel_x = 0;
+			s.sel_h = s.sel_w = 1;
+			switch (field) {
+				case 0: s.cursor_y = v; break;
+				case 1: s.cursor_x = v; break;
+				case 2: s.sel_anchor_y = v; break;
+				case 3: s.sel_anchor_x = v; break;
+				case 4: s.sel_y = v; break;
+				case 5: s.sel_x = v; break;
+				case 6: s.sel_h = v; break;
+				case 7: s.sel_w = v; break;
+				case 8: s.insertMode = v != 0; break;
+			}
+			shared.store(s);
+			CHECK(sameEditorState(shared.load(), s));
+		}
+	}
+	// Everything at the maximum at once.
+	AhabEditorState s;
+	s.cursor_y = s.cursor_x = s.sel_anchor_y = s.sel_anchor_x = s.sel_y = s.sel_x = s.sel_h = s.sel_w = 100;
+	s.insertMode = true;
+	shared.store(s);
+	CHECK(sameEditorState(shared.load(), s));
+}
+
+TEST_CASE("shared state update applies the function to the current state", "[AhabSharedEditorState]") {
+	AhabSharedEditorState shared;
+	shared.update([](AhabEditorState& s) { s.setSelection(2, 3, 4, 5, 100, 100); });
+	shared.update([](AhabEditorState& s) { s.toggleInsertMode(); });
+	AhabEditorState s = shared.load();
+	CHECK(s.sel_y == 2); CHECK(s.sel_x == 3); CHECK(s.sel_h == 4); CHECK(s.sel_w == 5);
+	CHECK(s.insertMode);
+	CHECK(editorInvariantHolds(s));
+}
+
+TEST_CASE("shared state keeps the invariant under a UI-role and a DSP-role writer", "[AhabSharedEditorState]") {
+	AhabSharedEditorState shared;
+	std::atomic<bool> stop{false};
+	std::atomic<int> violations{0};
+
+	// UI role: keys and mouse.
+	std::thread ui([&]() {
+		unsigned n = 0;
+		while (!stop) {
+			n++;
+			shared.update([&](AhabEditorState& s) {
+				bool extend = n % 2 == 0;
+				s.moveCursorRelative((Isz)(n % 3) - 1, (Isz)(n % 5) - 2, 100, 100, extend);
+				// A plain move is always followed by a selection reset, as in the widget.
+				if (!extend) s.setSelection(s.cursor_y, s.cursor_x, 1, 1, 100, 100);
+			});
+			if (n % 7 == 0) shared.update([&](AhabEditorState& s) { s.setSelection(n % 90, n % 80, 1 + n % 10, 1 + n % 20, 100, 100); });
+		}
+	});
+	// DSP role: remote select.
+	std::thread dsp([&]() {
+		unsigned n = 0;
+		while (!stop) {
+			n++;
+			shared.update([&](AhabEditorState& s) {
+				s.setCursor(n % 100, (n * 7) % 100, 100, 100);
+				s.setSelection(n % 100, (n * 7) % 100, 1 + n % 13, 1 + n % 31, 100, 100);
+			});
+		}
+	});
+
+	for (int i = 0; i < 20000; i++) {
+		if (!editorInvariantHolds(shared.load())) violations++;
+	}
+	stop = true;
+	ui.join();
+	dsp.join();
+	CHECK(violations == 0);
+}

@@ -245,6 +245,28 @@ std::string AhabSim::convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, 
 	return out;
 }
 
+static_assert(AhabSim::MAX_FIELD_HEIGHT <= 127 && AhabSim::MAX_FIELD_WIDTH <= 127,
+	"AhabSharedEditorState packs 7 bits per coordinate");
+
+// Puts back the cursor and selection saved with an undo node, clamped to the
+// field that was just restored (an undo can cross a resize). Insert mode is a
+// mode, not part of the edit, so it keeps its current value.
+void AhabSim::restoreEditor(const AhabEditorState& saved) {
+	if (!editor_) return;
+	Usz fh = field_.height;
+	Usz fw = field_.width;
+	editor_->update([&](AhabEditorState& s) {
+		bool insertMode = s.insertMode;
+		s = saved;
+		s.insertMode = insertMode;
+		if (s.sel_y + s.sel_h > fh || s.sel_x + s.sel_w > fw || s.cursor_y >= fh || s.cursor_x >= fw) {
+			s.setSelection(s.sel_y, s.sel_x, s.sel_h, s.sel_w, fh, fw);
+			s.setCursor(saved.cursor_y, saved.cursor_x, fh, fw);
+			s.clampCursorToSelection();
+		}
+	});
+}
+
 // UI thread operation - no locking needed (single UI thread assumed)
 bool AhabSim::pushUndo() {
 	if (undo_limit_ == 0) return false;
@@ -262,6 +284,7 @@ bool AhabSim::pushUndo() {
 	field_init(&node.f);
 	field_copy(&field_, &node.f);
 	node.tick = tick_number_.load();
+	node.editor = currentEditor();
 	undo_history_.push_back(std::move(node));
 	return true;
 }
@@ -496,6 +519,7 @@ void AhabSim::undo() {
 		field_init(&cur.f);
 		field_copy(&tmp, &cur.f);
 		cur.tick = tick_number_.load();
+		cur.editor = currentEditor();
 		// enforce redo size limit (match undo_limit_)
 		if (redo_history_.size() == undo_limit_) {
 			field_deinit(&redo_history_.front().f);
@@ -510,6 +534,7 @@ void AhabSim::undo() {
 	field_copy(&node.f, &field_);
 	mbuf_reusable_ensure_size(&mbuf_, field_.height, field_.width);
 	tick_number_.store(node.tick);
+	restoreEditor(node.editor);
 	// cleanup node's field memory
 	field_deinit(&node.f);
 }
@@ -543,6 +568,7 @@ void AhabSim::redo() {
 		field_init(&cur.f);
 		field_copy(&tmp, &cur.f);
 		cur.tick = tick_number_.load();
+		cur.editor = currentEditor();
 		if (undo_history_.size() == undo_limit_) {
 			field_deinit(&undo_history_.front().f);
 			undo_history_.pop_front();
@@ -556,6 +582,7 @@ void AhabSim::redo() {
 	field_copy(&node.f, &field_);
 	mbuf_reusable_ensure_size(&mbuf_, field_.height, field_.width);
 	tick_number_.store(node.tick);
+	restoreEditor(node.editor);
 	// cleanup node's field memory
 	field_deinit(&node.f);
 }

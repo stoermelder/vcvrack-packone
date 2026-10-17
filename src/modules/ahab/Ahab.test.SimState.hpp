@@ -375,3 +375,96 @@ TEST_CASE("Move rectangle is a single undo snapshot", "[AhabSim]") {
 	REQUIRE(buffer[0] == 'M');          // back at the source
 	REQUIRE(buffer[3 * w + 3] == '.');  // destination cleared again
 }
+
+
+// --- Undo/redo restore the cursor and selection (not insert mode) ---
+
+TEST_CASE("Undo and redo restore the cursor and selection", "[AhabSim]") {
+	AhabSim sim;
+	AhabSharedEditorState editor;
+	sim.setEditorState(&editor);
+	sim.setFieldSizeRequest(8, 8, false);
+	sim.process();
+
+	// An edit made with the cursor at (2,3), which then moves on, as when typing.
+	editor.update([](AhabEditorState& s) { s.setCursor(2, 3); s.setSelection(2, 3, 1, 1); });
+	sim.setGlyphRequest(2, 3, 'A');
+	sim.process();
+	editor.update([](AhabEditorState& s) { s.setCursor(5, 6); s.setSelection(5, 6, 2, 2); });
+
+	sim.undoRequest();
+	sim.process();
+	AhabEditorState s = editor.load();
+	CHECK(s.cursor_y == 2); CHECK(s.cursor_x == 3);
+	CHECK(s.sel_y == 2); CHECK(s.sel_x == 3); CHECK(s.sel_h == 1); CHECK(s.sel_w == 1);
+
+	// Redo goes back to where the cursor was when the undo ran.
+	sim.redoRequest();
+	sim.process();
+	s = editor.load();
+	CHECK(s.sel_y == 5); CHECK(s.sel_x == 6); CHECK(s.sel_h == 2); CHECK(s.sel_w == 2);
+}
+
+TEST_CASE("Undo leaves insert mode alone", "[AhabSim]") {
+	AhabSim sim;
+	AhabSharedEditorState editor;
+	sim.setEditorState(&editor);
+	sim.setFieldSizeRequest(8, 8, false);
+	sim.process();
+
+	sim.setGlyphRequest(0, 0, 'A');
+	sim.process();
+	editor.update([](AhabEditorState& s) { s.setInsertMode(true); });
+	sim.undoRequest();
+	sim.process();
+	CHECK(editor.load().insertMode);
+
+	editor.update([](AhabEditorState& s) { s.setInsertMode(false); });
+	sim.redoRequest();
+	sim.process();
+	CHECK_FALSE(editor.load().insertMode);
+}
+
+TEST_CASE("Undo across a resize clamps the restored selection to the field", "[AhabSim]") {
+	AhabSim sim;
+	AhabSharedEditorState editor;
+	sim.setEditorState(&editor);
+	sim.setFieldSizeRequest(10, 10, false);
+	sim.process();
+
+	editor.update([](AhabEditorState& s) { s.setSelection(6, 6, 3, 3, 10, 10); });
+	sim.setGlyphRequest(6, 6, 'A');
+	sim.process();
+	// Shrinks the field below the selection saved with the next undo step.
+	sim.setFieldSizeRequest(4, 4, true);
+	sim.process();
+	sim.undoRequest();   // undoes the resize: back to 10x10
+	sim.process();
+	sim.undoRequest();   // undoes the glyph on the 10x10 field
+	sim.process();
+	AhabEditorState s = editor.load();
+	CHECK(s.sel_y + s.sel_h <= 10);
+	CHECK(s.sel_x + s.sel_w <= 10);
+
+	// A saved selection beyond a smaller field is pulled inside it.
+	editor.update([](AhabEditorState& s) { s.setSelection(6, 6, 3, 3, 10, 10); });
+	sim.setFieldSizeRequest(4, 4, true);
+	sim.process();
+	sim.redoRequest();
+	sim.process();
+	s = editor.load();
+	CHECK(s.sel_h >= 1); CHECK(s.sel_w >= 1);
+	CHECK(s.cursor_y >= s.sel_y); CHECK(s.cursor_y < s.sel_y + s.sel_h);
+	CHECK(s.cursor_x >= s.sel_x); CHECK(s.cursor_x < s.sel_x + s.sel_w);
+}
+
+TEST_CASE("Undo without an editor state only touches the field", "[AhabSim]") {
+	AhabSim sim;
+	sim.setFieldSizeRequest(4, 4, false);
+	sim.process();
+	sim.setGlyphRequest(0, 0, 'A');
+	sim.process();
+	sim.undoRequest();
+	sim.process();
+	REQUIRE(sim.getFieldBuffer()[0] == '.');
+}

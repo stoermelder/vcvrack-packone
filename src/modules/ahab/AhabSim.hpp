@@ -8,6 +8,7 @@
 #include <vector>
 #include <cstdint>
 #include <dsp/ringbuffer.hpp>
+#include "AhabEditorState.hpp"
 
 extern "C" {
 	#include <orca-c/field.h>
@@ -165,6 +166,9 @@ public:
 	Usz getRedoCount() const { return (Usz)redo_history_.size(); }
 	void redo();
 	void resetUndo();
+	// Cursor and selection that undo/redo save and restore (insert mode is left alone).
+	// Not owned; without one, undo/redo only touch the field and tick.
+	void setEditorState(AhabSharedEditorState* editor) { editor_ = editor; }
 
 	bool cutRect(Usz y, Usz x, Usz h, Usz w);
 	bool fillRect(Usz y, Usz x, Usz h, Usz w, Glyph fill);
@@ -213,7 +217,10 @@ private:
 	DspOutputWriter dsp_output_writer_ptr;
 
 	// Undo / Redo history
-	struct UndoNode { Field f; Usz tick; };
+	struct UndoNode { Field f; Usz tick; AhabEditorState editor; };
+	AhabSharedEditorState* editor_ = nullptr;
+	AhabEditorState currentEditor() const { return editor_ ? editor_->load() : AhabEditorState(); }
+	void restoreEditor(const AhabEditorState& saved);
 	std::deque<UndoNode> undo_history_;
 	std::deque<UndoNode> redo_history_;
 	Usz undo_limit_ = 30;

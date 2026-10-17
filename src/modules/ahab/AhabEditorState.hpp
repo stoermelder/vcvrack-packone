@@ -1,6 +1,8 @@
 #pragma once
 #include <orca-c/base.h>   // Usz, Isz
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <limits>
 
 namespace StoermelderPackOne {
@@ -8,7 +10,8 @@ namespace Ahab {
 
 // Cursor + rectangle-selection editing model for the ORCA grid. Pure data and
 // clamping math with no Rack/nanovg dependency, so it is unit-testable headless.
-// Owned by AhabSimWidget; AhabRenderer reads it via draw()'s parameter.
+// AhabModule owns it as an AhabSharedEditorState (below); AhabRenderer reads a
+// snapshot via draw()'s parameter.
 //
 // Invariant: the selection is always non-empty (h,w >= 1) and the cursor is
 // always inside it. Both are established by the defaults below and preserved by
@@ -106,6 +109,74 @@ struct AhabEditorState {
         cursor_y = std::max(sel_y, std::min(cursor_y, sel_y + sel_h - 1));
         cursor_x = std::max(sel_x, std::min(cursor_x, sel_x + sel_w - 1));
     }
+};
+
+// The editor state (cursor, selection, insert mode) as one lock-free atomic word, so
+// the UI thread (keys, mouse) and the DSP thread (remote commands) can both change it
+// without a lock and without routing one through the other. AhabEditorState stays the
+// value type that does the math; this class only moves it across threads.
+//
+// Every transition is computed from one complete snapshot and published in a single
+// CAS, so the class invariant (non-empty selection, cursor inside it) holds for every
+// value any thread can observe. Concurrent writers are applied one after the other,
+// never mixed.
+struct AhabSharedEditorState {
+	// Every coordinate and size has to fit in 7 bits; AhabSim.cpp asserts that
+	// MAX_FIELD_HEIGHT/WIDTH do.
+	std::atomic<uint64_t> word;
+
+	AhabSharedEditorState() : word(pack(AhabEditorState())) {}
+
+	AhabEditorState load() const {
+		return unpack(word.load());
+	}
+
+	void store(const AhabEditorState& s) {
+		word.store(pack(s));
+	}
+
+	// load -> fn(copy) -> compare_exchange. `fn` may run more than once if another
+	// thread changed the state in between, so it must not have side effects outside
+	// the state it is given.
+	template <typename F>
+	void update(F fn) {
+		uint64_t cur = word.load();
+		AhabEditorState s;
+		do {
+			s = unpack(cur);
+			fn(s);
+		}
+		while (!word.compare_exchange_weak(cur, pack(s)));
+	}
+
+	static uint64_t pack(const AhabEditorState& s) {
+		uint64_t w = 0;
+		int shift = 0;
+		auto put = [&](Usz v) {
+			w |= (uint64_t)(v > 127 ? 127 : v) << shift;
+			shift += 7;
+		};
+		put(s.cursor_y); put(s.cursor_x);
+		put(s.sel_anchor_y); put(s.sel_anchor_x);
+		put(s.sel_y); put(s.sel_x); put(s.sel_h); put(s.sel_w);
+		w |= (uint64_t)(s.insertMode ? 1 : 0) << shift;
+		return w;
+	}
+
+	static AhabEditorState unpack(uint64_t w) {
+		AhabEditorState s;
+		int shift = 0;
+		auto get = [&]() {
+			Usz v = (Usz)((w >> shift) & 127);
+			shift += 7;
+			return v;
+		};
+		s.cursor_y = get(); s.cursor_x = get();
+		s.sel_anchor_y = get(); s.sel_anchor_x = get();
+		s.sel_y = get(); s.sel_x = get(); s.sel_h = get(); s.sel_w = get();
+		s.insertMode = ((w >> shift) & 1) != 0;
+		return s;
+	}
 };
 
 } // namespace Ahab

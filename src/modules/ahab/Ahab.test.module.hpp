@@ -1130,7 +1130,7 @@ TEST_CASE("Ahab copy selection routes through the vcv clipboard layer", "[Ahab][
 	widget->simWidget->display_field.buffer[1] = 'B';
 	widget->simWidget->display_field.buffer[2] = 'C';
 	widget->simWidget->display_field.buffer[3] = 'D';
-	widget->simWidget->editorState.setSelection(0, 0, 2, 2, 2, 2);
+	widget->simWidget->editorApply([](AhabEditorState& st) { st.setSelection(0, 0, 2, 2, 2, 2); });
 
 	widget->simWidget->copySelectionToClipboard();
 

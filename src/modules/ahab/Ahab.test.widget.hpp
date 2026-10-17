@@ -119,12 +119,12 @@ TEST_CASE("Ahab Widget: Space in insert mode advances the cursor instead of togg
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
-	es.setInsertMode(true);
+	auto es = [&]() { return mw->simWidget->editor(); };
+	mw->simWidget->editorApply([&](AhabEditorState& st) { st.setInsertMode(true); });
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_SPACE));
-	REQUIRE(es.cursor_x == 1);
-	REQUIRE(es.cursor_y == 0);
+	REQUIRE(es().cursor_x == 1);
+	REQUIRE(es().cursor_y == 0);
 	// Run state is untouched - insert mode's Space branch returns before reaching the
 	// run-toggle branch.
 	REQUIRE(m->simRunning == true);
@@ -150,16 +150,16 @@ TEST_CASE("Ahab Widget: arrow keys move the cursor, Shift+arrow extends the sele
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_RIGHT));
-	REQUIRE(es.cursor_x == 1);
-	REQUIRE(es.sel_w == 1); // plain move collapses any selection
+	REQUIRE(es().cursor_x == 1);
+	REQUIRE(es().sel_w == 1); // plain move collapses any selection
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_DOWN, GLFW_MOD_SHIFT));
-	REQUIRE(es.cursor_y == 1);
-	REQUIRE(es.sel_h == 2); // anchor (0,1) to cursor (1,1)
-	REQUIRE(es.sel_w == 1);
+	REQUIRE(es().cursor_y == 1);
+	REQUIRE(es().sel_h == 2); // anchor (0,1) to cursor (1,1)
+	REQUIRE(es().sel_w == 1);
 }
 
 TEST_CASE("Ahab Widget: Ctrl+arrow uses the grid step instead of a single cell", "[ahab][widget]") {
@@ -167,11 +167,11 @@ TEST_CASE("Ahab Widget: Ctrl+arrow uses the grid step instead of a single cell",
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 	REQUIRE(m->gridStepCol == 8);
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_RIGHT, RACK_MOD_CTRL));
-	REQUIRE(es.cursor_x == 8);
+	REQUIRE(es().cursor_x == 8);
 }
 
 TEST_CASE("Ahab Widget: arrow keys clamp at the field edges", "[ahab][widget]") {
@@ -179,12 +179,12 @@ TEST_CASE("Ahab Widget: arrow keys clamp at the field edges", "[ahab][widget]") 
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_LEFT)); // already at 0
-	REQUIRE(es.cursor_x == 0);
+	REQUIRE(es().cursor_x == 0);
 	REQUIRE(h.events().keyPress(GLFW_KEY_UP)); // already at 0
-	REQUIRE(es.cursor_y == 0);
+	REQUIRE(es().cursor_y == 0);
 }
 
 TEST_CASE("Ahab Widget: held arrow key repeats via GLFW_REPEAT", "[ahab][widget]") {
@@ -192,12 +192,12 @@ TEST_CASE("Ahab Widget: held arrow key repeats via GLFW_REPEAT", "[ahab][widget]
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	REQUIRE(h.events().keyAt(math::Vec(0, 0), GLFW_KEY_RIGHT, GLFW_PRESS));
-	REQUIRE(es.cursor_x == 1);
+	REQUIRE(es().cursor_x == 1);
 	REQUIRE(h.events().keyAt(math::Vec(0, 0), GLFW_KEY_RIGHT, GLFW_REPEAT));
-	REQUIRE(es.cursor_x == 2);
+	REQUIRE(es().cursor_x == 2);
 }
 
 TEST_CASE("Ahab Widget: a single tap does not also move on Rack's own RACK_HELD synthesis", "[ahab][widget]") {
@@ -210,18 +210,18 @@ TEST_CASE("Ahab Widget: a single tap does not also move on Rack's own RACK_HELD 
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	REQUIRE(h.events().key(GLFW_KEY_RIGHT, GLFW_PRESS));
-	REQUIRE(es.cursor_x == 1);
+	REQUIRE(es().cursor_x == 1);
 
 	// A hover pass while the key is still logically held (no release yet) - Rack fires
 	// RACK_HELD for it here, same as it would between two frames of a real, brief tap.
 	h.events().hover(math::Vec(1, 1));
-	REQUIRE(es.cursor_x == 1);   // must NOT have advanced a second time
+	REQUIRE(es().cursor_x == 1);   // must NOT have advanced a second time
 
 	REQUIRE(h.events().key(GLFW_KEY_RIGHT, GLFW_RELEASE));
-	REQUIRE(es.cursor_x == 1);
+	REQUIRE(es().cursor_x == 1);
 }
 
 TEST_CASE("Ahab Widget: Escape collapses the selection to the cursor", "[ahab][widget]") {
@@ -229,15 +229,15 @@ TEST_CASE("Ahab Widget: Escape collapses the selection to the cursor", "[ahab][w
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	h.events().keyPress(GLFW_KEY_RIGHT, GLFW_MOD_SHIFT);
 	h.events().keyPress(GLFW_KEY_RIGHT, GLFW_MOD_SHIFT);
-	REQUIRE(es.sel_w > 1);
+	REQUIRE(es().sel_w > 1);
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_ESCAPE));
-	REQUIRE(es.sel_w == 1);
-	REQUIRE(es.sel_h == 1);
+	REQUIRE(es().sel_w == 1);
+	REQUIRE(es().sel_h == 1);
 }
 
 TEST_CASE("Ahab Widget: Shift+Escape toggles Focus mode", "[ahab][widget]") {
@@ -285,9 +285,9 @@ TEST_CASE("Ahab Widget: Ctrl+Shift+7 toggles a comment block on the selection", 
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
-	es.setSelection(0, 0, 1, 3, m->sim->getFieldHeight(), m->sim->getFieldWidth());
+	mw->simWidget->editorApply([&](AhabEditorState& st) { st.setSelection(0, 0, 1, 3, m->sim->getFieldHeight(), m->sim->getFieldWidth()); });
 	syncDisplayField(m, mw);   // toggleCommentBlock() reads display_field, not the live sim buffer
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_7, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
@@ -306,11 +306,11 @@ TEST_CASE("Ahab Widget: Ctrl+A selects the whole field", "[ahab][widget]") {
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_A, RACK_MOD_CTRL));
-	REQUIRE(es.sel_h == m->sim->getFieldHeight());
-	REQUIRE(es.sel_w == m->sim->getFieldWidth());
+	REQUIRE(es().sel_h == m->sim->getFieldHeight());
+	REQUIRE(es().sel_w == m->sim->getFieldWidth());
 }
 
 TEST_CASE("Ahab Widget: Ctrl+N clears the field", "[ahab][widget]") {
@@ -398,13 +398,13 @@ TEST_CASE("Ahab Widget: Ctrl+I toggles insert mode", "[ahab][widget]") {
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
-	REQUIRE_FALSE(es.getInsertMode());
+	REQUIRE_FALSE(es().getInsertMode());
 	REQUIRE(h.events().keyPress(GLFW_KEY_I, RACK_MOD_CTRL));
-	REQUIRE(es.getInsertMode());
+	REQUIRE(es().getInsertMode());
 	REQUIRE(h.events().keyPress(GLFW_KEY_I, RACK_MOD_CTRL));
-	REQUIRE_FALSE(es.getInsertMode());
+	REQUIRE_FALSE(es().getInsertMode());
 }
 
 TEST_CASE("Ahab Widget: Ctrl+C copies the selection to the clipboard", "[ahab][widget]") {
@@ -413,12 +413,12 @@ TEST_CASE("Ahab Widget: Ctrl+C copies the selection to the clipboard", "[ahab][w
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	m->sim->setGlyphRequest(0, 0, 'A', Mark_flag_input, true);
 	h.dspStep();
 	syncDisplayField(m, mw);   // copySelectionToClipboard() reads display_field
-	es.setSelection(0, 0, 1, 1, m->sim->getFieldHeight(), m->sim->getFieldWidth());
+	mw->simWidget->editorApply([&](AhabEditorState& st) { st.setSelection(0, 0, 1, 1, m->sim->getFieldHeight(), m->sim->getFieldWidth()); });
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_C, RACK_MOD_CTRL));
 	REQUIRE_FALSE(mock.ui.clipboardWrites.empty());
@@ -431,12 +431,12 @@ TEST_CASE("Ahab Widget: Ctrl+X cuts the selection", "[ahab][widget]") {
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
 	primeAhabWidget(h, mw);
-	auto& es = mw->simWidget->editorState;
+	auto es = [&]() { return mw->simWidget->editor(); };
 
 	m->sim->setGlyphRequest(0, 0, 'A', Mark_flag_input, true);
 	h.dspStep();
 	syncDisplayField(m, mw);   // cutSelection() copies via display_field first (see copy above)
-	es.setSelection(0, 0, 1, 1, m->sim->getFieldHeight(), m->sim->getFieldWidth());
+	mw->simWidget->editorApply([&](AhabEditorState& st) { st.setSelection(0, 0, 1, 1, m->sim->getFieldHeight(), m->sim->getFieldWidth()); });
 
 	REQUIRE(h.events().keyPress(GLFW_KEY_X, RACK_MOD_CTRL));
 	h.dspStep();

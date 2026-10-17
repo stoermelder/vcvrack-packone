@@ -248,7 +248,7 @@ TEST_CASE("Randomize (same seed) reproduces the generated pattern", "[AhabGenera
 
 	m->sim->setFieldSizeRequest(16, 32, false);
 	m->process({});
-	w->editorState.setSelection(0, 0, 16, 32);
+	w->editorApply([](AhabEditorState& st) { st.setSelection(0, 0, 16, 32); });
 
 	w->simRandomize(0.5f);
 	REQUIRE(m->lastGenerator.seed != 0);

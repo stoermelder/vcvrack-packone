@@ -60,6 +60,10 @@ struct AhabModule : Module {
 	bool hasDataLoaded = false;
 
 	AhabSim* sim = nullptr;
+	// Cursor and selection live here, not in the widget, so they exist without an editor
+	// and both the UI and the DSP thread can change them. Runtime state, not stored.
+	AhabSharedEditorState editor;
+
 	/** [Stored to JSON] */
 	bool simRunning = true;
 	bool simRunToggleRequest = false;
@@ -155,6 +159,7 @@ struct AhabModule : Module {
 		configOutput(CLK_OUTPUT, "Clock");
 	
 		sim = new AhabSim();
+		sim->setEditorState(&editor);
 		sim->setDspTickCallback(std::bind(&AhabModule::processEvents, this, std::placeholders::_1));
 		sim->setDspInputReader(std::bind(&AhabModule::readDspInput, this, std::placeholders::_1));
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
@@ -575,7 +580,6 @@ struct AhabModule : Module {
 
 struct AhabSimWidget : OpaqueWidget {
 	AhabModule* module = nullptr;
-	AhabEditorState editorState;
 	AhabRenderer renderer;
 
 	// Display snapshot using lock-free reads from sim
@@ -616,9 +620,23 @@ struct AhabSimWidget : OpaqueWidget {
 		field_deinit(&display_field);
 	}
 
+	// One consistent snapshot of the cursor/selection state. Without a module (library
+	// browser preview) there is no state: a default one is returned.
+	AhabEditorState editor() const {
+		return module ? module->editor.load() : AhabEditorState();
+	}
+
+	// Applies `fn` to the state atomically; a no-op without a module. `fn` may run more
+	// than once (see AhabSharedEditorState::update), so it must only touch the state it
+	// is given.
+	template <typename F>
+	void editorApply(F fn) {
+		if (module) module->editor.update(fn);
+	}
+
 	// Accessors for status widget
 	void getCursorPos(Usz &y, Usz &x) {
-		editorState.getCursor(y, x);
+		editor().getCursor(y, x);
 	}
 
 	Usz getTickNumber() const {
@@ -654,7 +672,6 @@ struct AhabSimWidget : OpaqueWidget {
 			size_t exampleIndex = rack::random::u32() % examples.size();
 			std::string example = examples[exampleIndex].second;
 			AhabSim::buildFieldFromOrcaText(example, display_field);
-			editorState.setCursor(0, 0);
 		}
 	}
 
@@ -665,8 +682,12 @@ struct AhabSimWidget : OpaqueWidget {
 	void reset() {
 		// Keep undo history: this is the UI reset for "Clear" (undoable), unlike
 		// AhabModule::onReset() which wipes it.
-		editorState.setCursor(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
-		editorState.setSelection(0, 0, 1, 1, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+		Usz fh = module->sim->getFieldHeight();
+		Usz fw = module->sim->getFieldWidth();
+		editorApply([&](AhabEditorState& st) {
+			st.setCursor(0, 0, fh, fw);
+			st.setSelection(0, 0, 1, 1, fh, fw);
+		});
 		rendererGridStepChanged();
 		notifyUiChanged();
 	}
@@ -688,7 +709,7 @@ struct AhabSimWidget : OpaqueWidget {
 		
 		// Get current selection bounds
 		Usz sy, sx, sh, sw;
-		editorState.getSelectionRect(sy, sx, sh, sw);
+		editor().getSelectionRect(sy, sx, sh, sw);
 
 		AhabGenerator::Config cfg;
 		cfg.density = density;
@@ -719,8 +740,10 @@ struct AhabSimWidget : OpaqueWidget {
 			std::string msg = "Failed to load field from file:\n" + path;
 			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, msg);
 		}
-		editorState.setCursor(0, 0);
-		editorState.setSelection(0, 0, 1, 1);
+		editorApply([](AhabEditorState& st) {
+			st.setCursor(0, 0);
+			st.setSelection(0, 0, 1, 1);
+		});
 	}
 
 	void simInjectFile() {
@@ -736,13 +759,15 @@ struct AhabSimWidget : OpaqueWidget {
 			vcv::ui::setClipboard(orca);
 		}
 		// Place selection at cursor and clip to field
-		Usz cy, cx; editorState.getCursor(cy, cx);
+		Usz cy, cx; editor().getCursor(cy, cx);
 		Usz fh = module->sim->getFieldHeight();
 		Usz fw = module->sim->getFieldWidth();
 		if (cy + sh > fh) sh = fh - cy;
 		if (cx + sw > fw) sw = fw - cx;
 		if (sh == 0 || sw == 0) return;
-		editorState.setSelection(cy, cx, sh, sw, fh, fw);
+		editorApply([&](AhabEditorState& st) {
+			st.setSelection(cy, cx, sh, sw, fh, fw);
+		});
 	}
 
 	void simSave() {
@@ -758,7 +783,7 @@ struct AhabSimWidget : OpaqueWidget {
 		std::string path = vcv::ui::saveDialog("Orca Files (*.orca):orca", "", "selection.orca");
 		if (path.empty()) return;
 		Usz sy, sx, sh, sw;
-		editorState.getSelectionRect(sy, sx, sh, sw);
+		editor().getSelectionRect(sy, sx, sh, sw);
 		// Serialize the UI snapshot, not the sim's live buffer (DSP may write it).
 		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		if (!vcv::fs::write(path, content)) {
@@ -954,7 +979,7 @@ struct AhabSimWidget : OpaqueWidget {
 			display_ready = nullptr;
 		}
 		// Draw the display field
-		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, editorState, module ? module->simRunning : false);
+		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, editor(), module ? module->simRunning : false);
 
 		// Corner vignette — subtle darkening toward edges for screen depth
 		NVGpaint vignette = nvgRadialGradient(args.vg,
@@ -1050,15 +1075,17 @@ struct AhabSimWidget : OpaqueWidget {
 			// General printable characters (letters, numbers, punctuation)
 			if ((c >= 48 && c <= 90) || (c >= 97 && c <= 122) || c == 33 || (c >= 35 && c <= 38) || c == 42 || c == 43 || c == 46) {
 				Glyph g = (Glyph)c;
-				Usz cy, cx; editorState.getCursor(cy, cx);
+				Usz cy, cx; editor().getCursor(cy, cx);
 				module->sim->setGlyphRequest(cy, cx, g);
 				// If insert mode is active, advance cursor one cell to the right
-				if (editorState.getInsertMode()) {
+				if (editor().getInsertMode()) {
 					Usz fh = module->sim->getFieldHeight();
 					Usz fw = module->sim->getFieldWidth();
-					editorState.moveCursorRelative(0, 1, fh, fw, false);
-					editorState.getCursor(cy, cx);
-					editorState.setSelection(cy, cx, 1, 1, fh, fw);
+					editorApply([&](AhabEditorState& st) {
+						st.moveCursorRelative(0, 1, fh, fw, false);
+						Usz y, x; st.getCursor(y, x);
+						st.setSelection(y, x, 1, 1, fh, fw);
+					});
 				}
 				e.consume(this);
 				OpaqueWidget::onSelectText(e);
@@ -1086,7 +1113,7 @@ struct AhabSimWidget : OpaqueWidget {
 	// Serialize the selection from display_field and push to the clipboard
 	// (extracted so routing is testable headless; key handlers gate on glfw).
 	std::string copySelectionToClipboard() {
-		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
 		// Read from the UI snapshot (display_field), not the sim's live buffer.
 		std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
 		if (!s.empty()) vcv::ui::setClipboard(s);
@@ -1096,7 +1123,7 @@ struct AhabSimWidget : OpaqueWidget {
 	// Toggle '#' markers on the selection's left/right edges: remove if all
 	// edges are comments, else add. Shared by Ctrl/Cmd+Shift+7 and the menu.
 	void toggleCommentBlock() {
-		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
 		// Selection was clamped against display_field, which may lag the sim's
 		// current dimensions after a resize. Re-clamp before reading
 		// display_field or issuing sim writes from these coordinates.
@@ -1124,23 +1151,27 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void clearSelection() {
-		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
 		module->sim->fillRectRequest(sy, sx, sh, sw);
 	}
 
 	void cutSelection() {
 		copySelectionToClipboard();
-		Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+		Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
 		module->sim->cutRectRequest(sy, sx, sh, sw);
 	}
 
 	void pasteSelection() {
-		Usz cy, cx; editorState.getCursor(cy, cx);
+		Usz cy, cx; editor().getCursor(cy, cx);
 		std::string clip = vcv::ui::getClipboard();
 		if (!clip.empty()) {
 			Usz pasted_h = 0, pasted_w = 0;
 			if (module->sim->loadRectFromOrcaRequest(clip, cy, cx, pasted_h, pasted_w)) {
-				if (pasted_h > 0 && pasted_w > 0) editorState.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+				if (pasted_h > 0 && pasted_w > 0) {
+					editorApply([&](AhabEditorState& st) {
+						st.setSelection(cy, cx, pasted_h, pasted_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+					});
+				}
 			}
 		}
 	}
@@ -1162,12 +1193,14 @@ struct AhabSimWidget : OpaqueWidget {
 		// same precedence the dispatcher gave it (checked first, returns before the toggle
 		// branch is reached).
 		handlers.onTry("transport.toggle", [this]() -> bool {
-			if (!editorState.getInsertMode()) return false;
+			if (!editor().getInsertMode()) return false;
 			Usz fh = module->sim->getFieldHeight();
 			Usz fw = module->sim->getFieldWidth();
-			editorState.moveCursorRelative(0, 1, fh, fw, false);
-			Usz cy, cx; editorState.getCursor(cy, cx);
-			editorState.setSelection(cy, cx, 1, 1, fh, fw);
+			editorApply([&](AhabEditorState& st) {
+				st.moveCursorRelative(0, 1, fh, fw, false);
+				Usz y, x; st.getCursor(y, x);
+				st.setSelection(y, x, 1, 1, fh, fw);
+			});
 			notifyUiChanged();
 			return true;
 		});
@@ -1177,7 +1210,9 @@ struct AhabSimWidget : OpaqueWidget {
 		});
 
 		handlers.on("edit.select.all", [this]{
-			editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+			editorApply([&](AhabEditorState& st) {
+				st.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+			});
 		});
 		handlers.on("edit.clear.field", [this]{ simClear(); });
 		handlers.on("file.load", [this]{ simLoad(); });
@@ -1187,7 +1222,9 @@ struct AhabSimWidget : OpaqueWidget {
 		handlers.on("edit.undo", [this]{ module->sim->undoRequest(); });
 		handlers.on("edit.redo", [this]{ module->sim->redoRequest(); });
 		handlers.on("edit.insert.toggle", [this]{
-			editorState.toggleInsertMode();
+			editorApply([&](AhabEditorState& st) {
+				st.toggleInsertMode();
+			});
 			notifyUiChanged();
 		});
 		handlers.on("edit.copy", [this]{ copySelectionToClipboard(); });
@@ -1195,13 +1232,15 @@ struct AhabSimWidget : OpaqueWidget {
 		handlers.on("edit.paste", [this]{ pasteSelection(); });
 		handlers.on("sim.step", [this]{ module->sim->stepRequest(); });
 		handlers.on("sim.trigger", [this]{
-			Usz cy, cx; editorState.getCursor(cy, cx);
+			Usz cy, cx; editor().getCursor(cy, cx);
 			// TODO: orca-c has no trigger-operator feature; unclear how to implement.
 		});
 		handlers.on("view.focus", [this]{ toggleFocusMode(); });
 		handlers.on("cancel", [this]{
-			Usz cy, cx; editorState.getCursor(cy, cx);
-			editorState.setSelection(cy, cx, 1, 1);
+			Usz cy, cx; editor().getCursor(cy, cx);
+			editorApply([&](AhabEditorState& st) {
+				st.setSelection(cy, cx, 1, 1);
+			});
 			notifyUiChanged();
 		});
 		handlers.on("edit.comment.toggle", [this]{ toggleCommentBlock(); });
@@ -1214,7 +1253,7 @@ struct AhabSimWidget : OpaqueWidget {
 			Isz ddx = gridStep ? module->gridStepCol : 1;
 			dy *= ddy; dx *= ddx;
 
-			Usz sy, sx, sh, sw; editorState.getSelectionRect(sy, sx, sh, sw);
+			Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
 			Isz dest_y = (Isz) sy + dy;
 			Isz dest_x = (Isz) sx + dx;
 
@@ -1229,8 +1268,10 @@ struct AhabSimWidget : OpaqueWidget {
 				// Extend selection by moving the cursor; the anchor will handle left-side
 				// extension - move cursor while requesting selection extension so
 				// anchor/cursor logic takes effect.
-				editorState.moveCursorRelative(dy, dx, fh, fw, true);
-				editorState.updateSelectionToCursor();
+				editorApply([&](AhabEditorState& st) {
+					st.moveCursorRelative(dy, dx, fh, fw, true);
+					st.updateSelectionToCursor();
+				});
 			}
 			else {
 				// Move selection normally. Provide a reasonable start (clip negatives to 0);
@@ -1239,8 +1280,10 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz start_x = dest_x < 0 ? 0 : (Usz) dest_x;
 				// Move cursor by requested delta; moveCursorRelative will itself clamp to
 				// field bounds.
-				editorState.moveCursorRelative(dy, dx, fh, fw, false);
-				editorState.setSelection(start_y, start_x, sh, sw, fh, fw);
+				editorApply([&](AhabEditorState& st) {
+					st.moveCursorRelative(dy, dx, fh, fw, false);
+					st.setSelection(start_y, start_x, sh, sw, fh, fw);
+				});
 			}
 			notifyUiChanged();
 		};
@@ -1292,11 +1335,13 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz cy, cx;
 				if (renderer.pixelToCell(e.pos, box.size, &display_field, cy, cx)) {
 					Usz fh, fw; syncedFieldSize(fh, fw);
-					editorState.setCursor(cy, cx, fh, fw);
 					mouse_selecting = true;
 					mouse_selection_start = e.pos;
-					// If a selection already exists, extend it immediately to the cursor
-					editorState.updateSelectionToCursor();
+					// Move the cursor and extend the selection to it in one step
+					editorApply([&](AhabEditorState& st) {
+						st.setCursor(cy, cx, fh, fw);
+						st.updateSelectionToCursor();
+					});
 					notifyUiChanged();
 					e.consume(this);
 					return;
@@ -1331,8 +1376,10 @@ struct AhabSimWidget : OpaqueWidget {
 				Usz sh = std::max(y0, y1) - sy + 1;
 				Usz sw = std::max(x0, x1) - sx + 1;
 				Usz fh, fw; syncedFieldSize(fh, fw);
-				editorState.setCursor(y1, x1, fh, fw);
-				editorState.setSelection(sy, sx, sh, sw, fh, fw);
+				editorApply([&](AhabEditorState& st) {
+					st.setCursor(y1, x1, fh, fw);
+					st.setSelection(sy, sx, sh, sw, fh, fw);
+				});
 				notifyUiChanged();
 			}
 			e.consume(this);
@@ -1453,7 +1500,9 @@ struct AhabSimWidget : OpaqueWidget {
 					if (d != 0.f) {
 						Usz h = std::max((Usz)1, (Usz)(module->sim->getFieldHeight() + (d > 0.f ? 1 : -1)));
 						module->sim->setFieldSizeRequest(h, fw, fh == fh_);
-						editorState.moveCursorRelative(0, 0, h, fw);
+						editorApply([&](AhabEditorState& st) {
+							st.moveCursorRelative(0, 0, h, fw);
+						});
 						fh = (float)h;
 						fh_ = 0;
 					}
@@ -1467,7 +1516,9 @@ struct AhabSimWidget : OpaqueWidget {
 					if (d != 0.f) {
 						Usz w = std::max((Usz)1, (Usz)(module->sim->getFieldWidth() + (d > 0.f ? 1 : -1)));
 						module->sim->setFieldSizeRequest(fh, w, fw == fw_);
-						editorState.moveCursorRelative(0, 0, fh, w);
+						editorApply([&](AhabEditorState& st) {
+							st.moveCursorRelative(0, 0, fh, w);
+						});
 						fw = (float)w;
 						fw_ = 0;
 					}
@@ -1497,7 +1548,9 @@ struct AhabSimWidget : OpaqueWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Selection", "", [this](ui::Menu* menu) {
 			menu->addChild(createMenuItem("Select all", keymap->shortcutText("edit.select.all"), [this]() {
-				editorState.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+				editorApply([&](AhabEditorState& st) {
+					st.setSelection(0, 0, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+				});
 				APP->event->setSelectedWidget(this);
 			}));
 			menu->addChild(createMenuItem("Clear", keymap->shortcutText("edit.clear.selection"), [this]() {
@@ -1627,10 +1680,14 @@ struct AhabSimWidget : OpaqueWidget {
 		// mirroring pasteSelection()'s non-destructive placement.
 		menu->addChild(createSubmenuItem("Snippets", "", [this](ui::Menu* m) {
 			auto insertSnippet = [this](const std::string& content) {
-				Usz cy, cx; editorState.getCursor(cy, cx);
+				Usz cy, cx; editor().getCursor(cy, cx);
 				Usz out_h = 0, out_w = 0;
 				if (module->sim->loadRectFromOrcaRequest(content, cy, cx, out_h, out_w)) {
-					if (out_h > 0 && out_w > 0) editorState.setSelection(cy, cx, out_h, out_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+					if (out_h > 0 && out_w > 0) {
+						editorApply([&](AhabEditorState& st) {
+							st.setSelection(cy, cx, out_h, out_w, module->sim->getFieldHeight(), module->sim->getFieldWidth());
+						});
+					}
 					APP->event->setSelectedWidget(this);
 				}
 				else {

@@ -212,3 +212,4 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `bpm`, `apm`, `udp`, `osc`, `ip`)
     - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
+    - Undo and redo now restore the cursor and selection
