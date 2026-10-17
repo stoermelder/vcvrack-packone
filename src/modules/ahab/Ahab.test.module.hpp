@@ -33,9 +33,9 @@ TEST_CASE("Operator description strings", "[Ahab]") {
 	// Operators that have a description but no port-info table entry.
 	REQUIRE(w.getOperatorDescription('E', 0) == "east: Moves eastward, or bangs");
 	REQUIRE(w.getOperatorDescription('#', 0) == "comment: Halts a line");
-	REQUIRE(w.getOperatorDescription('$', 0) == "command: not supported in Ahab");
 
 	// Operators whose description is extended by their port-info entry.
+	REQUIRE(w.getOperatorDescription('$', 0) == "command: Sends ORCA command\n  →1+: command");
 	REQUIRE(w.getOperatorDescription('A', 0) ==
 		"add: Outputs sum of inputs\n  ←1: a\n  →1: b\n  ↓1: output");
 	REQUIRE(w.getOperatorDescription(':', 0) ==

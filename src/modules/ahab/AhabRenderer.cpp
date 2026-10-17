@@ -24,6 +24,7 @@ static AhabRenderer::GlyphClass glyph_class_of(char glyph) {
 		case ':':
 		case ';':
 		case '=':
+		case '$':
 		case '%':
 		case '?':
 		case '>':

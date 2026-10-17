@@ -73,6 +73,15 @@ struct AhabModule : Module {
 	/** [Stored to JSON as the "udpInput" subobject] */
 	std::unique_ptr<AhabUdpInput> udpInput;
 
+	// Commands from the '$' operator. Queued in processEvents() and executed in
+	// process() after the step that emitted them: running them inside the step
+	// would let `run` re-enter sim->step() while its event list is being read.
+	struct PendingCommand { char chars[Oevent_command_count]; Usz len; };
+	// Reserved once in the constructor and never grown beyond that, so the DSP
+	// thread never allocates.
+	static constexpr Usz MAX_PENDING_COMMANDS = 8;
+	std::vector<PendingCommand> pendingCommands;
+
 	// Phase accumulator for simulation step timing
 	float clockPhase = 0.0f;
 
@@ -154,6 +163,7 @@ struct AhabModule : Module {
 		this->udpInput->setHandler([this](const Datagram& d) {
 			AhabCommander<AhabModule>::execute(*this, d.data, d.len);
 		});
+		pendingCommands.reserve(MAX_PENDING_COMMANDS);
 
 		ResetEvent e;
 		onReset(e);
@@ -191,6 +201,7 @@ struct AhabModule : Module {
 		clkMultiplier.reset();
 		clkRatio = -1;
 		udpInput->reset();
+		pendingCommands.clear();
 		sim->setFieldSize(25, 49);
 		sim->reset();
 		// Full reset wipes edit history (unlike "Clear", which is undoable).
@@ -257,6 +268,7 @@ struct AhabModule : Module {
 	void process(const ProcessArgs &args) override {
 		// Ensure any UI-requested publishes are processed on the DSP thread
 		sim->process();
+		processPendingCommands();
 		// At most one UDP command per call; effects land between two frames, in arrival order.
 		udpInput->poll();
 
@@ -297,6 +309,20 @@ struct AhabModule : Module {
 		if (lightDivider.process()) {
 			lights[RUN_LIGHT].setBrightness(simRunning ? 1.0f : 0.0f);
 			lights[CLK_LIGHT].setBrightnessSmooth(clkPulseGen.isHigh() ? 1.0f : 0.0f, args.sampleTime * lightDivider.division);
+		}
+	}
+
+	// Executes the '$' commands queued by the last steps, in emission order.
+	// Commands that step the sim may queue new ones; those run on the next call.
+	void processPendingCommands() {
+		Usz count = pendingCommands.size();
+		if (count == 0) return;
+		// Run from a copy: commands queued while executing go to the emptied queue.
+		PendingCommand commands[MAX_PENDING_COMMANDS];
+		std::copy(pendingCommands.begin(), pendingCommands.end(), commands);
+		pendingCommands.clear();
+		for (Usz i = 0; i < count; ++i) {
+			AhabCommander<AhabModule>::execute(*this, commands[i].chars, commands[i].len);
 		}
 	}
 
@@ -389,6 +415,17 @@ struct AhabModule : Module {
 						Oevent_udp_string const* ud = &oe->udp_string;
 						if (ud && ud->count > 0) {
 							udpOutput->sendDatagram(ud->chars, (Usz)ud->count);
+						}
+						break;
+					}
+					case Oevent_type_command: {
+						Oevent_command const* co = &oe->command;
+						// Dropped when full, like any other overflowing event source.
+						if (co->count > 0 && pendingCommands.size() < MAX_PENDING_COMMANDS) {
+							PendingCommand pc;
+							memcpy(pc.chars, co->chars, co->count);
+							pc.len = (Usz)co->count;
+							pendingCommands.push_back(pc);
 						}
 						break;
 					}
@@ -772,7 +809,7 @@ struct AhabSimWidget : OpaqueWidget {
 			t['='] = "osc: Sends OSC message";
 			t['<'] = "cv-input: Reads a value from a CV input";
 			t['>'] = "cv-output: Writes a value to a CV output";
-			t['$'] = "command: not supported in Ahab";
+			t['$'] = "command: Sends ORCA command";
 			return t;
 		}();
 
@@ -784,6 +821,7 @@ struct AhabSimWidget : OpaqueWidget {
 			t['?'] = "  →1: channel\n  →2: lsb\n  →3: msb";
 			t[';'] = "  →1+: string";
 			t['='] = "  →1: path\n  →2+: message";
+			t['$'] = "  →1+: command";
 			t['A'] = "  ←1: a\n  →1: b\n  ↓1: output";
 			t['B'] = "  ←1: a\n  →1: b\n  ↓1: output";
 			t['C'] = "  ←1: rate\n  →1: mod\n  ↓1: output";
@@ -1313,7 +1351,7 @@ struct AhabSimWidget : OpaqueWidget {
 						Mark_flags flags = (Mark_flags)m;
 						Glyph g = widget->display_field.buffer[idx];
 						visible = 
-							((g == ':' || g == ';' || g == '%' || g == '?' || g == '!' || g == '=' || g == '<' || g == '>') && (!(flags & (Mark_flag_lock)) || (flags & Mark_flag_output))) || 
+							((g == ':' || g == ';' || g == '%' || g == '?' || g == '!' || g == '=' || g == '$' || g == '<' || g == '>') && (!(flags & (Mark_flag_lock)) || (flags & Mark_flag_output))) || 
 							((g != '.') && !(flags & (Mark_flag_lock | Mark_flag_sleep)));
 						if (visible && (g != lastGlyph_ || m != lastMark_)) {
 							lastGlyph_ = g;

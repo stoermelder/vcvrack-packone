@@ -522,6 +522,39 @@ TEST_CASE("ORCA '=' operator with empty message sends path only", "[AhabSim][UDP
 	REQUIRE(oe->osc_ints.count == 0);
 }
 
+TEST_CASE("ORCA '$' operator emits a command event", "[AhabSim][UDP]") {
+	AhabSim sim;
+
+	// '$' = command operator: the glyphs to its right up to the first '.'.
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("$run.D\n*....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+
+	REQUIRE(sim.getEventCount() == 1);
+	const Oevent* oe = &sim.getEvents()->buffer[0];
+	REQUIRE(oe->any.oevent_type == Oevent_type_command);
+	REQUIRE(std::string(oe->command.chars, oe->command.count) == "run");
+}
+
+TEST_CASE("ORCA '$' operator does nothing without a bang or without text", "[AhabSim][UDP]") {
+	AhabSim sim;
+
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("$run.\n.....", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() == 0);
+
+	REQUIRE(sim.loadRectFromOrcaRequest("$...\n*...", 0, 0, h, w, true) == true);
+	sim.process();
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getEventCount() == 0);
+}
+
 // End-to-end through the module, captured by the injected recording fake: the
 // full ORCA ';'/'=' operator → sim event → module → AhabOoscOutput path with no
 // sockets (constructor injection — Test::createModule can't inject).
@@ -576,6 +609,116 @@ TEST_CASE("End-to-end OSC message from ORCA '=' operator", "[Ahab][UDP]") {
 	REQUIRE(fakeOsc->oscInts[0].second.size() == 2);
 	REQUIRE(fakeOsc->oscInts[0].second[0] == 11);
 	REQUIRE(fakeOsc->oscInts[0].second[1] == 12);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("End-to-end command from ORCA '$' operator", "[Ahab][UDP]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("$frame:42.\n*.........", 0, 0, h, w, false) == true);
+	m->process({});
+
+	// The command runs in the process() call of the step that emitted it.
+	stepSim(m);
+	REQUIRE(m->sim->getTickNumber() == 42);
+	REQUIRE(m->pendingCommands.empty());
+
+	// The bang was consumed: no second command.
+	stepSim(m);
+	REQUIRE(m->sim->getTickNumber() == 43);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("'$' operator can stop the simulation", "[Ahab][UDP]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	REQUIRE(m->simRunning == true);
+
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("$stop.\n*....", 0, 0, h, w, false) == true);
+	m->process({});
+	stepSim(m);
+	REQUIRE(m->simRunning == false);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("'$' operator 'run' steps once after the emitting step", "[Ahab][UDP]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest("$run.\n*....", 0, 0, h, w, false) == true);
+	m->process({});
+	Usz before = m->sim->getTickNumber();
+
+	// One manual step plus the one requested by the command.
+	stepSim(m);
+	REQUIRE(m->sim->getTickNumber() == before + 2);
+	REQUIRE(m->pendingCommands.empty());
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Pending commands run in emission order and are bounded", "[Ahab][UDP]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	auto push = [&](const char* text) {
+		AhabModule::PendingCommand pc;
+		pc.len = strlen(text);
+		memcpy(pc.chars, text, pc.len);
+		m->pendingCommands.push_back(pc);
+	};
+
+	// Order matters: frame then skip gives 8, the reverse would give 7.
+	push("frame:7");
+	push("skip:1");
+	m->process({});
+	REQUIRE(m->sim->getTickNumber() == 8);
+	REQUIRE(m->pendingCommands.empty());
+
+	// Reset drops queued commands.
+	push("frame:3");
+	Module::ResetEvent e;
+	m->onReset(e);
+	REQUIRE(m->pendingCommands.empty());
+	m->process({});
+	REQUIRE(m->sim->getTickNumber() == 0);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("'$' operators beyond the queue capacity are dropped", "[Ahab][UDP]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	m->simRunning = false;
+
+	// Ten banged '$skip:1.' operators in one step; only MAX_PENDING_COMMANDS run.
+	std::string pattern;
+	for (int i = 0; i < 10; ++i) {
+		pattern += "$skip:1.\n";
+		pattern += "*.......";
+		if (i < 9) pattern += "\n";
+	}
+	Usz h, w;
+	REQUIRE(m->sim->loadRectFromOrcaRequest(pattern.c_str(), 0, 0, h, w, false) == true);
+	m->process({});
+	Usz before = m->sim->getTickNumber();
+	stepSim(m);
+	REQUIRE(m->sim->getTickNumber() == before + 1 + AhabModule::MAX_PENDING_COMMANDS);
 
 	Test::unregisterModule(m);
 }

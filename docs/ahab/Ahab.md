@@ -55,6 +55,10 @@ This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third oc
 AHAB has a third custom operator `+`, which can be placed to create a manual *bang*. For technical reasons ORCA-C has no support for the *bang* operator `*`, and so does AHAB.
 
 
+## Command operator `$`
+
+The operator `$` runs a command from the grid, using the same command syntax as the [UDP input](#udp-input) (see *Supported commands* below). It needs a *bang*: the glyphs to its right up to the first `.` are the command, e.g. `$stop.` stops the simulation and `$write:Hi;0;5.` writes text into the grid. Commands run right after the step that triggered them.
+
 ## UDP input
 
 AHAB can be controlled from the outside, like ORCA: when *UDP input* is enabled, every UDP datagram that arrives on the configured port is executed as a command. This allows other tools - another ORCA, Pure Data, controllers or live-coding scripts - to drive AHAB, even while the editor is closed.
@@ -92,6 +96,8 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `osc:port` | Sets the port of the *OSC* output. |
 | `ip:address` | Sets the address of both the *UDP* and the *OSC* output. |
 
+The same commands can be triggered from within the grid with the [operator `$`](#command-operator-).
+
 Commands of ORCA which depend on the editor's cursor, selection or clipboard (`find`, `select`, `copy`, `paste`, `erase`, `time`) and the theme (`color`) are not available. Commands for tempo and loading examples are currently not supported either.
 
 ## Random generator
@@ -116,11 +122,11 @@ AHAB has some features not found in the original ORCA/ORCA-C:
 
 Features missing in AHAB compared to ORCA:
 
-- The operator `$` (commander) is not available, as it is not in ORCA-C.
-
 - Hotkey Ctrl/Cmd+`P` to trigger the operator at the cursor is not available, as ORCA-C does not support this feature. AHAB has a special "pending bang" operator `+`, which will give you a similar result, when placing next to an operator.
 
 Behavior that differs from ORCA-C:
+
+- The operator `$` (commander) is available, although ORCA-C has no such operator. It works like in ORCA: when banged, the glyphs to its right up to the first `.` are executed as a command (e.g. `$frame:0.` or `$stop.`), using the same commands as the [UDP input](#udp-input). The command text is locked, so it is not interpreted as operators. Commands run right after the step that triggered them, in the order of the operators' positions; at most 8 commands are executed per step, further ones are dropped. The text is limited to 36 glyphs. Changes made by commands cannot be undone.
 
 - The operator `=` (OSC) behaves like in ORCA, not like in ORCA-C. The glyph right of `=` is the path; the message is read from the glyphs after the path up to the first `.` and each glyph is sent as an integer (e.g. `=fBC.` sends `/f` with values 11 and 12). ORCA-C uses the second glyph as a length parameter instead and locks that many cells to the right, which disables any operators placed there.
 
@@ -201,4 +207,5 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
     - Added reusable tiny Snippets to the context menu
     - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `udp`, `osc`, `ip`)
+    - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
