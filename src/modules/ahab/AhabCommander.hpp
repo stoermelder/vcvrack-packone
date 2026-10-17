@@ -63,6 +63,8 @@ struct AhabCommander {
 			{ "write", &AhabCommander::write },
 			{ "cc", &AhabCommander::cc },
 			{ "pg", &AhabCommander::pg },
+			{ "bpm", &AhabCommander::bpm },
+			{ "apm", &AhabCommander::apm },
 			{ "udp", &AhabCommander::udp },
 			{ "osc", &AhabCommander::osc },
 			{ "ip", &AhabCommander::ip },
@@ -198,6 +200,22 @@ struct AhabCommander {
 			msg.bytes[1] = (uint8_t)clampValue(v, 0, 127);
 			m.sendMidiMessage(msg);
 		}
+	}
+
+	// bpm:N — sets the tempo knob (30..300) and cancels any apm ramp. No effect on
+	// the tempo while CLK is patched, as for the knob itself.
+	static void bpm(MODULE& m, const Args& a) {
+		int32_t v;
+		if (!a.getInt(0, v)) return;
+		m.bpmTarget = 0;
+		m.params[MODULE::BPM_PARAM].setValue((float)clampValue(v, 30, 300));
+	}
+
+	// apm:N — ramps the tempo knob towards N (30..300) by 1 BPM per step.
+	static void apm(MODULE& m, const Args& a) {
+		int32_t v;
+		if (!a.getInt(0, v)) return;
+		m.bpmTarget = clampValue(v, 30, 300);
 	}
 
 	// udp:out;in — UDP output port (address kept) and UDP input port. Either part

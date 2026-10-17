@@ -345,6 +345,55 @@ TEST_CASE("Commander cc sets the CC offset, clamped to 0..127", "[Ahab][Commande
 	Test::unregisterModule(m);
 }
 
+TEST_CASE("Commander bpm sets the tempo, clamped to 30..300", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "bpm:140"));
+	REQUIRE(m->params[AhabModule::BPM_PARAM].getValue() == 140.f);
+	REQUIRE(exec(m, "bp:1000"));
+	REQUIRE(m->params[AhabModule::BPM_PARAM].getValue() == 300.f);
+	REQUIRE(exec(m, "bpm:-4"));
+	REQUIRE(m->params[AhabModule::BPM_PARAM].getValue() == 30.f);
+	REQUIRE(exec(m, "bpm:abc"));
+	REQUIRE(m->params[AhabModule::BPM_PARAM].getValue() == 30.f);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander apm ramps 1 BPM per step and bpm cancels it", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+	auto bpm = [&]() { return m->params[AhabModule::BPM_PARAM].getValue(); };
+
+	REQUIRE(exec(m, "bpm:120"));
+	REQUIRE(exec(m, "ap:123"));
+	REQUIRE(bpm() == 120.f);   // nothing happens until the clock steps
+	m->stepBpmRamp();
+	REQUIRE(bpm() == 121.f);
+	m->stepBpmRamp();
+	m->stepBpmRamp();
+	REQUIRE(bpm() == 123.f);
+	m->stepBpmRamp();          // target reached, ramp is over
+	REQUIRE(bpm() == 123.f);
+
+	// Downwards, and cancelled by bpm.
+	REQUIRE(exec(m, "apm:100"));
+	m->stepBpmRamp();
+	REQUIRE(bpm() == 122.f);
+	REQUIRE(exec(m, "bpm:150"));
+	m->stepBpmRamp();
+	REQUIRE(bpm() == 150.f);
+
+	// Clamped target.
+	REQUIRE(exec(m, "apm:5"));
+	REQUIRE(m->bpmTarget == 30);
+
+	Test::unregisterModule(m);
+}
+
 TEST_CASE("Commander udp sets the UDP output and input ports", "[Ahab][Commander]") {
 	Test::ModuleScaffold<AhabModule> mods;
 	AhabModule* m = mods.create("Ahab");

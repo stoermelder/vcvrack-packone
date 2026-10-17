@@ -100,6 +100,9 @@ struct AhabModule : Module {
 	/** [Stored to JSON] */
 	uint16_t midiCcOffset = 64;
 
+	// Target of an `apm` ramp, or 0 if none. DSP thread only; not stored.
+	int bpmTarget = 0;
+
 	/** [Stored to JSON] */
 	int gridStepCol = 8;
 	/** [Stored to JSON] */
@@ -187,6 +190,7 @@ struct AhabModule : Module {
 		midiOutPort.reset();
 		midiOutPort.setChannel(-1);
 		midiCcOffset = 64;
+		bpmTarget = 0;
 		scheduledOffs.clear();
 
 		overwriteZeroNoteDuration = true;
@@ -265,6 +269,17 @@ struct AhabModule : Module {
 		}
 	}
 
+	// One BPM towards the `apm` target per internally clocked step.
+	void stepBpmRamp() {
+		if (bpmTarget <= 0) return;
+		float target = (float)bpmTarget;
+		float bpm = params[BPM_PARAM].getValue();
+		if (bpm < target) bpm = std::min(bpm + 1.f, target);
+		else bpm = std::max(bpm - 1.f, target);
+		params[BPM_PARAM].setValue(bpm);
+		if (bpm == target) bpmTarget = 0;
+	}
+
 	void process(const ProcessArgs &args) override {
 		// Ensure any UI-requested publishes are processed on the DSP thread
 		sim->process();
@@ -301,6 +316,7 @@ struct AhabModule : Module {
 			if (clockPhase >= 1.0) {
 				clockPhase -= 1.0;
 				sim->step();
+				stepBpmRamp();
 			}
 		}
 
