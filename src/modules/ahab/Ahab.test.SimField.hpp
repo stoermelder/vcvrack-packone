@@ -7,20 +7,27 @@
 #include "../../test/test_mock.hpp"
 
 
-TEST_CASE("Static convertRectToOrca serializes an arbitrary field", "[AhabSim]") {
-	// The widget serializes its display_field snapshot through the static
-	// overload, so verify it works on a standalone Field.
+TEST_CASE("AhabClipboard serializes a rect of an arbitrary field", "[AhabSim]") {
+	// The widget serializes its display_field snapshot through an AhabClipboard,
+	// so verify it works on a standalone Field.
 	Field f;
 	field_init_fill(&f, 2, 3, '.');
 	DEFER({ field_deinit(&f); });
 	f.buffer[0] = 'A'; f.buffer[1] = 'B'; f.buffer[2] = 'C';
 	f.buffer[3] = 'D'; f.buffer[4] = 'E'; f.buffer[5] = 'F';
 
-	REQUIRE(AhabSim::convertRectToOrca(f, 0, 0, 2, 3) == "ABC\nDEF");
-	REQUIRE(AhabSim::convertRectToOrca(f, 1, 1, 1, 2) == "EF");
+	auto toOrca = [&](Usz y, Usz x, Usz h, Usz w) {
+		AhabClipboard c;
+		c.copyFrom(f.buffer, f.height, f.width, y, x, h, w);
+		return c.toOrca();
+	};
+	REQUIRE(toOrca(0, 0, 2, 3) == "ABC\nDEF");
+	REQUIRE(toOrca(1, 1, 1, 2) == "EF");
+	// Clipped at the edge
+	REQUIRE(toOrca(0, 2, 5, 5) == "C\nF");
 	// Out-of-bounds / zero-size requests are safe and return empty
-	REQUIRE(AhabSim::convertRectToOrca(f, 5, 5, 2, 2).empty());
-	REQUIRE(AhabSim::convertRectToOrca(f, 0, 0, 0, 0).empty());
+	REQUIRE(toOrca(5, 5, 2, 2).empty());
+	REQUIRE(toOrca(0, 0, 0, 0).empty());
 }
 
 TEST_CASE("ORCA text parsing builds valid field", "[AhabSim]") {
@@ -70,8 +77,8 @@ TEST_CASE("Field size clamps to maximum", "[AhabSim]") {
 	sim.setFieldSizeRequest(500, 500, false);
 	sim.process();
 
-	REQUIRE(sim.getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
-	REQUIRE(sim.getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+	REQUIRE(sim.getFieldHeight() == MAX_FIELD_HEIGHT);
+	REQUIRE(sim.getFieldWidth() == MAX_FIELD_WIDTH);
 
 	// Content in the overlapping region survives; the rest is '.'
 	Usz h, w;
@@ -86,8 +93,8 @@ TEST_CASE("Field size clamps to maximum", "[AhabSim]") {
 
 	// The direct DSP-side entry point clamps too.
 	sim.setFieldSize(1000, 250);
-	REQUIRE(sim.getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
-	REQUIRE(sim.getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+	REQUIRE(sim.getFieldHeight() == MAX_FIELD_HEIGHT);
+	REQUIRE(sim.getFieldWidth() == MAX_FIELD_WIDTH);
 
 	// Stepping a max-size field after a clamped resize is safe.
 	for (int i = 0; i < 4; ++i) sim.step();

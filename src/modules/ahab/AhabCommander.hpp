@@ -6,10 +6,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <midi.hpp>
 #include "AhabSim.hpp"
+#include "AhabEditorState.hpp"
 #include "AhabUdpOutput.hpp"
 
 namespace StoermelderPackOne {
@@ -47,7 +49,9 @@ struct AhabCommander {
 	};
 
 	using Handler = std::function<void(MODULE&, const Args&)>;
-	struct Row { const char* name; Handler fn; };
+	// `noAlias` is left out (false) by most rows: the command then also answers to its
+	// first two characters.
+	struct Row { const char* name; Handler fn; bool noAlias; };
 
 	// Registration order matters for two-letter aliases (first match wins).
 	// A function-local table, as C++11 has no inline variables; the handlers
@@ -68,7 +72,13 @@ struct AhabCommander {
 			{ "udp", &AhabCommander::udp },
 			{ "osc", &AhabCommander::osc },
 			{ "ip", &AhabCommander::ip },
-			{ nullptr, nullptr }
+			{ "select", &AhabCommander::select },
+			{ "find", &AhabCommander::find },
+			{ "erase", &AhabCommander::erase },
+			// `co` is ORCA's `color`, so copy has no two-letter alias.
+			{ "copy", &AhabCommander::copy, true },
+			{ "paste", &AhabCommander::paste },
+			{ nullptr, nullptr, false }
 		};
 		return table;
 	}
@@ -106,7 +116,7 @@ struct AhabCommander {
 		}
 
 		for (const Row* r = rows(); r->name; r++) {
-			if (strcmp(r->name, name) == 0 || (n == 2 && strncmp(r->name, name, 2) == 0)) {
+			if (strcmp(r->name, name) == 0 || (n == 2 && !r->noAlias && strncmp(r->name, name, 2) == 0)) {
 				r->fn(m, args);
 				return true;
 			}
@@ -158,23 +168,79 @@ struct AhabCommander {
 	}
 
 	// write:text;x;y — writes `text` as a row of glyphs at column x, row y.
-	// Coordinates are required (there is no cursor without a UI). A space
-	// becomes '.', as in orca-c's loaders, since only '!'..'~' are valid glyphs;
-	// text with any other non-printable character is rejected as a whole.
-	// Clipped like a UI paste.
+	// Without coordinates (`write:text`) it writes at the cursor; with only one of
+	// them the command is rejected. A space becomes '.', as in orca-c's loaders,
+	// since only '!'..'~' are valid glyphs; text with any other non-printable
+	// character is rejected as a whole. Clipped like a UI paste.
 	static void write(MODULE& m, const Args& a) {
-		int32_t x, y;
-		if (!a.getInt(1, x) || !a.getInt(2, y) || x < 0 || y < 0) return;
-		size_t len = a.partLen[0];
-		if (len == 0 || len > MAX_TEXT) return;
 		Glyph cells[MAX_TEXT];
-		for (size_t i = 0; i < len; i++) {
-			char c = a.part[0][i];
-			if (c == ' ') c = '.';
-			if (c < '!' || c > '~') return;
-			cells[i] = (Glyph)c;
+		size_t len;
+		if (!toGlyphs(a, cells, len)) return;
+		Usz y, x;
+		if (a.parts == 1) {
+			AhabEditorState s = m.editor.load();
+			y = s.cursor_y;
+			x = s.cursor_x;
 		}
-		if (m.sim->pasteCells(cells, 1, len, (Usz)y, (Usz)x)) m.sim->notifyTick();
+		else {
+			int32_t xi, yi;
+			if (!a.getInt(1, xi) || !a.getInt(2, yi) || xi < 0 || yi < 0) return;
+			y = (Usz)yi;
+			x = (Usz)xi;
+		}
+		if (m.sim->pasteCells(cells, 1, len, y, x)) m.sim->notifyTick();
+	}
+
+	// select:x;y;w;h — cursor to column x, row y and a w×h selection from there
+	// (w and h default to 1). Clamped to the field like the UI does.
+	static void select(MODULE& m, const Args& a) {
+		int32_t x, y, w = 1, h = 1;
+		if (!a.getInt(0, x) || !a.getInt(1, y) || x < 0 || y < 0) return;
+		if (a.parts > 2 && !a.getInt(2, w)) return;
+		if (a.parts > 3 && !a.getInt(3, h)) return;
+		if (w < 1 || h < 1) return;
+		selectRect(m, (Usz)y, (Usz)x, (Usz)h, (Usz)w);
+	}
+
+	// find:text — selects the first match in row-major order. The text is one row
+	// (spaces count as '.'), so the match is a 1×len selection. No match: no-op.
+	static void find(MODULE& m, const Args& a) {
+		Glyph needle[MAX_TEXT];
+		size_t len;
+		if (!toGlyphs(a, needle, len)) return;
+		Usz fh = m.sim->getFieldHeight();
+		Usz fw = m.sim->getFieldWidth();
+		if (len > fw) return;
+		Glyph const* buf = m.sim->getFieldBuffer();
+		for (Usz y = 0; y < fh; y++) {
+			for (Usz x = 0; x + len <= fw; x++) {
+				if (memcmp(buf + y * fw + x, needle, len * sizeof(Glyph)) == 0) {
+					selectRect(m, y, x, 1, (Usz)len);
+					return;
+				}
+			}
+		}
+	}
+
+	// erase — clears the selection. Not undoable, like all remote edits.
+	static void erase(MODULE& m, const Args&) {
+		AhabEditorState s = m.editor.load();
+		m.sim->cutRect(s.sel_y, s.sel_x, s.sel_h, s.sel_w);
+		m.sim->notifyTick();
+	}
+
+	// copy — the selection into the module's own clipboard, never the OS clipboard.
+	static void copy(MODULE& m, const Args&) {
+		AhabEditorState s = m.editor.load();
+		m.clipboard.copyFrom(m.sim->getFieldBuffer(), m.sim->getFieldHeight(), m.sim->getFieldWidth(),
+			s.sel_y, s.sel_x, s.sel_h, s.sel_w);
+	}
+
+	// paste — the module clipboard at the cursor, clipped to the field. No-op if empty.
+	static void paste(MODULE& m, const Args&) {
+		AhabEditorState s = m.editor.load();
+		AhabClipboard& c = m.clipboard;
+		if (m.sim->pasteCells(c.cells, c.height, c.width, s.cursor_y, s.cursor_x)) m.sim->notifyTick();
 	}
 
 	// cc:N — offset added to the control number of CC operators (0..127).
@@ -251,6 +317,33 @@ struct AhabCommander {
 	}
 
 private:
+	// First part as glyphs. A space becomes '.'; empty, too long or non-printable
+	// text is rejected.
+	static bool toGlyphs(const Args& a, Glyph* out, size_t& len) {
+		if (a.parts < 1) return false;
+		len = a.partLen[0];
+		if (len == 0 || len > MAX_TEXT) return false;
+		for (size_t i = 0; i < len; i++) {
+			char c = a.part[0][i];
+			if (c == ' ') c = '.';
+			if (c < '!' || c > '~') return false;
+			out[i] = (Glyph)c;
+		}
+		return true;
+	}
+
+	// Cursor to (y, x) and a selection from there, clamped to the field.
+	static void selectRect(MODULE& m, Usz y, Usz x, Usz h, Usz w) {
+		Usz fh = m.sim->getFieldHeight();
+		Usz fw = m.sim->getFieldWidth();
+		m.editor.update([&](AhabEditorState& s) {
+			s.setCursor(y, x, fh, fw);
+			s.setSelection(y, x, h, w, fh, fw);
+		});
+		// Wakes the display, so a stopped simulation still shows the new selection.
+		m.sim->notifyTick();
+	}
+
 	static bool isPortNumber(int32_t v) {
 		return v >= 1 && v <= 65535;
 	}

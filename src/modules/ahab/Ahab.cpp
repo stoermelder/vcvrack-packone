@@ -63,6 +63,8 @@ struct AhabModule : Module {
 	// Cursor and selection live here, not in the widget, so they exist without an editor
 	// and both the UI and the DSP thread can change them. Runtime state, not stored.
 	AhabSharedEditorState editor;
+	// Target of the remote `copy`/`paste` commands; DSP thread only.
+	AhabClipboard clipboard;
 
 	/** [Stored to JSON] */
 	bool simRunning = true;
@@ -196,6 +198,7 @@ struct AhabModule : Module {
 		midiOutPort.setChannel(-1);
 		midiCcOffset = 64;
 		bpmTarget = 0;
+		clipboard.clear();
 		scheduledOffs.clear();
 
 		overwriteZeroNoteDuration = true;
@@ -584,6 +587,8 @@ struct AhabSimWidget : OpaqueWidget {
 
 	// Display snapshot using lock-free reads from sim
 	Field display_field;
+	// Scratch for serializing the selection of display_field (copy, save selection).
+	AhabClipboard clipboard;
 	Mbuf_reusable display_mbuf;
 	const Field* display_ready = nullptr;
 
@@ -782,10 +787,7 @@ struct AhabSimWidget : OpaqueWidget {
 	void simSaveSelection() {
 		std::string path = vcv::ui::saveDialog("Orca Files (*.orca):orca", "", "selection.orca");
 		if (path.empty()) return;
-		Usz sy, sx, sh, sw;
-		editor().getSelectionRect(sy, sx, sh, sw);
-		// Serialize the UI snapshot, not the sim's live buffer (DSP may write it).
-		std::string content = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
+		std::string content = selectionToOrca();
 		if (!vcv::fs::write(path, content)) {
 			std::string message = string::f("Could not write to patch file %s", path.c_str());
 			vcv::ui::message(vcv::MessageType::WARNING, vcv::MessageButtons::OK, message);
@@ -1110,12 +1112,19 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 	}
 
+	// The selection as ORCA text, read from the UI snapshot (display_field), not the
+	// sim's live buffer (DSP may write it). Empty if the selection is outside it.
+	std::string selectionToOrca() {
+		Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
+		clipboard.clear();
+		clipboard.copyFrom(display_field.buffer, display_field.height, display_field.width, sy, sx, sh, sw);
+		return clipboard.toOrca();
+	}
+
 	// Serialize the selection from display_field and push to the clipboard
 	// (extracted so routing is testable headless; key handlers gate on glfw).
 	std::string copySelectionToClipboard() {
-		Usz sy, sx, sh, sw; editor().getSelectionRect(sy, sx, sh, sw);
-		// Read from the UI snapshot (display_field), not the sim's live buffer.
-		std::string s = AhabSim::convertRectToOrca(display_field, sy, sx, sh, sw);
+		std::string s = selectionToOrca();
 		if (!s.empty()) vcv::ui::setClipboard(s);
 		return s;
 	}

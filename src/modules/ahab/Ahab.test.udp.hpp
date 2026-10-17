@@ -304,7 +304,7 @@ TEST_CASE("Commander write rejects incomplete or unsafe input", "[Ahab][Commande
 	};
 
 	const char* cases[] = {
-		"write", "write:", "write:A", "write:A;1", "write:A;x;1", "write:A;1;y",
+		"write", "write:", "write:A;1", "write:A;x;1", "write:A;1;y",
 		"write:;1;1",            // empty text
 		"write:A;-1;0",          // negative coordinates
 		"write:A;0;-1",
@@ -326,6 +326,166 @@ TEST_CASE("Commander write rejects incomplete or unsafe input", "[Ahab][Commande
 	std::string longCmd = "write:" + std::string(300, 'A') + ";0;0";
 	REQUIRE(exec(m, longCmd.c_str()));
 	REQUIRE(gridIsEmpty());
+
+	Test::unregisterModule(m);
+}
+
+// --- Commander: cursor, selection and clipboard commands ---
+
+static void setEditor(AhabModule* m, Usz cy, Usz cx, Usz sy, Usz sx, Usz sh, Usz sw) {
+	m->editor.update([&](AhabEditorState& s) {
+		s.setSelection(sy, sx, sh, sw);
+		s.setCursor(cy, cx);
+		s.clampCursorToSelection();
+	});
+}
+
+TEST_CASE("Commander write without coordinates writes at the cursor", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	setEditor(m, 4, 7, 4, 7, 1, 1);
+	REQUIRE(exec(m, "write:HI"));
+	REQUIRE(glyphAt(m, 4, 7) == 'H');
+	REQUIRE(glyphAt(m, 4, 8) == 'I');
+	REQUIRE(m->editor.load().cursor_x == 7);   // the cursor stays put
+
+	// Explicit coordinates still win; a lone x is rejected.
+	REQUIRE(exec(m, "write:Z;0;0"));
+	REQUIRE(glyphAt(m, 0, 0) == 'Z');
+	REQUIRE(exec(m, "write:Q;1"));
+	REQUIRE(glyphAt(m, 0, 1) == '.');
+	REQUIRE(glyphAt(m, 4, 7) == 'H');
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander select sets cursor and selection, clamped to the field", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "select:5;3;4;2"));
+	AhabEditorState s = m->editor.load();
+	REQUIRE(s.cursor_x == 5); REQUIRE(s.cursor_y == 3);
+	REQUIRE(s.sel_x == 5); REQUIRE(s.sel_y == 3); REQUIRE(s.sel_w == 4); REQUIRE(s.sel_h == 2);
+
+	// w and h default to 1; the alias works.
+	REQUIRE(exec(m, "se:2;1"));
+	s = m->editor.load();
+	REQUIRE(s.sel_x == 2); REQUIRE(s.sel_y == 1); REQUIRE(s.sel_w == 1); REQUIRE(s.sel_h == 1);
+
+	// Beyond the field: shifted back inside, cursor stays in the selection.
+	Usz fh = m->sim->getFieldHeight(), fw = m->sim->getFieldWidth();
+	REQUIRE(exec(m, "select:9999;9999;3;3"));
+	s = m->editor.load();
+	REQUIRE(s.sel_y + s.sel_h <= fh); REQUIRE(s.sel_x + s.sel_w <= fw);
+	REQUIRE(s.cursor_y >= s.sel_y); REQUIRE(s.cursor_y < s.sel_y + s.sel_h);
+	REQUIRE(s.cursor_x >= s.sel_x); REQUIRE(s.cursor_x < s.sel_x + s.sel_w);
+
+	// Rejected input changes nothing.
+	AhabEditorState before = m->editor.load();
+	for (const char* cmd : { "select", "select:1", "select:a;b", "select:-1;0", "select:1;1;0;1", "select:1;1;x" }) {
+		REQUIRE(exec(m, cmd));
+		AhabEditorState now = m->editor.load();
+		REQUIRE(now.sel_y == before.sel_y); REQUIRE(now.sel_x == before.sel_x);
+		REQUIRE(now.sel_h == before.sel_h); REQUIRE(now.sel_w == before.sel_w);
+	}
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander find selects the first row-major match", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "write:XYZ;3;2"));
+	REQUIRE(exec(m, "write:XYZ;1;5"));
+	REQUIRE(exec(m, "find:YZ"));
+	AhabEditorState s = m->editor.load();
+	REQUIRE(s.sel_y == 2); REQUIRE(s.sel_x == 4); REQUIRE(s.sel_h == 1); REQUIRE(s.sel_w == 2);
+	REQUIRE(s.cursor_y == 2); REQUIRE(s.cursor_x == 4);
+
+	// A match at the right edge of the field.
+	Usz fw = m->sim->getFieldWidth();
+	REQUIRE(exec(m, ("write:EDGE;" + std::to_string(fw - 4) + ";8").c_str()));
+	REQUIRE(exec(m, "fi:EDGE"));
+	s = m->editor.load();
+	REQUIRE(s.sel_y == 8); REQUIRE(s.sel_x == fw - 4); REQUIRE(s.sel_w == 4);
+
+	// No match, or text that can't be in the grid: the selection stays.
+	REQUIRE(exec(m, "find:NOPE"));
+	REQUIRE(exec(m, "find:"));
+	REQUIRE(exec(m, "find"));
+	s = m->editor.load();
+	REQUIRE(s.sel_y == 8); REQUIRE(s.sel_x == fw - 4);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander erase clears the selection without undo", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "write:ABCD;0;0"));
+	REQUIRE(exec(m, "write:EFGH;0;1"));
+	Usz undoBefore = m->sim->getUndoCount();
+	REQUIRE(exec(m, "select:1;0;2;2"));
+	REQUIRE(exec(m, "erase"));
+	REQUIRE(glyphAt(m, 0, 0) == 'A'); REQUIRE(glyphAt(m, 0, 1) == '.');
+	REQUIRE(glyphAt(m, 0, 2) == '.'); REQUIRE(glyphAt(m, 0, 3) == 'D');
+	REQUIRE(glyphAt(m, 1, 0) == 'E'); REQUIRE(glyphAt(m, 1, 1) == '.');
+	REQUIRE(glyphAt(m, 1, 3) == 'H');
+	REQUIRE(m->sim->getUndoCount() == undoBefore);
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander copy and paste use the module clipboard", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	Mock mock;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "write:AB;0;0"));
+	REQUIRE(exec(m, "write:CD;0;1"));
+	REQUIRE(exec(m, "select:0;0;2;2"));
+	REQUIRE(exec(m, "copy"));
+	REQUIRE(exec(m, "select:5;6"));
+	REQUIRE(exec(m, "paste"));
+	REQUIRE(glyphAt(m, 6, 5) == 'A'); REQUIRE(glyphAt(m, 6, 6) == 'B');
+	REQUIRE(glyphAt(m, 7, 5) == 'C'); REQUIRE(glyphAt(m, 7, 6) == 'D');
+	REQUIRE(m->sim->getUndoCount() == 0);
+
+	// `pa` is paste; `co` is not copy (it is ORCA's color) and does nothing.
+	REQUIRE(exec(m, "select:0;3"));
+	REQUIRE(exec(m, "pa"));
+	REQUIRE(glyphAt(m, 3, 0) == 'A');
+	REQUIRE_FALSE(exec(m, "co"));
+
+	// Paste clips at the field edge.
+	Usz fw = m->sim->getFieldWidth();
+	REQUIRE(exec(m, ("select:" + std::to_string(fw - 1) + ";0").c_str()));
+	REQUIRE(exec(m, "paste"));
+	REQUIRE(glyphAt(m, 0, fw - 1) == 'A');
+	REQUIRE(glyphAt(m, 1, fw - 1) == 'C');
+
+	// The OS clipboard is untouched.
+	REQUIRE(mock.ui.clipboardWrites.empty());
+
+	Test::unregisterModule(m);
+}
+
+TEST_CASE("Commander paste with an empty clipboard is a no-op", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "paste"));
+	REQUIRE(glyphAt(m, 0, 0) == '.');
 
 	Test::unregisterModule(m);
 }

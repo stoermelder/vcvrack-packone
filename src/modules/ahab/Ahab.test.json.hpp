@@ -327,14 +327,14 @@ TEST_CASE("fromJson clamps oversized fields", "[JSON][AhabSim]") {
 	sim.fromJson(j);
 	json_decref(j);
 
-	REQUIRE(sim.getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
-	REQUIRE(sim.getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+	REQUIRE(sim.getFieldHeight() == MAX_FIELD_HEIGHT);
+	REQUIRE(sim.getFieldWidth() == MAX_FIELD_WIDTH);
 
 	Glyph const* buf = sim.getFieldBuffer();
 	REQUIRE(buf[0] == 'A');
 	REQUIRE(buf[99] == 'Z');
 	// Bytes past the clamped area are truncated, not wrapped anywhere
-	for (Usz i = 0; i < AhabSim::MAX_FIELD_HEIGHT * AhabSim::MAX_FIELD_WIDTH; ++i) {
+	for (Usz i = 0; i < MAX_FIELD_HEIGHT * MAX_FIELD_WIDTH; ++i) {
 		REQUIRE(buf[i] != 'Q');
 	}
 
@@ -391,8 +391,8 @@ TEST_CASE("Module-level sim JSON clamps oversized fields", "[JSON][Ahab]") {
 	m2->dataFromJson(j);
 	json_decref(j);
 
-	REQUIRE(m2->sim->getFieldHeight() == AhabSim::MAX_FIELD_HEIGHT);
-	REQUIRE(m2->sim->getFieldWidth() == AhabSim::MAX_FIELD_WIDTH);
+	REQUIRE(m2->sim->getFieldHeight() == MAX_FIELD_HEIGHT);
+	REQUIRE(m2->sim->getFieldWidth() == MAX_FIELD_WIDTH);
 
 	Test::unregisterModule(m);
 	Test::unregisterModule(m2);

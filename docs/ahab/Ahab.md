@@ -89,7 +89,12 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `frame:N` | Sets the frame counter to `N`. |
 | `skip:N` | Advances the frame counter by `N`. |
 | `rewind:N` | Moves the frame counter back by `N`, but not below 0. |
-| `write:text;x;y` | Writes `text` into the grid with its first character at column `x`, row `y` (both counted from 0 at the top left corner). Both coordinates are required. Text running over the edge of the grid is cut off. Spaces are written as `.` (empty cells). Text with other non-printable characters is rejected, and it must not contain `;`. |
+| `write:text` / `write:text;x;y` | Writes `text` into the grid with its first character at column `x`, row `y` (both counted from 0 at the top left corner), or at the cursor if both are left out. Text running over the edge of the grid is cut off. Spaces are written as `.` (empty cells). Text with other non-printable characters is rejected, and it must not contain `;`. |
+| `select:x;y;w;h` | Moves the cursor to column `x`, row `y` and selects a block of `w` × `h` cells from there (both default to 1). The selection is kept inside the grid. |
+| `find:text` | Selects the first occurrence of `text` in the grid, searching row by row from the top. Nothing happens if there is none. |
+| `erase` | Clears the selection. |
+| `copy` | Copies the selection into AHAB's own clipboard. The system clipboard is not used, so what you copied yourself is never overwritten by a remote command. There is no short form (`co` is ORCA's `color`). |
+| `paste` / `pa` | Pastes AHAB's own clipboard at the cursor. |
 | `cc:N` | Sets the offset (0-127) added to the control number of the MIDI CC operator `!`, like the *CC* options in the MIDI menu. |
 | `pg:channel;bank;sub;program` | Sends a MIDI program change on `channel` (0-15), preceded by bank select MSB (`bank`, CC 0) and LSB (`sub`, CC 32). `bank`, `sub` and `program` are optional and left out if empty (`pg:3;;;12` sends only the program change). |
 | `bpm:N` | Sets the tempo knob to `N` (30-300) and stops any running `apm` ramp. Has no effect on the tempo while the CLK input is patched. |
@@ -100,7 +105,7 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 
 The same commands can be triggered from within the grid with the [operator `$`](#command-operator-).
 
-Commands of ORCA which depend on the editor's cursor, selection or clipboard (`find`, `select`, `copy`, `paste`, `erase`, `time`) and the theme (`color`) are not available. Loading examples (`inject`) is currently not supported either.
+The ORCA commands `time` and `color` are not available. Loading examples (`inject`) is currently not supported either.
 
 ## Random generator
 
@@ -209,7 +214,7 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
     - Added reusable tiny Snippets to the context menu
 - v2.x.x
-    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `bpm`, `apm`, `udp`, `osc`, `ip`)
+    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `bpm`, `apm`, `select`, `find`, `erase`, `copy`, `paste`, `udp`, `osc`, `ip`)
     - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
     - Undo and redo now restore the cursor and selection

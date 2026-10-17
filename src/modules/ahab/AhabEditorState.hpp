@@ -1,9 +1,12 @@
 #pragma once
 #include <orca-c/base.h>   // Usz, Isz
+#include "Ahab.hpp"        // MAX_FIELD_HEIGHT/WIDTH
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <string>
 
 namespace StoermelderPackOne {
 namespace Ahab {
@@ -121,7 +124,7 @@ struct AhabEditorState {
 // value any thread can observe. Concurrent writers are applied one after the other,
 // never mixed.
 struct AhabSharedEditorState {
-	// Every coordinate and size has to fit in 7 bits; AhabSim.cpp asserts that
+	// Every coordinate and size has to fit in 7 bits; Ahab.hpp asserts that
 	// MAX_FIELD_HEIGHT/WIDTH do.
 	std::atomic<uint64_t> word;
 
@@ -176,6 +179,47 @@ struct AhabSharedEditorState {
 		s.sel_y = get(); s.sel_x = get(); s.sel_h = get(); s.sel_w = get();
 		s.insertMode = ((w >> shift) & 1) != 0;
 		return s;
+	}
+};
+
+// A block of grid cells copied out of a field. The module owns one for the remote
+// `copy`/`paste` commands (DSP thread only, separate from the OS clipboard so a
+// remote command never overwrites what the user copied); the widget owns another
+// to serialize its selection for the OS clipboard and for files (UI thread only).
+// No synchronisation: each instance belongs to one thread. It knows nothing about
+// the sim: the caller hands in the field to copy from.
+struct AhabClipboard {
+	Glyph cells[MAX_FIELD_HEIGHT * MAX_FIELD_WIDTH];
+	Usz height = 0, width = 0;
+
+	void clear() {
+		height = width = 0;
+	}
+
+	// Copies the rect from a field of fh × fw cells, clipped to it. Returns false and
+	// keeps the old content if the rect starts outside the field.
+	bool copyFrom(const Glyph* field, Usz fh, Usz fw, Usz y, Usz x, Usz h, Usz w) {
+		if (y >= fh || x >= fw) return false;
+		h = std::min(h, fh - y);
+		w = std::min(w, fw - x);
+		for (Usz row = 0; row < h; row++) {
+			std::memcpy(cells + row * w, field + (y + row) * fw + x, w * sizeof(Glyph));
+		}
+		height = h;
+		width = w;
+		return true;
+	}
+
+	// ORCA plain text: one line per row, joined by '\n' (no trailing one). Empty if
+	// the clipboard is.
+	std::string toOrca() const {
+		std::string out;
+		out.reserve((size_t)height * ((size_t)width + 1));
+		for (Usz row = 0; row < height; row++) {
+			out.append(cells + row * width, width);
+			if (row + 1 < height) out.push_back('\n');
+		}
+		return out;
 	}
 };
 

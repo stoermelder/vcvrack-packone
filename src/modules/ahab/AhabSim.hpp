@@ -36,12 +36,6 @@ public:
 	AhabSim();
 	~AhabSim();
 
-	// Maximum field dimensions. The field is capped at this size so the fixed
-	// DSP-thread scratch buffer (scratch_) is always large enough, and no heap
-	// buffer is ever shipped across the UI->DSP command queue.
-	static constexpr Usz MAX_FIELD_HEIGHT = 100;
-	static constexpr Usz MAX_FIELD_WIDTH = 100;
-
 	// Non-copyable
 	AhabSim(const AhabSim&) = delete;
 	AhabSim& operator=(const AhabSim&) = delete;
@@ -72,13 +66,6 @@ public:
 
 	// Replace the current field with provided cells of given dimensions.
 	void replaceField(Glyph* cells, Usz new_h, Usz new_w);
-
-	// Serialize a rectangular region of a field to ORCA plain text. Each row is
-	// a line terminated by '\n'. Static so UI-thread callers can serialize their
-	// own consistent snapshot (e.g. the widget's `display_field`) instead of
-	// reading the sim's live field buffer, which the DSP thread may be writing
-	// to from step().
-	static std::string convertRectToOrca(const Field& field, Usz y, Usz x, Usz h, Usz w);
 
 	// Single-step the VM (one tick). Increments internal tick counter and
 	// invokes the tick callback if set. Called from DSP thread - must be lock-free.
