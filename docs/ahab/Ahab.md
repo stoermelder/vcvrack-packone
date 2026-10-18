@@ -90,6 +90,7 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `skip:N` | Advances the frame counter by `N`. |
 | `rewind:N` | Moves the frame counter back by `N`, but not below 0. |
 | `write:text` / `write:text;x;y` | Writes `text` into the grid with its first character at column `x`, row `y` (both counted from 0 at the top left corner), or at the cursor if both are left out. Text running over the edge of the grid is cut off. Spaces are written as `.` (empty cells). Text with other non-printable characters is rejected, and it must not contain `;`. |
+| `writes:text` | Writes `text` into the current selection, starting at its top left corner. At the right edge of the selection the text continues in the next row at the selection's left edge; text longer than the selection is cut off. Spaces and other characters are handled as for `write`. |
 | `select:x;y;w;h` | Moves the cursor to column `x`, row `y` and selects a block of `w` × `h` cells from there (both default to 1). The selection is kept inside the grid. |
 | `find:text` | Selects the first occurrence of `text` in the grid, searching row by row from the top. Nothing happens if there is none. |
 | `erase` | Clears the selection. |
@@ -214,7 +215,7 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Ahab.jsonc)
     - Added reusable tiny Snippets to the context menu
 - v2.x.x
-    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `cc`, `pg`, `bpm`, `apm`, `select`, `find`, `erase`, `copy`, `paste`, `udp`, `osc`, `ip`)
+    - Added UDP input to control AHAB with ORCA-style commands (`play`, `stop`, `run`, `frame`, `skip`, `rewind`, `write`, `writes`, `cc`, `pg`, `bpm`, `apm`, `select`, `find`, `erase`, `copy`, `paste`, `udp`, `osc`, `ip`)
     - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
     - Undo and redo now restore the cursor and selection

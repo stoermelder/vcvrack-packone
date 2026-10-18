@@ -291,6 +291,45 @@ TEST_CASE("Commander write clips at the field edge", "[Ahab][Commander]") {
 	Test::unregisterModule(m);
 }
 
+TEST_CASE("Commander writes wraps text inside the selection", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	// 3 wide, 2 high at column 4, row 2.
+	REQUIRE(exec(m, "select:4;2;3;2"));
+	REQUIRE(exec(m, "writes:ABCDE"));
+	const char* row0 = "ABC";
+	for (Usz i = 0; i < 3; i++) REQUIRE(glyphAt(m, 2, 4 + i) == row0[i]);
+	REQUIRE(glyphAt(m, 3, 4) == 'D');
+	REQUIRE(glyphAt(m, 3, 5) == 'E');
+	// Cells the text does not reach and the surroundings stay empty.
+	REQUIRE(glyphAt(m, 3, 6) == '.');
+	REQUIRE(glyphAt(m, 2, 3) == '.');
+	REQUIRE(glyphAt(m, 2, 7) == '.');
+	REQUIRE(glyphAt(m, 1, 4) == '.');
+	REQUIRE(glyphAt(m, 4, 4) == '.');
+
+	// Longer than the selection: cut off, nothing leaks below it.
+	REQUIRE(exec(m, "writes:1234567890"));
+	REQUIRE(glyphAt(m, 2, 4) == '1');
+	REQUIRE(glyphAt(m, 3, 6) == '6');
+	REQUIRE(glyphAt(m, 4, 4) == '.');
+
+	// Spaces become empty cells; a 1x1 selection takes the first character.
+	REQUIRE(exec(m, "select:0;0"));
+	REQUIRE(exec(m, "writes:Q R"));
+	REQUIRE(glyphAt(m, 0, 0) == 'Q');
+	REQUIRE(glyphAt(m, 0, 1) == '.');
+
+	// Rejected input leaves the grid alone.
+	REQUIRE(exec(m, "writes"));
+	REQUIRE(exec(m, "writes:"));
+	REQUIRE(glyphAt(m, 0, 0) == 'Q');
+
+	Test::unregisterModule(m);
+}
+
 TEST_CASE("Commander write rejects incomplete or unsafe input", "[Ahab][Commander]") {
 	Test::ModuleScaffold<AhabModule> mods;
 	AhabModule* m = mods.create("Ahab");

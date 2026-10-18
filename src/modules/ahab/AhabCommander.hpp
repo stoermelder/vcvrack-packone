@@ -119,6 +119,8 @@ struct AhabCommander {
 			{ "skip", &AhabCommander::skip },
 			{ "rewind", &AhabCommander::rewind },
 			{ "write", &AhabCommander::write },
+			// `wr` is taken by write.
+			{ "writes", &AhabCommander::writes, true },
 			{ "cc", &AhabCommander::cc },
 			{ "pg", &AhabCommander::pg },
 			{ "bpm", &AhabCommander::bpm },
@@ -215,6 +217,26 @@ struct AhabCommander {
 			x = (Usz)xi;
 		}
 		if (m.sim->pasteCells(cells, 1, len, y, x)) m.sim->notifyTick();
+	}
+
+	// writes:text — writes `text` into the selection, row by row from its top left
+	// corner; at the right edge of the selection the text wraps to the next row's
+	// left edge. Text longer than the selection is cut off, cells the text does not
+	// reach stay untouched. Characters are handled as in `write`.
+	static void writes(MODULE& m, const Args& a) {
+		Glyph cells[MAX_TEXT];
+		size_t len;
+		if (!toGlyphs(a, cells, len)) return;
+		AhabEditorState s = m.editor.load();
+		if (s.sel_w == 0 || s.sel_h == 0) return;
+		bool changed = false;
+		size_t pos = 0;
+		for (Usz row = 0; row < s.sel_h && pos < len; row++) {
+			size_t n = std::min(len - pos, (size_t)s.sel_w);
+			changed |= m.sim->pasteCells(cells + pos, 1, n, s.sel_y + row, s.sel_x);
+			pos += n;
+		}
+		if (changed) m.sim->notifyTick();
 	}
 
 	// select:x;y;w;h — cursor to column x, row y and a w×h selection from there
