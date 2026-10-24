@@ -12,6 +12,7 @@
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 #include "../../ui/HoverScrollLock.hpp"
+#include "../../ui/DisplayTheme.hpp"
 
 
 namespace StoermelderPackOne {
@@ -37,8 +38,8 @@ struct SirenTreeRow : widget::OpaqueWidget {
 			bool fav = meta->isFavorite(row->node.relativePath);
 			nvgFontSize(args.vg, 7.f);
 			nvgFillColor(args.vg, fav
-				? nvgRGBf(1.f, 0.85f, 0.1f)
-				: nvgRGBAf(1.f, 1.f, 1.f, 0.22f));
+				? DisplayTheme::gold()
+				: DisplayTheme::ink(0.22f));
 			nvgText(args.vg, 0.f, 7.f, fav ? "★" : "☆", nullptr);
 		}
 		void onButton(const event::Button& e) override {
@@ -189,7 +190,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 				nvgFontFaceId(args.vg, font->handle);
 				nvgFontSize(args.vg, 6.f);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.42f));
+				nvgFillColor(args.vg, DisplayTheme::ink(0.42f));
 				nvgText(args.vg, w - starW - durW - 1.f, 8.f, dur.c_str(), nullptr);
 			}
 		}
@@ -771,7 +772,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0, 0, w, h);
-		nvgFillColor(args.vg, nvgRGBf(0.12f, 0.12f, 0.09f));
+		nvgFillColor(args.vg, DisplayTheme::pane());
 		nvgFill(args.vg);
 
 		OpaqueWidget::draw(args);
@@ -979,14 +980,14 @@ struct SirenTagBar : widget::OpaqueWidget {
 		// Background
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0, 0, w, h);
-		nvgFillColor(args.vg, nvgRGBf(0.09f, 0.09f, 0.07f));
+		nvgFillColor(args.vg, DisplayTheme::paneRecessed());
 		nvgFill(args.vg);
 
 		// Separator line at top
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0, 0.5f);
 		nvgLineTo(args.vg, w, 0.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.09f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.09f));
 		nvgStrokeWidth(args.vg, 0.5f);
 		nvgStroke(args.vg);
 

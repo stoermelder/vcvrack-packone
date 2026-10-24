@@ -2,6 +2,7 @@
 #include "../../pluginsettings.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "../../ui/DisplayTheme.hpp"
 #include "SirenSettings.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
@@ -622,8 +623,8 @@ struct SirenDisplayWidget : OpaqueWidget {
 		// Dark gradient background
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
-		NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
-		NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
+		NVGcolor topColor = color::mult(DisplayTheme::backgroundTop(), b_inv);
+		NVGcolor bottomColor = color::mult(DisplayTheme::backgroundBottom(), b_inv);
 		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 25.f, topColor, bottomColor));
 		nvgFill(args.vg);
 
@@ -634,8 +635,8 @@ struct SirenDisplayWidget : OpaqueWidget {
 		NVGpaint vignette = nvgRadialGradient(args.vg,
 			r.size.x * 0.5f, r.size.y * 0.5f,
 			r.size.x * 0.35f, r.size.x * 0.75f,
-			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
-			nvgRGBAf(0.f, 0.f, 0.f, 0.45f));
+			DisplayTheme::vignette(0.0f),
+			DisplayTheme::vignette(0.45f));
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
 		nvgFillPaint(args.vg, vignette);
@@ -653,7 +654,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0.f, box.size.y + 0.5f);
 		nvgLineTo(args.vg, box.size.x, box.size.y + 0.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.25f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.25f));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 
@@ -661,7 +662,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0.f, 2.5f);
 		nvgLineTo(args.vg, box.size.x, 2.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.20f));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 
@@ -669,7 +670,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0.f, box.size.y - 2.5f);
 		nvgLineTo(args.vg, box.size.x, box.size.y - 2.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.20f));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 

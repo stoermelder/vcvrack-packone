@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include "SirenBrowserPane.hpp"
 #include "../../vcv/ui.hpp"
+#include "../../ui/DisplayTheme.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -282,7 +283,7 @@ struct SirenSourceArrowButton : SirenTooltipWidget {
 		nvgFontSize(args.vg, 14.f);
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-		nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.55f));
+		nvgFillColor(args.vg, DisplayTheme::ink(0.55f));
 		nvgText(args.vg, lw * 0.5f, lh * 0.5f, next ? "\xe2\x96\xb6" : "\xe2\x97\x80", nullptr);
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		nvgRestore(args.vg);
@@ -325,8 +326,8 @@ struct SirenFavButton : SirenTooltipWidget {
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 		nvgFillColor(args.vg, active
-			? nvgRGBf(1.f, 0.85f, 0.1f)
-			: nvgRGBAf(1.f, 1.f, 1.f, 0.55f));
+			? DisplayTheme::gold()
+			: DisplayTheme::ink(0.55f));
 		nvgText(args.vg, lw * 0.5f, lh * 0.5f, active ? "★" : "☆", nullptr);
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		nvgRestore(args.vg);

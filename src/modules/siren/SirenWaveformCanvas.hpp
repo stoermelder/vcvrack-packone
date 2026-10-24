@@ -4,6 +4,7 @@
 #include "SirenDropHandler.hpp"
 #include "../../ui/HoverScrollLock.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
+#include "../../ui/DisplayTheme.hpp"
 #include <vector>
 
 
@@ -81,7 +82,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	// Single overlay for any background task ("Building waveform…", "Converting…",
 	// "Generating loop preview…", "Indexing… N / M", ...). Empty = no overlay.
 	std::string statusMessage;
-	NVGcolor statusColor = nvgRGBf(1.f, 0.85f, 0.1f);
+	NVGcolor statusColor = DisplayTheme::gold();
 
 	// drag source data — updated by parent each step()
 	std::string dragPath;
@@ -205,7 +206,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
-		NVGcolor previewColor = viewMode->accentColor;
+		NVGcolor previewColor = DisplayTheme::tone(viewMode->accentColor);
 
 		// Waveform stroke color: shared with the header texts via viewMode
 		NVGcolor waveColor = previewColor;
@@ -258,7 +259,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, WAVE_X, midY);
 				nvgLineTo(args.vg, WAVE_X + waveW, midY);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.07f));
+				nvgStrokeColor(args.vg, DisplayTheme::ink(0.07f));
 				nvgStrokeWidth(args.vg, 0.5f);
 				nvgStroke(args.vg);
 
@@ -266,7 +267,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				// anything else (mono, or >2 for surround files) is labelled by
 				// its 1-based channel number.
 				nvgFontSize(args.vg, 9.f);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
+				nvgFillColor(args.vg, DisplayTheme::ink(0.30f));
 				std::string chLabel = (numCh == 2) ? (ch == 0 ? "L" : "R") : std::to_string(ch + 1);
 				nvgText(args.vg, WAVE_X + 2.f, chY + 11.f, chLabel.c_str(), nullptr);
 			}
@@ -274,7 +275,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			// Filter overlay: fade the waveform toward the background color
 			// away from each channel's zero-line, so high-amplitude peaks
 			// look more faint than quiet passages.
-			NVGcolor fadeColor = nvgRGB(0x12, 0x12, 0x12);
+			NVGcolor fadeColor = DisplayTheme::backgroundBottom();
 			for (int ch = 0; ch < numCh; ch++) {
 				float chY = waveY + ch * chH;
 				float midY = chY + chH * 0.5f;
@@ -318,7 +319,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, tx, tickY - 4.f);
 				nvgLineTo(args.vg, tx, tickY);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.18f));
+				nvgStrokeColor(args.vg, DisplayTheme::ink(0.18f));
 				nvgStrokeWidth(args.vg, 0.5f);
 				nvgStroke(args.vg);
 			}
@@ -334,7 +335,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				if (x2 > x1) {
 					nvgBeginPath(args.vg);
 					nvgRect(args.vg, x1, waveY, x2 - x1, waveH);
-					nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.07f));
+					nvgFillColor(args.vg, DisplayTheme::gold(0.07f));
 					nvgFill(args.vg);
 				}
 			}
@@ -351,7 +352,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, phX, waveY);
 				nvgLineTo(args.vg, phX, waveY + waveH);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.7f));
+				nvgStrokeColor(args.vg, DisplayTheme::ink(0.7f));
 				nvgStrokeWidth(args.vg, 1.f);
 				nvgStroke(args.vg);
 				const float ts = 5.f;
@@ -360,7 +361,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 				nvgLineTo(args.vg, phX + ts, waveY);
 				nvgLineTo(args.vg, phX, waveY + ts * 1.6f);
 				nvgClosePath(args.vg);
-				nvgFillColor(args.vg, nvgRGBf(1.f, 1.f, 1.f));
+				nvgFillColor(args.vg, DisplayTheme::ink());
 				nvgFill(args.vg);
 			}
 		}
@@ -370,7 +371,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			Rect br = exitButtonRect();
 			nvgBeginPath(args.vg);
 			nvgRoundedRect(args.vg, br.pos.x, br.pos.y, br.size.x, br.size.y, 2.f);
-			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.55f));
+			nvgFillColor(args.vg, DisplayTheme::scrim(0.55f));
 			nvgFill(args.vg);
 			nvgStrokeColor(args.vg, nvgRGBAf(previewColor.r, previewColor.g, previewColor.b, 0.8f));
 			nvgStrokeWidth(args.vg, 1.f);
@@ -413,7 +414,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		float col = waveW2 / 4.f + 4.f;
 		nvgFontFaceId(args.vg, font->handle);
 		nvgFontSize(args.vg, 10.f);
-		NVGcolor accent = viewMode->accentColor;
+		NVGcolor accent = DisplayTheme::tone(viewMode->accentColor);
 		auto drawReadout = [&](float x, const char* lbl, float val) {
 			nvgFillColor(args.vg, nvgRGBAf(accent.r, accent.g, accent.b, 0.5f));
 			nvgText(args.vg, x, box.size.y, lbl, nullptr);
@@ -662,7 +663,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, hx, waveY);
 		nvgLineTo(vg, hx, waveY + waveH);
-		nvgStrokeColor(vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.7f));
+		nvgStrokeColor(vg, DisplayTheme::gold(0.7f));
 		nvgStrokeWidth(vg, 1.f);
 		nvgStroke(vg);
 		const float ts = 4.f;
@@ -671,7 +672,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		nvgLineTo(vg, hx + ts, waveY + waveH);
 		nvgLineTo(vg, hx, waveY + waveH - ts * 1.4f);
 		nvgClosePath(vg);
-		nvgFillColor(vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
+		nvgFillColor(vg, DisplayTheme::gold(0.85f));
 		nvgFill(vg);
 	}
 
@@ -680,7 +681,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		float oy = waveY + waveH * 0.5f - 9.f;
 		nvgBeginPath(vg);
 		nvgRoundedRect(vg, WAVE_X, oy, waveW, 18.f, 3.f);
-		nvgFillColor(vg, nvgRGBAf(0.f, 0.f, 0.f, 0.65f));
+		nvgFillColor(vg, DisplayTheme::scrim(0.65f));
 		nvgFill(vg);
 		nvgFontFaceId(vg, APP->window->uiFont->handle);
 		nvgFontSize(vg, BND_LABEL_FONT_SIZE);

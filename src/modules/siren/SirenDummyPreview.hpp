@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include <cmath>
 #include "SirenAudio.hpp"
+#include "../../ui/DisplayTheme.hpp"
 
 
 namespace StoermelderPackOne {
@@ -61,7 +62,7 @@ inline void drawDummyTree(NVGcontext* vg, float w) {
 			std::string dur = rack::string::f("%02d:%05.2f", mins, secs);
 			nvgFontFaceId(vg, monoFont->handle);
 			nvgFontSize(vg, 6.f);
-			nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.42f));
+			nvgFillColor(vg, DisplayTheme::ink(0.42f));
 			nvgText(vg, w - 10.f - 26.f, y + 8.f, dur.c_str(), nullptr);
 		}
 		y += ROW_H;

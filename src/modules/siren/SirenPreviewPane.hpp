@@ -9,6 +9,7 @@
 #include "SirenDummyPreview.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/InfoWindow.hpp"
+#include "../../ui/DisplayTheme.hpp"
 
 
 namespace StoermelderPackOne {
@@ -451,10 +452,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 			struct StatusCandidate { const std::string& msg; NVGcolor color; };
 			StatusCandidate candidates[] = {
-				{ convertingMsg, nvgRGBf(1.f, 0.85f, 0.1f) },
-				{ generatingLoopMsg, canvas->viewMode->accentColor },
-				{ buildingMsg, nvgRGBf(1.f, 0.85f, 0.1f) },
-				{ externalMsg, nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ convertingMsg, DisplayTheme::gold() },
+				{ generatingLoopMsg, DisplayTheme::tone(canvas->viewMode->accentColor) },
+				{ buildingMsg, DisplayTheme::gold() },
+				{ externalMsg, DisplayTheme::gold() },
 			};
 			canvas->statusMessage.clear();
 			for (const StatusCandidate& c : candidates) {
@@ -476,7 +477,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		float w = box.size.x;
 		bool isPlaying = modulePlaying ? modulePlaying->load() : false;
-		NVGcolor previewColor = canvas ? canvas->viewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f);
+		NVGcolor previewColor = DisplayTheme::tone(canvas ? canvas->viewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f));
 
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
@@ -484,7 +485,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		// Play/stop button
 		nvgFontSize(args.vg, 14.f);
 		nvgFillColor(args.vg, isPlaying
-			? nvgRGBf(1.f, 0.85f, 0.1f)
+			? DisplayTheme::gold()
 			: nvgRGBf(0.55f, 0.55f, 0.55f));
 		nvgText(args.vg, 8.f, 12.f, isPlaying ? "\xe2\x96\xa0" : "\xe2\x96\xb6", nullptr);
 
@@ -492,8 +493,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
 		nvgFontSize(args.vg, 12.f);
 		NVGcolor fnColor = isPlaying
-			? nvgRGBf(1.f, 0.85f, 0.1f)
-			: (canvas ? canvas->viewMode->filenameColor : nvgRGBf(0.92f, 0.92f, 0.88f));
+			? DisplayTheme::gold()
+			: DisplayTheme::tone(canvas ? canvas->viewMode->filenameColor : nvgRGBf(0.92f, 0.92f, 0.88f));
 		nvgFillColor(args.vg, fnColor);
 		float maxFnW = w - 30.f;
 		nvgScissor(args.vg, 22.f, 0.f, maxFnW, TB_H);
