@@ -49,6 +49,35 @@ struct DisplayTheme {
 		return nvgRGBAf(0.f, 0.f, 0.f, isLight() ? darkAlpha * 0.25f : darkAlpha);
 	}
 
+	// Background and bevel of a small display, equivalent to rack::app::LedDisplay's
+	// frame, which is always dark regardless of the UI theme.
+	static void drawFrame(NVGcontext* vg, rack::math::Rect r) {
+		NVGcolor bottom = backgroundBottom();
+		nvgBeginPath(vg);
+		nvgRect(vg, RECT_ARGS(r));
+		nvgFillPaint(vg, nvgLinearGradient(vg, 0.f, 0.f, 0.f, 25.f, backgroundTop(), bottom));
+		nvgFill(vg);
+
+		auto hline = [&](float y, NVGcolor c) {
+			nvgBeginPath(vg);
+			nvgMoveTo(vg, 0.f, y);
+			nvgLineTo(vg, r.size.x, y);
+			nvgStrokeColor(vg, c);
+			nvgStrokeWidth(vg, 1.f);
+			nvgStroke(vg);
+		};
+		hline(-0.5f, nvgRGBAf(0.f, 0.f, 0.f, 0.24f));
+		hline(r.size.y + 0.5f, ink(0.25f));
+		hline(2.5f, ink(0.20f));
+		hline(r.size.y - 2.5f, ink(0.20f));
+
+		nvgBeginPath(vg);
+		nvgRect(vg, RECT_ARGS(r.shrink(rack::math::Vec(1.f, 1.f))));
+		nvgStrokeColor(vg, bottom);
+		nvgStrokeWidth(vg, 2.f);
+		nvgStroke(vg);
+	}
+
 	// Accent colors are authored for a dark display. On a light display they are
 	// darkened to keep their hue and gain contrast.
 	static NVGcolor tone(NVGcolor c) {

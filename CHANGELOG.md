@@ -7,6 +7,7 @@
     - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
     - Undo and redo now restore the cursor and selection
+    - Added support for "Light" ui theme 
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for "Light" ui theme 
 

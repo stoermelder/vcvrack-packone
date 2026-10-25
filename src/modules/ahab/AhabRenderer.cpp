@@ -2,6 +2,7 @@
 #include "AhabRenderer.hpp"
 #include "Ahab.hpp"
 #include "AhabEditorState.hpp"
+#include "../../ui/DisplayTheme.hpp"
 #include <cmath>
 #include <nanovg.h>
 
@@ -125,6 +126,20 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 	nvgFontFaceId(vg, fontFace_->handle);
 	nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 
+	// The palette members are authored for a dark display. Derive the colors for
+	// the current UI theme per draw, since the theme can change at runtime.
+	const bool light = DisplayTheme::isLight();
+	const NVGcolor fgDefault = light ? DisplayTheme::ink() : this->fgDefault;
+	const NVGcolor fgComment = light ? nvgRGBf(0.40f, 0.40f, 0.40f) : this->fgComment;
+	const NVGcolor fgGrid = light ? nvgRGBf(0.62f, 0.62f, 0.62f) : this->fgGrid;
+	const NVGcolor intersectionColor = light ? nvgRGBf(0.52f, 0.52f, 0.52f) : this->intersectionColor;
+	const NVGcolor fgMovement = DisplayTheme::tone(bgUppercase);
+	const NVGcolor fgHasteInput = DisplayTheme::tone(bgHasteInput);
+	const NVGcolor varHighlightFontColor = DisplayTheme::tone(this->varHighlightFontColor);
+	const NVGcolor selectionStrokeColor = light ? DisplayTheme::ink(0.15f) : this->selectionStrokeColor;
+	// Text on the inverted (output) cells: black on dark, white on light
+	const NVGcolor fgOnInk = DisplayTheme::scrim(1.f);
+
 	// Determine highlight target: if cursor is on a lowercase variable, highlight that char
 	char highlightChar = '\0';
 	if (editorState.cursor_x < w && editorState.cursor_y < h) {
@@ -160,7 +175,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 					bg = bgUppercase;
 					break;
 				case AhabRenderer::Glyph_movement:
-					fg = bgUppercase;
+					fg = fgMovement;
 					break;
 				case AhabRenderer::Glyph_lowercase:
 				case AhabRenderer::Glyph_numeric:
@@ -195,7 +210,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 				if (bg.a < 0.5f) {
 					// bg was transparent, so use the original fg as the new bg
 					bg = fgDefault;
-					fg = nvgRGBAf(0.0f, 0.0f, 0.0f, 1.0f); // black text on colored bg
+					fg = fgOnInk; // contrasting text on the inverted bg
 				} 
 				else {
 					// Both were solid colors, just swap them
@@ -203,7 +218,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 				}
 			}
 			if (mf & Mark_flag_haste_input) {
-				fg = bgHasteInput;
+				fg = fgHasteInput;
 				bg = color::BLACK_TRANSPARENT;
 			}
 			if (mf & Mark_flag_uninit && gclass != AhabRenderer::Glyph_grid) {
@@ -234,7 +249,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 						// Slight inset so the stroke doesn't cut off on edges
 						nvgBeginPath(vg);
 						nvgRect(vg, px - 0.3f, py - 0.3f, cell_w + 0.6f, cell_h + 0.6f);
-						nvgStrokeColor(vg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.65f));
+						nvgStrokeColor(vg, DisplayTheme::ink(0.65f));
 						nvgStrokeWidth(vg, 1.f);
 						nvgStroke(vg);
 					}

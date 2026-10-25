@@ -5,6 +5,7 @@
 #include "../../utils/digital.hpp"
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/FocusMode.hpp"
+#include "../../ui/DisplayTheme.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabUdpOutput.hpp"
@@ -960,8 +961,8 @@ struct AhabSimWidget : OpaqueWidget {
 		nvgFill(args.vg);
 
 		// Dark gradient background
-		NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
-		NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
+		NVGcolor topColor = color::mult(DisplayTheme::backgroundTop(), b_inv);
+		NVGcolor bottomColor = color::mult(DisplayTheme::backgroundBottom(), b_inv);
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
 		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 25.f, topColor, bottomColor));
@@ -987,8 +988,8 @@ struct AhabSimWidget : OpaqueWidget {
 		NVGpaint vignette = nvgRadialGradient(args.vg,
 			r.size.x * 0.5f, r.size.y * 0.5f,
 			r.size.x * 0.35f, r.size.x * 0.75f,
-			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
-			nvgRGBAf(0.f, 0.f, 0.f, 0.45f));
+			DisplayTheme::vignette(0.0f),
+			DisplayTheme::vignette(0.45f));
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
 		nvgFillPaint(args.vg, vignette);
@@ -1006,7 +1007,7 @@ struct AhabSimWidget : OpaqueWidget {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0.f, box.size.y + 0.5f);
 		nvgLineTo(args.vg, box.size.x, box.size.y + 0.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.25f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.25f));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 
@@ -1014,7 +1015,7 @@ struct AhabSimWidget : OpaqueWidget {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0.f, 2.5f);
 		nvgLineTo(args.vg, box.size.x, 2.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.20f));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 
@@ -1022,7 +1023,7 @@ struct AhabSimWidget : OpaqueWidget {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0.f, box.size.y - 2.5f);
 		nvgLineTo(args.vg, box.size.x, box.size.y - 2.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeColor(args.vg, DisplayTheme::ink(0.20f));
 		nvgStrokeWidth(args.vg, 1.f);
 		nvgStroke(args.vg);
 
@@ -1830,7 +1831,10 @@ struct AhabSimFramebuffer : FramebufferWidget {
 struct AhabStatusWidget : LedDisplay {
 	AhabSimWidget* simWidget = nullptr;
 	void draw(const DrawArgs &args) override {
-		LedDisplay::draw(args);
+		DisplayTheme::drawFrame(args.vg, box.zeroPos());
+		nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+		Widget::draw(args);
+		nvgResetScissor(args.vg);
 		if (!simWidget) return;
 
 		Usz cy, cx; simWidget->getCursorPos(cy, cx);
@@ -1842,7 +1846,7 @@ struct AhabStatusWidget : LedDisplay {
 		auto fontFace_ = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/VictorMono-SemiBold.ttf"));
 		nvgFontFaceId(args.vg, fontFace_->handle);
 		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-		nvgFillColor(args.vg, nvgRGBAf(1, 1, 1, 0.8f));
+		nvgFillColor(args.vg, DisplayTheme::ink(0.8f));
 
 		std::string line1 = string::f("%02i,%02i", (int)cx, (int)cy);
 		std::string line2 = string::f("%05i", (int)tick);

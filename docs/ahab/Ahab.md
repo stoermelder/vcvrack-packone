@@ -219,3 +219,4 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
     - Undo and redo now restore the cursor and selection
+    - Added support for "Light" ui theme 
