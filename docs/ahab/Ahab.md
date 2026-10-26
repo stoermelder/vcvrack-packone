@@ -90,7 +90,7 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `skip:N` | Advances the frame counter by `N`. |
 | `rewind:N` | Moves the frame counter back by `N`, but not below 0. |
 | `write:text` / `write:text;x;y` | Writes `text` into the grid with its first character at column `x`, row `y` (both counted from 0 at the top left corner), or at the cursor if both are left out. Text running over the edge of the grid is cut off. Spaces are written as `.` (empty cells). Text with other non-printable characters is rejected, and it must not contain `;`. |
-| `writes:text` | Writes `text` into the current selection, starting at its top left corner. At the right edge of the selection the text continues in the next row at the selection's left edge; text longer than the selection is cut off. Spaces and other characters are handled as for `write`. |
+| `writes:text` | **AHAB only – not part of the original ORCA, other ORCA instances will not understand it.** Writes `text` into the current selection, starting at its top left corner. At the right edge of the selection the text continues in the next row at the selection's left edge; text longer than the selection is cut off. Spaces and other characters are handled as for `write`. |
 | `select:x;y;w;h` | Moves the cursor to column `x`, row `y` and selects a block of `w` × `h` cells from there (both default to 1). The selection is kept inside the grid. |
 | `find:text` | Selects the first occurrence of `text` in the grid, searching row by row from the top. Nothing happens if there is none. |
 | `erase` | Clears the selection. |
@@ -103,10 +103,12 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `udp:out;in` | Sets the port (1-65535) of the *UDP* output (`out`) and of the UDP input (`in`); either can be left out. The input rebinds to the new port right away, so further commands must be sent there. |
 | `osc:port` | Sets the port of the *OSC* output. |
 | `ip:address` | Sets the address of both the *UDP* and the *OSC* output. |
+| `time` | **Not supported.** ORCA command, ignored by AHAB. |
+| `color` | **Not supported.** ORCA command, ignored by AHAB. |
+| `inject:name;x;y` | **Not supported.** ORCA command for loading example files, ignored by AHAB. |
 
 The same commands can be triggered from within the grid with the [operator `$`](#command-operator-).
 
-The ORCA commands `time` and `color` are not available. Loading examples (`inject`) is currently not supported either.
 
 ## Random generator
 
