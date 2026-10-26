@@ -44,6 +44,7 @@ void cleanupMockModels() {
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
 	modelUsage.clear();
+	modelRatings.clear();
 	effectiveTagIdsCache.clear();
 }
 
@@ -65,6 +66,12 @@ struct MockFileAccess : vcv::FileAccess {
 		auto it = files.find(path);
 		if (it == files.end()) return false;
 		data = it->second;
+		return true;
+	}
+
+	std::map<std::string, std::string> written;  // path → last written contents
+	bool write(const std::string& path, const std::string& data) override {
+		written[path] = data;
 		return true;
 	}
 

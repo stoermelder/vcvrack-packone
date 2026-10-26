@@ -2,6 +2,7 @@
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
 #include "Mb_manifests.cpp"
+#include "Mb_ratings.cpp"
 #include "Mb_v2.cpp"
 #include "Mb_v2.hpp"
 

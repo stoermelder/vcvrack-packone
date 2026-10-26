@@ -1,5 +1,6 @@
 #pragma once
 #include "Mb.hpp"
+#include "Mb_ratings.hpp"
 #include "MbKeymap.hpp"
 #include "../../plugin.hpp"
 #include "../../vcv/ui.hpp"
@@ -1200,6 +1201,9 @@ struct ModelBoxBase : widget::OpaqueWidget {
 			nvgStrokeColor(args.vg, componentlibrary::SCHEME_YELLOW);
 			nvgStroke(args.vg);
 		}
+
+		// Drawn here rather than inside the preview so it never ends up in the cached bitmap
+		drawRatingStars(args.vg, box.size, modelRatingGet(model));
 	}
 
 	void setTooltip(ui::Tooltip* tt) {
@@ -1374,6 +1378,20 @@ struct ModelBoxBase : widget::OpaqueWidget {
 			[this]() {
 				toggleModelHidden(model);
 				refreshBrowser(false);
+			}
+		));
+		menu->addChild(createSubmenuItem("Rating", ratingStarsText(modelRatingGet(model)),
+			[this](Menu* menu) {
+				menu->addChild(createCheckMenuItem("No rating", "",
+					[this]() { return modelRatingGet(model) == 0; },
+					[this]() { modelRatingSet(model, 0); }
+				));
+				for (int r = 1; r <= RATING_MAX; r++) {
+					menu->addChild(createCheckMenuItem(ratingStarsText(r), "",
+						[this, r]() { return modelRatingGet(model) == r; },
+						[this, r]() { modelRatingSet(model, r); }
+					));
+				}
 			}
 		));
 

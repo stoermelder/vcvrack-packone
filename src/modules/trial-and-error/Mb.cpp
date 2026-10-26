@@ -3,6 +3,7 @@
 #include "../../vcv/history.hpp"
 #include "../../vcv/fs.hpp"
 #include "Mb.hpp"
+#include "Mb_ratings.hpp"
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
@@ -873,6 +874,7 @@ BrowserOverlay::BrowserOverlay() {
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 	modelWidthsFromJson();
+	modelRatingsFromJson();
 	manifestsCacheInit();
 	modelDbInit();
 

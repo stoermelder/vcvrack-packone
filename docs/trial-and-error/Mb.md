@@ -270,3 +270,5 @@ itself. Disabled by default.
     - Added option to pre-warm module preview
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
+- v2.x.x
+    - Added star ratings for modules

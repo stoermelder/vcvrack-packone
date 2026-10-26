@@ -498,3 +498,106 @@ TEST_CASE("ModelPreview::setZoom() pins the render at zoom 1.0 while prewarming 
 	pluginSettings.mbPrewarmEnabled = savedSetting;
 	cleanupMockModels();
 }
+TEST_CASE("ratingStarRects", "[Mb][ModelBox]") {
+	rack::math::Vec size(200.f, 380.f);
+
+	SECTION("Unrated gives no rects") {
+		REQUIRE(ratingStarRects(size, 0).empty());
+	}
+
+	SECTION("Rating n gives n stacked rects inside the box") {
+		for (int n = 1; n <= RATING_MAX; n++) {
+			auto rects = ratingStarRects(size, n);
+			REQUIRE((int)rects.size() == n);
+			for (size_t i = 0; i < rects.size(); i++) {
+				REQUIRE(rects[i].pos.x >= 0.f);
+				REQUIRE(rects[i].pos.y >= 0.f);
+				REQUIRE(rects[i].pos.x + rects[i].size.x <= size.x);
+				REQUIRE(rects[i].pos.y + rects[i].size.y <= size.y);
+				REQUIRE(rects[i].size.x == rects[0].size.x);
+				REQUIRE(rects[i].size.y == rects[0].size.y);
+				if (i > 0) {
+					REQUIRE(rects[i].pos.x == rects[0].pos.x);
+					REQUIRE(rects[i].pos.y + rects[i].size.y <= rects[i - 1].pos.y);
+				}
+			}
+			// Bottom-right, inset by the same margin on both axes
+			float marginX = size.x - (rects[0].pos.x + rects[0].size.x);
+			float marginY = size.y - (rects[0].pos.y + rects[0].size.y);
+			REQUIRE(marginX > 0.f);
+			REQUIRE(marginX == Catch::Approx(marginY));
+		}
+	}
+
+	SECTION("A box too small to read gives no rects") {
+		REQUIRE(ratingStarRects(rack::math::Vec(200.f, 40.f), 3).empty());
+	}
+
+	SECTION("A narrow box keeps the column inside it") {
+		rack::math::Vec narrow(15.f, 380.f);
+		auto rects = ratingStarRects(narrow, RATING_MAX);
+		REQUIRE((int)rects.size() == RATING_MAX);
+		for (auto& r : rects) {
+			REQUIRE(r.pos.x >= 0.f);
+			REQUIRE(r.pos.x + r.size.x <= narrow.x);
+		}
+	}
+}
+
+TEST_CASE("ModelBoxBase context menu sets a rating", "[Mb][Widget][ModelBox]") {
+	cleanupMockModels();
+	ModelBoxFixture fx;
+	plugin::Model* model = fx.box->model;
+
+	// Finds a menu item by its text under `root`. The last match wins: a menu closed by an
+	// action is only deleted on the next step, so the newest menu's item comes last.
+	auto findItem = [&](rack::widget::Widget* root, const std::string& text) -> rack::ui::MenuItem* {
+		rack::ui::MenuItem* found = nullptr;
+		for (auto* item : fx.h.events().findAll<rack::ui::MenuItem>(root)) {
+			if (item->text == text) found = item;
+		}
+		return found;
+	};
+
+	// Headless, a hover can't open the submenu: MenuItem::step() sizes the item through
+	// APP->window, so the item has no hit area. Build the child menu directly instead and
+	// fire the item's action, which is what a click on it does.
+	auto openRatingSubmenu = [&]() -> rack::ui::Menu* {
+		// An earlier menu's overlay would swallow this click, so remove any left open first.
+		// Not requestDelete(): that is only carried out by a scene step, which needs APP->window.
+		for (auto* o : fx.h.events().findAll<rack::ui::MenuOverlay>(APP->scene)) {
+			o->getParent()->removeChild(o);
+			delete o;
+		}
+		REQUIRE(fx.h.events().rightClick(fx.box));
+		settleModelBoxLayout(fx.overlay);
+		rack::ui::MenuItem* ratingItem = findItem(APP->scene, "Rating");
+		REQUIRE(ratingItem != nullptr);
+		rack::ui::Menu* sub = ratingItem->createChildMenu();
+		REQUIRE(sub != nullptr);
+		return sub;
+	};
+
+	{
+		rack::ui::Menu* sub = openRatingSubmenu();
+		REQUIRE(findItem(APP->scene, "Rating")->rightText.find(ratingStarsText(1)) == std::string::npos);
+		rack::ui::MenuItem* threeStars = findItem(sub, ratingStarsText(3));
+		REQUIRE(threeStars != nullptr);
+		threeStars->doAction();
+		REQUIRE(modelRatingGet(model) == 3);
+		delete sub;
+	}
+
+	// Re-open: the submenu entry shows the stored rating, and "No rating" clears it
+	{
+		rack::ui::Menu* sub = openRatingSubmenu();
+		REQUIRE(findItem(APP->scene, "Rating")->rightText.find(ratingStarsText(3)) != std::string::npos);
+		rack::ui::MenuItem* none = findItem(sub, "No rating");
+		REQUIRE(none != nullptr);
+		none->doAction();
+		REQUIRE(modelRatingGet(model) == 0);
+		delete sub;
+	}
+
+	cleanupMockModels();
+}

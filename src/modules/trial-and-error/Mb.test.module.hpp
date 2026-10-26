@@ -945,3 +945,103 @@ TEST_CASE("Text tag filters parse t= tokens", "[Mb]") {
 	customTagReset();
 	cleanupMockModels();
 }
+
+
+// Ratings persist through vcv::fs. FileAccess::getUserDirectory()'s base default returns "",
+// so the ratings file's path is exactly "" under MockFileAccess (see the comment above
+// manifestsCacheFromJson in Mb.test.manifests.hpp).
+TEST_CASE("Model ratings", "[Mb]") {
+	struct Mock {
+		TEST_MOCK_FS(MockFileAccess);
+	} mock;
+
+	cleanupMockModels();
+	plugin::Model* model = createMockModel("rated-plugin", "rated-model", "Rated Model");
+	rack::plugin::plugins.push_back(model->plugin);
+	// Drop any unresolved entries a previous case left behind
+	modelRatingsFromJson();
+
+	SECTION("Get, set, clamp and erase") {
+		REQUIRE(modelRatingGet(model) == 0);
+		modelRatingSet(model, 3);
+		REQUIRE(modelRatingGet(model) == 3);
+		modelRatingSet(model, 0);
+		REQUIRE(modelRatings.count(model) == 0);
+		modelRatingSet(model, 9);
+		REQUIRE(modelRatingGet(model) == RATING_MAX);
+		modelRatingSet(model, -1);
+		REQUIRE(modelRatingGet(model) == 0);
+		REQUIRE(modelRatings.count(model) == 0);
+	}
+
+	SECTION("Set writes the file only on change") {
+		modelRatingSet(model, 3);
+		REQUIRE(mock.fs.written.count("") == 1);
+		json_error_t error;
+		json_t* j = json_loads(mock.fs.written[""].c_str(), 0, &error);
+		REQUIRE(j != nullptr);
+		DEFER({ json_decref(j); });
+		json_t* r = json_object_get(json_object_get(json_object_get(j, "ratings"), "rated-plugin"), "rated-model");
+		REQUIRE(json_integer_value(r) == 3);
+
+		mock.fs.written.clear();
+		modelRatingSet(model, 3);
+		REQUIRE(mock.fs.written.empty());
+	}
+
+	SECTION("Round trip") {
+		modelRatingSet(model, 4);
+		std::string saved = mock.fs.written[""];
+		modelRatings.clear();
+		mock.fs.files[""] = saved;
+		modelRatingsFromJson();
+		REQUIRE(modelRatingGet(model) == 4);
+	}
+
+	SECTION("Ratings of unresolved models survive a save") {
+		mock.fs.files[""] = R"({"version":1,"ratings":{"gone-plugin":{"gone-model":2}}})";
+		modelRatingsFromJson();
+		modelRatingSet(model, 5);
+		json_error_t error;
+		json_t* j = json_loads(mock.fs.written[""].c_str(), 0, &error);
+		REQUIRE(j != nullptr);
+		DEFER({ json_decref(j); });
+		json_t* ratingsJ = json_object_get(j, "ratings");
+		REQUIRE(json_integer_value(json_object_get(json_object_get(ratingsJ, "gone-plugin"), "gone-model")) == 2);
+		REQUIRE(json_integer_value(json_object_get(json_object_get(ratingsJ, "rated-plugin"), "rated-model")) == 5);
+	}
+
+	SECTION("Malformed input is ignored") {
+		mock.fs.files[""] = "{ not json";
+		REQUIRE_NOTHROW(modelRatingsFromJson());
+		REQUIRE(modelRatings.empty());
+
+		mock.fs.files[""] = R"({"ratings":[1,2]})";
+		REQUIRE_NOTHROW(modelRatingsFromJson());
+		REQUIRE(modelRatings.empty());
+
+		mock.fs.files[""] = R"({"ratings":{"rated-plugin":{"rated-model":"3"}}})";
+		modelRatingsFromJson();
+		REQUIRE(modelRatingGet(model) == 0);
+
+		mock.fs.files[""] = R"({"ratings":{"rated-plugin":{"rated-model":3.5}}})";
+		modelRatingsFromJson();
+		REQUIRE(modelRatingGet(model) == 0);
+
+		mock.fs.files[""] = R"({"ratings":{"rated-plugin":{"rated-model":0}}})";
+		modelRatingsFromJson();
+		REQUIRE(modelRatingGet(model) == 0);
+
+		mock.fs.files[""] = R"({"ratings":{"rated-plugin":{"rated-model":-2}}})";
+		modelRatingsFromJson();
+		REQUIRE(modelRatingGet(model) == 0);
+
+		mock.fs.files[""] = R"({"ratings":{"rated-plugin":{"rated-model":9}}})";
+		modelRatingsFromJson();
+		REQUIRE(modelRatingGet(model) == RATING_MAX);
+	}
+
+	rack::plugin::plugins.pop_back();
+	modelRatingsFromJson();
+	cleanupMockModels();
+}
