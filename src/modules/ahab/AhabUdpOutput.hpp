@@ -2,6 +2,7 @@
 #include <string>
 #include <cctype>
 #include <jansson.h>
+#include "../../utils/net.hpp"
 
 extern "C" {
 	#include <orca-c/base.h> // Usz, I32
@@ -10,27 +11,6 @@ extern "C" {
 
 namespace StoermelderPackOne {
 namespace Ahab {
-
-static inline void trimStr(std::string &s) {
-	// left
-	size_t i = 0;
-	while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
-	s.erase(0, i);
-	// right
-	if (!s.empty()) {
-		size_t j = s.size() - 1;
-		while (j != (size_t)-1 && std::isspace((unsigned char)s[j])) --j;
-		s.erase(j + 1);
-	}
-}
-
-static inline bool isValidPort(const std::string &s) {
-	if (s.empty()) return true;
-	for (char c : s) if (!std::isdigit((unsigned char)c)) return false;
-	long p = 0;
-	try { p = std::stol(s); } catch (...) { return false; }
-	return (p >= 1 && p <= 65535);
-}
 
 static inline bool containsWhitespace(const std::string &s) {
 	for (char c : s) if (std::isspace((unsigned char)c)) return true;

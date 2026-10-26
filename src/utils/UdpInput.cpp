@@ -1,4 +1,4 @@
-#include "AhabUdpInput.hpp"
+#include "UdpInput.hpp"
 
 #ifdef _WIN32
 	#include <winsock2.h>
@@ -13,17 +13,16 @@
 #endif
 
 namespace StoermelderPackOne {
-namespace Ahab {
 
 #ifdef _WIN32
-static void closeSocket(AhabUdpInput::Sock s) { ::closesocket((SOCKET)s); }
+static void closeSocket(UdpInput::Sock s) { ::closesocket((SOCKET)s); }
 static int lastError() { return WSAGetLastError(); }
 #else
-static void closeSocket(AhabUdpInput::Sock s) { ::close((int)s); }
+static void closeSocket(UdpInput::Sock s) { ::close((int)s); }
 static int lastError() { return errno; }
 #endif
 
-const char* AhabUdpInput::errorText(int e) {
+const char* UdpInput::errorText(int e) {
 #ifdef _WIN32
 	return e == WSAEADDRINUSE ? "port in use" : "socket error";
 #else
@@ -31,7 +30,7 @@ const char* AhabUdpInput::errorText(int e) {
 #endif
 }
 
-void AhabUdpInput::run() {
+void UdpInput::run() {
 	Sock sock = INVALID;
 	uint32_t applied = generation_ - 1;   // force a first apply
 	char buf[sizeof(Datagram::data) + 1];
@@ -84,7 +83,7 @@ void AhabUdpInput::run() {
 	state = State::Off;
 }
 
-AhabUdpInput::Sock AhabUdpInput::bindSocket(uint16_t port, bool bindAll) {
+UdpInput::Sock UdpInput::bindSocket(uint16_t port, bool bindAll) {
 	Sock sock = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sock == INVALID) return fail(sock);
 
@@ -110,12 +109,11 @@ AhabUdpInput::Sock AhabUdpInput::bindSocket(uint16_t port, bool bindAll) {
 	return sock;
 }
 
-AhabUdpInput::Sock AhabUdpInput::fail(Sock sock) {
+UdpInput::Sock UdpInput::fail(Sock sock) {
 	bindError = lastError();
 	if (sock != INVALID) closeSocket(sock);
 	state = State::BindFailed;
 	return INVALID;
 }
 
-} // namespace Ahab
 } // namespace StoermelderPackOne

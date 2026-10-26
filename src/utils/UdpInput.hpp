@@ -9,16 +9,15 @@
 #include <thread>
 #include <jansson.h>
 #include <dsp/ringbuffer.hpp>
-#include "AhabUdpOutput.hpp"
+#include "net.hpp"
 
 namespace StoermelderPackOne {
-namespace Ahab {
 
 // The only thing that crosses from the receiver thread to the DSP thread.
 struct Datagram {
 	uint16_t len;
 	char data[256];
-	// Receiver session that produced it; see AhabUdpInput::tryPop().
+	// Receiver session that produced it; see UdpInput::tryPop().
 	uint32_t session;
 };
 
@@ -30,7 +29,7 @@ struct Datagram {
 // which rebinds itself: nothing on the UI/load path ever joins or waits (Rack
 // calls onReset()/dataFromJson() with the engine lock held, which the audio
 // thread needs).
-struct AhabUdpInput {
+struct UdpInput {
 	enum class State { Off, Listening, BindFailed };
 
 	static constexpr const char* DEFAULT_PORT = "49160";
@@ -46,7 +45,7 @@ struct AhabUdpInput {
 	std::atomic<bool> bindAll_{false};
 
 	// Platform socket handle (SOCKET or fd), kept opaque so no platform headers
-	// are needed here; they are confined to AhabUdpInput.cpp.
+	// are needed here; they are confined to UdpInput.cpp.
 	using Sock = intptr_t;
 	static constexpr Sock INVALID = -1;
 
@@ -65,7 +64,7 @@ struct AhabUdpInput {
 	std::atomic<uint32_t> dropped{0};
 	rack::dsp::RingBuffer<Datagram, 64> queue;
 
-	virtual ~AhabUdpInput() {
+	virtual ~UdpInput() {
 		stop();
 	}
 
@@ -211,5 +210,4 @@ struct AhabUdpInput {
 	Sock fail(Sock sock);
 };
 
-} // namespace Ahab
 } // namespace StoermelderPackOne

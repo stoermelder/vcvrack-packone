@@ -1,6 +1,6 @@
 #pragma once
 // Test cases for the UDP command input: AhabCommander (driven directly, no
-// socket), the AhabUdpInput settings/transport seam (scripted fake), module
+// socket), the UdpInput settings/transport seam (scripted fake), module
 // wiring (one datagram per process() call) and an optional loopback socket
 // smoke test. Included by Ahab.test.cpp, which brings Ahab.cpp into the TU
 // first so AhabModule is fully defined.
@@ -39,7 +39,7 @@ static Datagram makeDatagram(const char* text) {
 // Stands in for the socket receiver: serves scripted datagrams and never opens
 // a socket or starts a thread, so settings can change freely. `changes` counts
 // effective settings changes (the points where the real receiver would rebind).
-struct ScriptedUdpInput : AhabUdpInput {
+struct ScriptedUdpInput : UdpInput {
 	std::deque<Datagram> script;
 	int changes = 0;
 
@@ -821,10 +821,10 @@ TEST_CASE("UDP input ignores unknown commands without blocking the queue", "[Aha
 	Test::unregisterModule(m);
 }
 
-// --- AhabUdpInput settings ---
+// --- UdpInput settings ---
 
 TEST_CASE("UDP input settings default to off", "[Ahab][Udp]") {
-	AhabUdpInput in;
+	UdpInput in;
 	REQUIRE_FALSE(in.isEnabled());
 	REQUIRE(in.getPort() == "49160");
 	REQUIRE_FALSE(in.isBindAll());
@@ -995,11 +995,11 @@ static bool waitFor(Done done, Step step) {
 }
 
 // The receiver binds on its own thread; wait for the outcome.
-static bool waitSettled(AhabUdpInput& in) {
+static bool waitSettled(UdpInput& in) {
 	return waitFor([&]() { return in.getStatusText() != "Starting"; }, []() {});
 }
 
-static bool bindFailed(const AhabUdpInput& in) {
+static bool bindFailed(const UdpInput& in) {
 	return in.getStatusText().find("Bind failed") == 0;
 }
 
@@ -1080,7 +1080,7 @@ TEST_CASE("UDP input receives over a loopback socket", "[Ahab][Udp][Socket]") {
 
 	// A second listener on the same port fails visibly.
 	{
-		AhabUdpInput second;
+		UdpInput second;
 		second.setPort(std::to_string(port));
 		second.setEnabled(true);
 		REQUIRE(waitSettled(second));
@@ -1142,7 +1142,7 @@ TEST_CASE("UDP input settings changes never wait for the receiver", "[Ahab][Udp]
 	std::vector<uint16_t> ports = freeUdpPorts(12);
 	if (ports.empty()) SKIP("Cannot open a UDP socket");
 
-	AhabUdpInput in;
+	UdpInput in;
 	in.setPort(std::to_string(ports[0]));
 	in.setEnabled(true);
 	REQUIRE(waitSettled(in));
@@ -1159,7 +1159,7 @@ TEST_CASE("UDP input settings changes never wait for the receiver", "[Ahab][Udp]
 	}
 	in.reset();
 	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
-	REQUIRE(ms < AhabUdpInput::POLL_MS / 2);
+	REQUIRE(ms < UdpInput::POLL_MS / 2);
 }
 
 TEST_CASE("Destroying a module with UDP input running and traffic in flight", "[Ahab][Udp][Socket]") {

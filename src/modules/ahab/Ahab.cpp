@@ -6,10 +6,10 @@
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/FocusMode.hpp"
 #include "../../ui/DisplayTheme.hpp"
+#include "../../utils/UdpInput.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabUdpOutput.hpp"
-#include "AhabUdpInput.hpp"
 #include "AhabKeymap.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
@@ -78,7 +78,7 @@ struct AhabModule : Module {
 
 	// Orca-style text commands received over UDP; drained on the DSP thread.
 	/** [Stored to JSON as the "udpInput" subobject] */
-	std::unique_ptr<AhabUdpInput> udpInput;
+	std::unique_ptr<UdpInput> udpInput;
 
 	// Commands from the '$' operator. Queued in processEvents() and executed in
 	// process() after the step that emitted them: running them inside the step
@@ -170,7 +170,7 @@ struct AhabModule : Module {
 		
 		this->udpOutput = std::unique_ptr<AhabOoscOutput>(udpOutput);
 		this->oscOutput = std::unique_ptr<AhabOoscOutput>(oscOutput);
-		this->udpInput.reset(new AhabUdpInput);
+		this->udpInput.reset(new UdpInput);
 		this->udpInput->setHandler([this](const Datagram& d) {
 			AhabCommander<AhabModule>::execute(*this, d.data, d.len);
 		});
