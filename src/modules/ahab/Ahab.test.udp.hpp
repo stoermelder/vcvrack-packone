@@ -518,6 +518,31 @@ TEST_CASE("Commander copy and paste use the module clipboard", "[Ahab][Commander
 	Test::unregisterModule(m);
 }
 
+TEST_CASE("Commander paste uses the selection's top left and resizes the selection", "[Ahab][Commander]") {
+	Test::ModuleScaffold<AhabModule> mods;
+	Mock mock;
+	AhabModule* m = mods.create("Ahab");
+	Test::registerModule(m);
+
+	REQUIRE(exec(m, "write:AB;0;0"));
+	REQUIRE(exec(m, "write:CD;0;1"));
+	REQUIRE(exec(m, "select:0;0;2;2"));
+	REQUIRE(exec(m, "copy"));
+
+	// A 4x4 selection with the cursor on its bottom right corner: the paste still starts
+	// at the top left (5,6), and the selection shrinks to the pasted 2x2 block.
+	REQUIRE(exec(m, "select:5;6;4;4"));
+	m->editor.update([](AhabEditorState& s) { s.setCursor(9, 8); });
+	REQUIRE(exec(m, "paste"));
+	REQUIRE(glyphAt(m, 6, 5) == 'A'); REQUIRE(glyphAt(m, 6, 6) == 'B');
+	REQUIRE(glyphAt(m, 7, 5) == 'C'); REQUIRE(glyphAt(m, 7, 6) == 'D');
+	AhabEditorState s = m->editor.load();
+	REQUIRE(s.sel_y == 6); REQUIRE(s.sel_x == 5);
+	REQUIRE(s.sel_h == 2); REQUIRE(s.sel_w == 2);
+
+	Test::unregisterModule(m);
+}
+
 TEST_CASE("Commander paste with an empty clipboard is a no-op", "[Ahab][Commander]") {
 	Test::ModuleScaffold<AhabModule> mods;
 	AhabModule* m = mods.create("Ahab");

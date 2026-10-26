@@ -498,6 +498,32 @@ TEST_CASE("Ahab Widget: Ctrl+V pastes the clipboard at the cursor", "[ahab][widg
 	REQUIRE(m->sim->getFieldBuffer()[0] == 'A');
 }
 
+TEST_CASE("Ahab Widget: Ctrl+V pastes at the selection's top left and resizes the selection", "[ahab][widget]") {
+	Test::Harness h;
+	AhabAccessMock mock;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	primeAhabWidget(h, mw);
+
+	mock.ui.clipboardText = "AB\nCD";
+	// A 3x3 selection at (2,2) with the cursor on its bottom right corner.
+	Usz fh = m->sim->getFieldHeight(), fw = m->sim->getFieldWidth();
+	mw->simWidget->editorApply([&](AhabEditorState& st) {
+		st.setSelection(2, 2, 3, 3, fh, fw);
+		st.setCursor(4, 4, fh, fw);
+	});
+
+	REQUIRE(h.events().keyPress(GLFW_KEY_V, RACK_MOD_CTRL));
+	h.dspStep();
+	const Glyph* f = m->sim->getFieldBuffer();
+	REQUIRE(f[2 * fw + 2] == 'A'); REQUIRE(f[2 * fw + 3] == 'B');
+	REQUIRE(f[3 * fw + 2] == 'C'); REQUIRE(f[3 * fw + 3] == 'D');
+
+	Usz sy, sx, sh, sw; mw->simWidget->editor().getSelectionRect(sy, sx, sh, sw);
+	REQUIRE(sy == 2); REQUIRE(sx == 2);
+	REQUIRE(sh == 2); REQUIRE(sw == 2);
+}
+
 
 // ---- Context menu shortcut text reflects the live keymap binding, not a hardcoded string ----
 

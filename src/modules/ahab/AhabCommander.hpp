@@ -284,11 +284,16 @@ struct AhabCommander {
 			s.sel_y, s.sel_x, s.sel_h, s.sel_w);
 	}
 
-	// paste — the module clipboard at the cursor, clipped to the field. No-op if empty.
+	// paste — the module clipboard at the selection's top left, clipped to the field; the
+	// selection is resized to the pasted block. No-op if empty.
 	static void paste(MODULE& m, const Args&) {
 		AhabEditorState s = m.editor.load();
 		AhabClipboard& c = m.clipboard;
-		if (m.sim->pasteCells(c.cells, c.height, c.width, s.cursor_y, s.cursor_x)) m.sim->notifyTick();
+		if (!m.sim->pasteCells(c.cells, c.height, c.width, s.sel_y, s.sel_x)) return;
+		m.sim->notifyTick();
+		Usz fh = m.sim->getFieldHeight(), fw = m.sim->getFieldWidth();
+		Usz h = std::min(c.height, fh - s.sel_y), w = std::min(c.width, fw - s.sel_x);
+		m.editor.update([&](AhabEditorState& st) { st.setSelection(s.sel_y, s.sel_x, h, w, fh, fw); });
 	}
 
 	// cc:N — offset added to the control number of CC operators (0..127).

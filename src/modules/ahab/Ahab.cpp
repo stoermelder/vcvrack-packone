@@ -1172,7 +1172,9 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	void pasteSelection() {
-		Usz cy, cx; editor().getCursor(cy, cx);
+		// The selection's top left is the reference point, not the cursor (which can sit on
+		// any of its corners); the selection is then resized to the pasted block.
+		Usz cy, cx, sh, sw; editor().getSelectionRect(cy, cx, sh, sw);
 		std::string clip = vcv::ui::getClipboard();
 		if (!clip.empty()) {
 			Usz pasted_h = 0, pasted_w = 0;

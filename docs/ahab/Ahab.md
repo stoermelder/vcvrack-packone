@@ -95,7 +95,7 @@ echo "write:HELLO;2;3" | nc -u -w0 127.0.0.1 49160
 | `find:text` | Selects the first occurrence of `text` in the grid, searching row by row from the top. Nothing happens if there is none. |
 | `erase` | Clears the selection. |
 | `copy` | Copies the selection into AHAB's own clipboard. The system clipboard is not used, so what you copied yourself is never overwritten by a remote command. There is no short form (`co` is ORCA's `color`). |
-| `paste` / `pa` | Pastes AHAB's own clipboard at the cursor. |
+| `paste` / `pa` | Pastes AHAB's own clipboard with its top left corner at the top left of the selection, and resizes the selection to the pasted block. |
 | `cc:N` | Sets the offset (0-127) added to the control number of the MIDI CC operator `!`, like the *CC* options in the MIDI menu. |
 | `pg:channel;bank;sub;program` | Sends a MIDI program change on `channel` (0-15), preceded by bank select MSB (`bank`, CC 0) and LSB (`sub`, CC 32). `bank`, `sub` and `program` are optional and left out if empty (`pg:3;;;12` sends only the program change). |
 | `bpm:N` | Sets the tempo knob to `N` (30-300) and stops any running `apm` ramp. Has no effect on the tempo while the CLK input is patched. |
@@ -155,7 +155,7 @@ Behavior that differs from ORCA-C:
 | Ctrl/Cmd + `A` | Select all |
 | Ctrl/Cmd + `C` | Copy selected cells to clipboard |
 | Ctrl/Cmd + `X` | Cut selected cells to clipboard |
-| Ctrl/Cmd + `V` | Paste clipboard at cursor |
+| Ctrl/Cmd + `V` | Paste clipboard at the top left of the selection |
 | Ctrl/Cmd + `F` | Run simulation for one frame |
 | Ctrl/Cmd + Shift + `7` | Toggle comment block around selection |
 | Ctrl/Cmd + Shift + `R` | Reset frame counter to zero |
@@ -221,4 +221,5 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Added operator `$` to run commands from the grid
     - Changed operator `=` (OSC) to read its message up to the first `.`
     - Undo and redo now restore the cursor and selection
-    - Added support for "Light" ui theme 
+    - Added support for "Light" ui theme
+    - Fixed behavior of Copy/Pasting grid content with an active selection
