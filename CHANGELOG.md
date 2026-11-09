@@ -12,7 +12,8 @@
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added hotkey `Ctrl+Shift+Space` to show only hidden modules in the browser
 - Module [SIREN](./docs/siren/Siren.md)
-    - Added support for "Light" ui theme 
+    - Added support for "Light" ui theme
+    - Fixed possible crash on patch loading (#476)
 
 ## 2.7.0
 

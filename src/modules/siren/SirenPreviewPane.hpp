@@ -172,6 +172,17 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 	}
 
+	/**
+	 * Width in pixels to build a waveform for. Computed in float: the canvas
+	 * may not be laid out yet (e.g. preview restored on patch load), and
+	 * casting a huge or non-finite width to int is undefined behaviour.
+	 */
+	int waveformPixelWidth() const {
+		float w = canvas ? canvas->box.size.x - SirenWaveformCanvas::WAVE_X - 8.f : 512.f;
+		if (!std::isfinite(w) || w < 64.f) return 512;
+		return (int)std::min(w, 4096.f);
+	}
+
 	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,
 			bool startPlay = false, bool forceRebuild = false, bool resetTrim = true) {
 		const std::string& id = node.relativePath;
@@ -239,13 +250,35 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		if (!worker) return;
 		cacheBuilding = true;
-		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
-		if (pw < 64) pw = 512;
+		int pw = waveformPixelWidth();
 
 		bool queued = worker->work([this, id, ts, src, pw, gen]() {
 			AudioWaveformCache built;
-			bool ok = src->buildWaveformCache(id, ts, pw, built);
-			if (ok) src->saveWaveformCache(id, built);
+			bool ok = false;
+			try {
+				ok = src->buildWaveformCache(id, ts, pw, built);
+			}
+			catch (const std::exception& e) {
+				WARN("Siren: waveform cache build failed for %s: %s", id.c_str(), e.what());
+			}
+			catch (...) {
+				WARN("Siren: waveform cache build failed for %s", id.c_str());
+			}
+			if (ok) {
+				// A failed save only loses the on-disk copy; the built waveform is still valid.
+				try {
+					src->saveWaveformCache(id, built);
+				}
+				catch (const std::exception& e) {
+					WARN("Siren: saving waveform cache failed for %s: %s", id.c_str(), e.what());
+				}
+				catch (...) {
+					WARN("Siren: saving waveform cache failed for %s", id.c_str());
+				}
+			}
+			else {
+				built = AudioWaveformCache{};
+			}
 			pendingCache.cache = std::move(built);
 			pendingCache.gen = gen;
 			pendingCache.valid = ok;
@@ -330,8 +363,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::string idCopy = currentNode.relativePath;
 		float trimIn = canvas ? canvas->getInPoint() : 0.f;
 		float trimOut = canvas ? canvas->getOutPoint() : 1.f;
-		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
-		if (pw < 64) pw = 512;
+		int pw = waveformPixelWidth();
 
 		bool queued = worker->work([this, srcCopy, idCopy, trimIn, trimOut, pw, buildFn]() {
 			AudioPreviewResult result;

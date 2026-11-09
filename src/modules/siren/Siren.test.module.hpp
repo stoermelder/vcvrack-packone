@@ -460,6 +460,20 @@ TEST_CASE("buildWaveformCache: fills cache from a stream", "[Siren][Audio]") {
 	REQUIRE(!cache.empty());
 }
 
+TEST_CASE("buildWaveformCache: out-of-range pixelWidth is clamped, not overflowed", "[Siren][Audio]") {
+	// pixelWidth * 8 used to overflow int into a negative vector size, which threw
+	// on the worker thread and aborted Rack.
+	FakeAudioStream stream(4410, 2, 44100);
+	AudioWaveformCache cache;
+	REQUIRE(buildWaveformCache(0, stream, 400000000, cache) == true);
+	REQUIRE(cache.sampleCount == 8192);
+	REQUIRE(cache.samples.size() == 2);
+
+	FakeAudioStream s2(4410, 2, 44100);
+	AudioWaveformCache c2;
+	REQUIRE(buildWaveformCache(0, s2, -5, c2) == false);
+}
+
 TEST_CASE("buildWaveformCache: stores timestamp for stale-detection", "[Siren][Audio]") {
 	// buildWaveformCache stamps the cache with the caller-supplied timestamp.
 	// At load time, loadWaveformCacheFile rejects any cache whose stored timestamp

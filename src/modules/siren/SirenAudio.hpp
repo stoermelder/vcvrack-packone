@@ -175,7 +175,9 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 	int64_t total = stream.totalFrames();
 	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
 
-	int sampleRes = std::min(pixelWidth * 8, 8192);
+	// Clamp before multiplying: pixelWidth * 8 overflows int for huge widths,
+	// giving a negative vector size.
+	int sampleRes = std::min(pixelWidth, 1024) * 8;
 	out.sampleCount = sampleRes;
 	out.fileTimestamp = timestamp;
 	out.samples.assign(channels, std::vector<float>(sampleRes, 0.f));
