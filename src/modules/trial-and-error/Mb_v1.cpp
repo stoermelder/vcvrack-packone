@@ -23,7 +23,7 @@ bool hideBrands = false;
 
 // Static functions
 
-static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const std::vector<TextTagFilter>& textTagFilters, const bool& hidden) {
+static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const std::vector<TextTagFilter>& textTagFilters, HiddenFilter hidden) {
 	// Filter if not whitelisted by library
 	if (pluginSettings.mbApplyLibraryWhitelist) {
 		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
@@ -70,11 +70,8 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 	}
 
 	// Filter hidden
-	if (!hidden) {
-		auto it = hiddenModels.find(model);
-		if (it != hiddenModels.end())
-			return false;
-	}
+	if (!hiddenFilterAllows(hidden, isModelHidden(model)))
+		return false;
 
 	return true;
 }
@@ -291,9 +288,14 @@ struct BrowserSearchField : ui::TextField {
 			browser->favorites ^= true;
 			browser->refresh(true);
 		});
+		handlers.on("browser.hidden.only", [this]{
+			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+			browser->hidden = hiddenFilterToggle(browser->hidden, HiddenFilter::Only);
+			setText(string::trim(text));
+		});
 		handlers.on("browser.hidden.toggle", [this]{
 			ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-			browser->hidden ^= true;
+			browser->hidden = hiddenFilterToggle(browser->hidden, HiddenFilter::Include);
 			setText(string::trim(text));
 		});
 	}
@@ -625,7 +627,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 			visible = searchScores.find(m->model) != searchScores.end();
 		}
 		m->visible = visible;
-		if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
+		if (hidden != HiddenFilter::Exclude && m->visible) m->modelHidden = isModelHidden(m->model);
 	}
 
 	// Sort ModelBoxes
@@ -777,6 +779,7 @@ void ModuleBrowser::clear(bool keepSearch) {
 		sidebar->searchField->setText("");
 	}
 	favorites = false;
+	hidden = HiddenFilter::Exclude;
 	brand = "";
 	tagId.clear();
 	customTagFilter.clear();

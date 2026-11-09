@@ -50,7 +50,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	std::string brand;
 	std::set<int> tagId;
 	std::set<std::string> customTagFilter;
-	bool hidden;
+	HiddenFilter hidden = HiddenFilter::Exclude;
 	std::set<int> emptyTagId;
 
 	PreviewPrewarmer prewarmer;

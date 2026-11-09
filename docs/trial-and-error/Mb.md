@@ -126,6 +126,7 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts. Most of
 | `Backspace` | Clear search and filters (when search is empty) |
 | `Space` | Toggle Favorites filter (when search is empty) |
 | `Ctrl/Cmd`+`Space` | Toggle listing of hidden modules
+| `Ctrl/Cmd`+`Shift`+`Space` | Show only hidden modules
 | `Ctrl/Cmd`+`1` | Open Brand filter dropdown |
 | `Ctrl/Cmd`+`2` | Open Tag filter dropdown |
 | `Ctrl/Cmd`+`3` | Open Custom Tag filter dropdown |
@@ -148,7 +149,7 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts. Most of
 
 The keys inside the dropdown menus are fixed and cannot be customized.
 
-The *v1-mod* browser uses the same shortcuts for `Escape`, `Backspace`, `Space`, `Shift`+`Space` and the module hover shortcuts.
+The *v1-mod* browser uses the same shortcuts for `Escape`, `Backspace`, `Space`, `Shift`+`Space`, `Ctrl/Cmd`+`Shift`+`Space` and the module hover shortcuts.
 
 ## Customizing shortcuts
 
@@ -184,6 +185,7 @@ The keyboard shortcuts of the browser are stored in `<Rack user folder>/Stoermel
 | `browser.favorite.toggle` | `Space` | Toggle Favorites filter, only when the search is empty |
 | `browser.favorite.toggle.always` | *(none)* | Toggle Favorites filter, also when the search field contains text |
 | `browser.hidden.toggle` | `Shift+Space`, `Ctrl+Space` | Toggle listing of hidden modules |
+| `browser.hidden.only` | `Ctrl+Shift+Space` | Show only hidden modules |
 | `modelbox.favorite.toggle` | `Ctrl+F` | Toggle favorite status of the hovered module |
 | `modelbox.hidden.toggle` | `Ctrl+H` | Toggle hidden status of the hovered module |
 | `browser.v2.nav.up`, `.down`, `.left`, `.right` | `Up`, `Down`, `Left`, `Right` | Move the selection in the module grid (*v2 mod* only; unbind `left`/`right` to use the keys for the text cursor, see option *Arrow keys select modules*) |
@@ -270,3 +272,5 @@ itself. Disabled by default.
     - Added option to pre-warm module preview
     - Added fully customizable key-mapping (\<user-folder\>/Stoermelder-P1/keymaps/Mb.jsonc)
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
+- v2.x.x
+    - Added hotkey `Ctrl+Shift+Space` to show only hidden modules in the browser

@@ -140,8 +140,13 @@ struct BrowserSearchField : ui::TextField {
 			browser->favorite ^= true;
 			browser->refresh();
 		});
+		browse.on("browser.hidden.only", [this]{
+			browser->hidden = hiddenFilterToggle(browser->hidden, HiddenFilter::Only);
+			browser->refresh();
+			setText(string::trim(text));
+		});
 		browse.on("browser.hidden.toggle", [this]{
-			browser->hidden ^= true;
+			browser->hidden = hiddenFilterToggle(browser->hidden, HiddenFilter::Include);
 			browser->refresh();
 			setText(string::trim(text));
 		});
@@ -842,7 +847,7 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 		modelScroll->offset, settings::browserZoom);
 }
 
-bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
+bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, HiddenFilter hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
 	// Filter if not whitelisted by library
 	if (pluginSettings.mbApplyLibraryWhitelist) {
 		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
@@ -888,7 +893,7 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 	}
 
 	// Filter hidden modules (does not use the Rack's "hidden" property)
-	if (!hidden && hiddenModels.find(model) != hiddenModels.end()) {
+	if (!hiddenFilterAllows(hidden, isModelHidden(model))) {
 		return false;
 	}
 
@@ -904,7 +909,7 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 	return true;
 }
 
-bool ModuleBrowser::hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
+bool ModuleBrowser::hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, HiddenFilter hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode) {
 	for (const auto& pair : prefilteredModelScores) {
 		if (isModelVisible(pair.first, brand, tagIds, favorite, hidden, customTagFilter, widthFilterRef, widthFilterMode))
 			return true;
@@ -1004,7 +1009,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);
 			prefilteredModelScores[m->model] = 1.f;
-			if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
+			if (hidden != HiddenFilter::Exclude && m->visible) m->modelHidden = isModelHidden(m->model);
 		}
 		applyBrowserSort();
 	}
@@ -1028,7 +1033,7 @@ void ModuleBrowser::refresh(bool scrollTop) {
 			if (m->visible && prefilteredModelScores.find(m->model) == prefilteredModelScores.end()) {
 				m->visible = false;
 			}
-			if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
+			if (hidden != HiddenFilter::Exclude && m->visible) m->modelHidden = isModelHidden(m->model);
 		}
 	}
 
@@ -1166,6 +1171,7 @@ void ModuleBrowser::clear() {
 	widthFilterMode = 0;
 	widthSortDir = 0;
 	favorite = false;
+	hidden = HiddenFilter::Exclude;
 	refresh();
 }
 

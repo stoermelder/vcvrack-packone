@@ -89,11 +89,20 @@ TEST_CASE("MB keymap: default bindings in the v2 search field", "[Mb][Widget][Ke
 	}
 
 	SECTION("Shift+Space and Ctrl+Space both toggle hidden") {
-		REQUIRE_FALSE(fx.browser->hidden);
+		REQUIRE(fx.browser->hidden == HiddenFilter::Exclude);
 		REQUIRE(fx.press(GLFW_KEY_SPACE, GLFW_MOD_SHIFT));
-		REQUIRE(fx.browser->hidden);
+		REQUIRE(fx.browser->hidden == HiddenFilter::Include);
 		REQUIRE(fx.press(GLFW_KEY_SPACE, RACK_MOD_CTRL));
-		REQUIRE_FALSE(fx.browser->hidden);
+		REQUIRE(fx.browser->hidden == HiddenFilter::Exclude);
+	}
+
+	SECTION("Ctrl+Shift+Space toggles show-only-hidden and replaces the include mode") {
+		REQUIRE(fx.press(GLFW_KEY_SPACE, GLFW_MOD_SHIFT));
+		REQUIRE(fx.browser->hidden == HiddenFilter::Include);
+		REQUIRE(fx.press(GLFW_KEY_SPACE, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+		REQUIRE(fx.browser->hidden == HiddenFilter::Only);
+		REQUIRE(fx.press(GLFW_KEY_SPACE, RACK_MOD_CTRL | GLFW_MOD_SHIFT));
+		REQUIRE(fx.browser->hidden == HiddenFilter::Exclude);
 	}
 
 	SECTION("Backspace on an empty search clears the filters") {
@@ -140,9 +149,9 @@ TEST_CASE("MB keymap: rebinding replaces the default", "[Mb][Widget][Keymap]") {
 		fx.km->bind("browser.hidden.toggle", KeyCombo("Ctrl+G"));
 		fx.press(GLFW_KEY_SPACE, GLFW_MOD_SHIFT);
 		fx.press(GLFW_KEY_SPACE, RACK_MOD_CTRL);
-		REQUIRE_FALSE(fx.browser->hidden);
+		REQUIRE(fx.browser->hidden == HiddenFilter::Exclude);
 		REQUIRE(fx.press(GLFW_KEY_G, RACK_MOD_CTRL));
-		REQUIRE(fx.browser->hidden);
+		REQUIRE(fx.browser->hidden == HiddenFilter::Include);
 	}
 }
 
@@ -356,7 +365,7 @@ TEST_CASE("MB keymap: layout dropdown shortcuts", "[Mb][Widget][Keymap]") {
 		fx.openDropdownFor(&fx.brandStub);
 
 		fx.press(GLFW_KEY_SPACE, GLFW_MOD_SHIFT);
-		REQUIRE_FALSE(fx.browser->hidden);
+		REQUIRE(fx.browser->hidden == HiddenFilter::Exclude);
 		fx.press(GLFW_KEY_ESCAPE);
 		REQUIRE(fx.overlay->visible);
 	}

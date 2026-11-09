@@ -48,7 +48,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	int widthFilterMode = 0; // 0=off, 1=exact, 2=≤, 3=≥
 	int widthSortDir = 0;    // 0=off, 1=narrow→wide, -1=wide→narrow
 	bool favorite = false;
-	bool hidden = false;
+	HiddenFilter hidden = HiddenFilter::Exclude;
 
 	std::map<plugin::Model*, float> prefilteredModelScores;
 	std::map<plugin::Model*, int> modelOrders;
@@ -67,8 +67,8 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	void updateZoom();
 	void navigateSelection(int key);
 	void dropHiddenSelection();
-	bool isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
-	bool hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
+	bool isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, HiddenFilter hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
+	bool hasVisibleModel(const std::string& brand, const std::set<int>& tagIds, bool favorite, HiddenFilter hidden, const std::set<std::string>& customTagFilter, int widthFilterRef, int widthFilterMode);
 	void onShow(const event::Show& e) override;
 	void onHover(const event::Hover& e) override;
 	void onHoverScroll(const event::HoverScroll& e) override;

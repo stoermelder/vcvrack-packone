@@ -28,6 +28,8 @@ inline std::shared_ptr<Keymap> registerActions() {
 	km->registerAction("browser.hidden.toggle",          "Toggle hidden",                   "Browser", "Shift+Space", GLFW_REPEAT);
 	// v2 also accepted Ctrl+Space for the same toggle; kept as a second default binding.
 	km->registerAlias("browser.hidden.toggle", KeyCombo("Ctrl+Space"));
+	// List only the hidden modules (implies showing hidden modules).
+	km->registerAction("browser.hidden.only",         "Show only hidden",                "Browser", "Ctrl+Shift+Space", GLFW_REPEAT);
 
 	// Applies to the ModelBox under the cursor (v1 and v2).
 	km->registerAction("modelbox.favorite.toggle", "Toggle favorite (hovered module)", "ModelBox", "Ctrl+F");

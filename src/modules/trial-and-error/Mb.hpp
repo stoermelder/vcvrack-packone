@@ -73,6 +73,19 @@ void toggleModelHidden(Model* model);
 bool isModelHidden(plugin::Model* model);
 void hiddenModelsReset();
 
+// How the browsers treat modules marked hidden: leave them out, list them alongside the others
+// (marked), or list nothing else.
+enum class HiddenFilter { Exclude, Include, Only };
+
+inline bool hiddenFilterAllows(HiddenFilter filter, bool modelHidden) {
+	return filter == HiddenFilter::Only ? modelHidden : (filter == HiddenFilter::Include || !modelHidden);
+}
+
+// Hotkey semantics: pressing the key of the active mode returns to Exclude.
+inline HiddenFilter hiddenFilterToggle(HiddenFilter current, HiddenFilter target) {
+	return current == target ? HiddenFilter::Exclude : target;
+}
+
 
 // Custom Tags
 

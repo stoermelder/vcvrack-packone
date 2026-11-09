@@ -9,6 +9,8 @@
     - Undo and redo now restore the cursor and selection
     - Added support for "Light" ui theme
     - Fixed behavior of Copy/Pasting grid content with an active selection
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added hotkey `Ctrl+Shift+Space` to show only hidden modules in the browser
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for "Light" ui theme 
 
