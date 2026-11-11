@@ -1,10 +1,14 @@
+<!-- manual:exclude -->
 # stoermelder MIDI-ESX
+<!-- /manual:exclude -->
 
 MIDI-ESX converts MIDI messages into a binary audio signal that can be sent to external Expert Sleepers Eurorack hardware modules. It provides essentially the same functionality as Expert Sleepers' VCV Rack module [CV To MIDI](https://library.vcvrack.com/ExpertSleepers-SilentWay/ExpertSleepers-SilentWay-CVToMIDI), but supports all MIDI message types and multiple MIDI channels per port.
 
 A basic setup looks like this:
 
+<!-- manual:exclude -->
 ![MIDI-ESX basic setup](./MidiEsx.gif)
+<!-- /manual:exclude -->
 
 This software/hardware setup lets an Expert Sleepers ESX-8GT act as a MIDI interface that is sample-accurate and shares the same latency as your audio interface.
 
@@ -31,9 +35,12 @@ Please refer to the Expert Sleepers [documentation](https://www.expert-sleepers.
 
 - Use the encoded MIDI outputs only with devices or modules that explicitly support encoded MIDI, like Expert Sleepers modules; connecting them to arbitrary audio/CV inputs will not produce useful results.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.4.0
     — Initial release
 - v2.6.0
     - Ignore incoming MIDI messages while module is bypassed
+
+<!-- /manual:exclude -->

@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder AFFIX and µAFFIX
+<!-- /manual:exclude -->
 
 AFFIX and µAFFIX are utility modules for polyphonic cables. They allow you to add a voltage offset to each of the 16 (AFFIX) and 8 (µAFFIX) channels by adjusting a knob.
 
+<!-- manual:exclude -->
 ![AFFIX intro](./Affix-intro.png)
+<!-- /manual:exclude -->
 
 The knobs offer three modes via the context menu:
 
@@ -18,6 +22,7 @@ The modules can adjust the number of active channels in polyphonic cables or out
 
 ![AFFIX channels](./Affix-channels.png)
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.6.0
@@ -26,3 +31,5 @@ The modules can adjust the number of active channels in polyphonic cables or out
     - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
     - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403)
     - Don't use Rack's parameter smoothing in Semitone/Octave-mode (broken since Rack 2.3.0)
+
+<!-- /manual:exclude -->

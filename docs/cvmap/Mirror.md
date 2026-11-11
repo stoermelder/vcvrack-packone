@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder MIRROR
+<!-- /manual:exclude -->
 
 MIRROR is a utility module designed to synchronize parameters across multiple instances of the same module. It is particularly useful for ensuring that monophonic modules within a polyphonic patch share the same parameter values or changes simultaneously.
 
+<!-- manual:exclude -->
 ![MIRROR Intro](./Mirror-intro.png)
+<!-- /manual:exclude -->
 
 ### How to use
 
@@ -13,7 +17,9 @@ MIRROR is a utility module designed to synchronize parameters across multiple in
 
 Once bound, mapped modules can be placed anywhere in your Rack patch. They do not need to remain directly connected to MIRROR.
 
+<!-- manual:exclude -->
 ![MIRROR Mapping Example](./Mirror-map.gif)
+<!-- /manual:exclude -->
 
 ### Unmapping Parameters
 
@@ -21,19 +27,25 @@ Once bound, mapped modules can be placed anywhere in your Rack patch. They do no
   - If a parameter is unmapped on the **source module**, all synchronized instances will also lose the mapping.
   - If a parameter is unmapped on a **synchronized module**, only that specific instance will no longer mirror the parameter.
 
+<!-- manual:exclude -->
 ![MIRROR Unmapping Example](./Mirror-unmap.gif)
+<!-- /manual:exclude -->
 
 ### CV-Ports
 
 MIRROR includes eight input ports (0–10V range) that can be dynamically assigned to any parameter of the mapped modules. These ports allow you to control parameters via external CV signals.
 
+<!-- manual:exclude -->
 ![MIRROR CV-Ports Example](./Mirror-cv.gif)
+<!-- /manual:exclude -->
 
 ### Presets
 
 Many modules have internal states that are not reflected in their panel parameters. While MIRROR cannot automatically sync these internal states, you can manually trigger a sync to ensure all mirrored modules start in the same initial state.
 
+<!-- manual:exclude -->
 ![MIRROR Sync Example](./Mirror-sync.gif)
+<!-- /manual:exclude -->
 
 ### Additional Features
 
@@ -45,6 +57,7 @@ Many modules have internal states that are not reflected in their panel paramete
 
 - **Parameter change reporting in VCV Rack plugins** - By default, parameter changes are not reported back to the plugin host when using MIRROR in a plugin version of VCV Rack. In v2.2.0, an option was added to enable this behavior, though it may increase plugin CPU usage.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.6.0
@@ -57,3 +70,5 @@ Many modules have internal states that are not reflected in their panel paramete
     - Added _Sync module presets_ option to work even if the mirrored module lacks parameters
 - v2.2.0
     - Added option to report parameter changes back to plugin-host (plugin-version option)
+
+<!-- /manual:exclude -->

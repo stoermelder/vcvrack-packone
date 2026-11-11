@@ -1,4 +1,6 @@
+<!-- manual:exclude -->
 # stoermelder DIRT
+<!-- /manual:exclude -->
 
 DIRT is a simple noise module for polyphonic cables:
 
@@ -11,6 +13,7 @@ DIRT is a simple noise module for polyphonic cables:
 
 Please note: Every instance of DIRT is unique, two modules will not sound the same.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.0.0
@@ -21,3 +24,5 @@ Please note: Every instance of DIRT is unique, two modules will not sound the sa
     - Fixed broken preset loading
 - v2.7.0
     - Fixed broken "Initialize" on Crush defects
+
+<!-- /manual:exclude -->

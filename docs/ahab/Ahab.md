@@ -1,10 +1,14 @@
+<!-- manual:exclude -->
 # stoermelder AHAB
+<!-- /manual:exclude -->
 
 AHAB is a port of the [ORCA-C](https://github.com/hundredrabbits/Orca-c) project into a VCV Rack module.
 
 AHAB is a livecoding sequencer based on [ORCA](https://github.com/hundredrabbits/Orca). Create patterns and melodies by typing characters into a grid. Every letter is an operator with its own function — build sequences by chaining them together.
 
-![AHAB Module](./intro.gif)
+<!-- manual:exclude -->
+![AHAB Module](Ahab-intro.gif)
+<!-- /manual:exclude -->
 
 **Getting started**  
 
@@ -13,7 +17,7 @@ AHAB is a livecoding sequencer based on [ORCA](https://github.com/hundredrabbits
 - Use the Run button or the spacebar to start and stop the engine. 
 - Please make sure to enable the option *Show tooltips* in VCV Rack's View menu - this will show a brief description of each operator when you hover over it.
 
-![AHAB MIDI I/O](./midi.png)
+![AHAB MIDI I/O](Ahab-midi.png)
 
 **Resources**  
 
@@ -30,11 +34,19 @@ AHAB provides two custom operators for reading/writing CV values. Both operators
   - `<1`, `<2`, `<3`, `<4` — Read numeric CV (0-10V mapped to 0-35)
   - `<a`, `<b`, `<c`, `<d` — Read pitch CV (V/Oct, outputs semitone mod 12)
 
-![AHAB CV I/O](in-1.png)
+```
+.D......
+..<015..
+..0.....
+```
 
 This reads from input 1 and scales the value to a range of 0–5, which is mapped to the voltage range 0-10V. If input is 2V, the operator output will be 1.
 
-![AHAB CV I/O](in-2.png)
+```
+.D......
+..<0aa..
+..C.....
+```
 
 This reads from input 1 (addressed as `a`) and outputs the note name for the corresponding V/Oct voltage. Octave and cents are ignored.
 
@@ -42,11 +54,17 @@ This reads from input 1 (addressed as `a`) and outputs the note name for the cor
   - `>1`, `>2`, `>3`, `>4` — Write numeric CV (value in range 0-35 maps to 0-10V)
   - `>a`, `>b`, `>c`, `>d` — Write pitch CV (value is semitone, e.g., `>a3` outputs D3 in V/Oct)
 
-![AHAB CV I/O](out-1.png)
+```
+.D.......
+..>1056..
+```
 
 This writes to output 1 and scales the value 5 to a range of 0-6, which is mapped to the voltage range 0-10V. In this case, output 1 will be 8.33V.
 
-![AHAB CV I/O](out-2.png)
+```
+.D......
+..>a3D..
+```
 
 This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third octave D). The fourth  parameter (unused in the example) sets the length of the output signal - if this parameter is omitted, the voltage is held indefinitely. Otherwise the signal will go back to 0V after the number of ticks have been elapsed - this works similarly to the [MIDI operator `:`](https://metasyn.srht.site/learn-orca/#the-midi-operator).
 
@@ -193,6 +211,7 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
 - If the file cannot be read (e.g. a typo in the JSON), the default shortcuts are used and the file is not overwritten, so you can fix it.
 - Typing glyphs into the grid and the grid step keys (`{`, `}`, `[`, `]`) cannot be customized.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.3.0
@@ -223,3 +242,5 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Undo and redo now restore the cursor and selection
     - Added support for "Light" ui theme
     - Fixed behavior of Copy/Pasting grid content with an active selection
+
+<!-- /manual:exclude -->

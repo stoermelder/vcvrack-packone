@@ -1,12 +1,18 @@
+<!-- manual:exclude -->
 # stoermelder CV‑PAM
+<!-- /manual:exclude -->
 
 CV‑PAM is the counterpart of [CV‑MAP](CVMap.md). While CV‑MAP takes CV input and automates any knob, switch or slider, CV‑PAM does the opposite: you attach one of its 32 slots to a parameter of any module and it generates CV output from the parameter’s movements. The use‑cases for CV‑PAM are therefore not as varied as those for [CV-MAP](CVMap.md).
 
+<!-- manual:exclude -->
 ![CV-PAM intro](./CVPam-intro.png)
+<!-- /manual:exclude -->
 
 Using CV‑PAM in combination with CV‑MAP lets you synchronize parameter changes across multiple instances of the same module (or different modules). For an all‑in‑one solution you can also use [MIRROR](Mirror.md) (since v1.6.0).
 
+<!-- manual:exclude -->
 ![CV-PAM sync](./CVPam-sync.gif)
+<!-- /manual:exclude -->
 
 ### Additional features
 
@@ -22,6 +28,7 @@ Using CV‑PAM in combination with CV‑MAP lets you synchronize parameter chang
 
 - **Scrolling interference** – Hovering over CV‑PAM’s list widget interrupts Rack view mouse scrolling. Enabling *Lock mapping slots* suppresses all mouse scrolling events while hovered (since v1.7.0).
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.0.0
@@ -36,3 +43,5 @@ Using CV‑PAM in combination with CV‑MAP lets you synchronize parameter chang
     - Blink mapping indicator of currently selected mapping slot
 - v1.8.0
     - Fixed wrong channel count of the polyphonic output ports
+
+<!-- /manual:exclude -->

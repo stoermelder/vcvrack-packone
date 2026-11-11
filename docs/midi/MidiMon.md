@@ -1,13 +1,16 @@
+<!-- manual:exclude -->
 # stoermelder MIDI-MON
+<!-- /manual:exclude -->
 
 MIDI-MON is a utility module for monitoring MIDI messages. Also export as text-file is available.
 
+<!-- manual:exclude -->
 ![MIDI-MON intro](./MidiMon-intro.png)
-
-## Usage
+<!-- /manual:exclude -->
 
 Each log entry is prefixed with a timing indicator in square brackets. By default this shows elapsed time in seconds (e.g. `[  12.3456]`). Enable **Show engine frame** in the context menu to switch to engine frame numbers instead — only the last 6 digits are shown (zero-padded, wrapping every ~20 seconds at 48 kHz) so that fast-changing timing differences between events are immediately visible (e.g. `[034567]`). The full frame number is always written to the exported log file.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.8.0
@@ -31,3 +34,5 @@ Each log entry is prefixed with a timing indicator in square brackets. By defaul
 - v2.7.0
     - Improved performance (no memory allocation on dsp, lock-free MIDI-input)
     - Added scrollbar to display widget
+
+<!-- /manual:exclude -->

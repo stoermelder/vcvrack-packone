@@ -1,12 +1,18 @@
+<!-- manual:exclude -->
 # stoermelder MIDI-STEP
+<!-- /manual:exclude -->
 
 MIDI-STEP is a module intended for relative MIDI protocols of endless rotary knobs found on some hardware MIDI controllers. The module outputs triggers on _INC_ or _DEC_ for every knob-twisting.
 
+<!-- manual:exclude -->
 ![MIDI-STEP intro](./MidiStep-intro.png)
+<!-- /manual:exclude -->
 
 The module is similar to the VCV MIDI‑CC module and receives up to eight different MIDI CC numbers in default mode and up to sixteen in polyphonic mode. Every MIDI CC message is interpreted according to the selected hardware protocol, and one or more short triggers are sent on the _INC_‑port (increment, increased value) or DEC‑port (decrement, decreased value).
 
+<!-- manual:exclude -->
 ![MIDI-STEP operating](./MidiStep-cc.gif)
+<!-- /manual:exclude -->
 
 In polyphonic mode (added in v1.6.0) all triggers are sent on the first ports (top left) of the _INC_‑ and _DEC_‑sections using a polyphonic connection. This mode is especially useful together with [POLY‑PILE](../pile/Pile.md), which converts up to sixteen channels into absolute voltages.
 
@@ -39,6 +45,9 @@ I don't own all of following devices so I can provide only limited supported for
 
 - **Hercules DJControl Starlight** – This controller supports a single relative protocol that can be enabled in the DJControl software.
 
+<!-- manual:exclude -->
 ## Changelog
 
 MIDI‑STEP was introduced in v1.5 of PackOne.
+
+<!-- /manual:exclude -->

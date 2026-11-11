@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder CV-MAP and CTX-expander
 
 - [Mapping parameters](#mapping-parameters)
@@ -9,20 +10,30 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 CV-MAP is inspired by Rack's MIDI-MAP module: It allows you to modulate any parameter of any module by CV even if there is no CV input on the module itself.
 
+<!-- manual:exclude -->
 Some videos about CV-MAP:
 
 - [Omri Cohen](https://omricohencomposer.bandcamp.com/) showed how to use this module in one of his [live streams](https://youtu.be/RSvWeBZzYEA?t=2522).
 - A really epic [tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from [Omri Cohen](https://omricohencomposer.bandcamp.com/).
 - Extensive use of little brother µMAP in [this video](https://www.youtube.com/watch?v=_bVb3LewdVw) from [Artem Leonov](https://artemleonov.bandcamp.com/) of VCV Rack Ideas.
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=Dd0EESJhPZA
+-->
 
+<!-- manual:exclude -->
 ![CV-MAP Intro](./CVMap-intro.png)
+<!-- /manual:exclude -->
 
 It has been said that such functionality is somehow against the idea of "virtual modular" and it is a kind of bad design if CV-controlling things that were not intended by their creators. Still, CV-MAP provides automation for your virtual knobs, switches and faders in Rack.
 
+<!-- manual:exclude -->
 ![CV-MAP Intro](./CVMap-map.gif)
+<!-- /manual:exclude -->
 
 You can disable text scrolling via the context menu option (since v1.0.2).
 
@@ -46,7 +57,9 @@ For making the channel assignment more intuitive each input channel can be label
 
 By default mapped parameters can't be changed manually as the incoming voltage constantly sets the value of the parameter. To loosen this limitation you have an option to "unlock" parameters through the context menu: In "Unlock"-mode you can manually change parameters as long as their input voltage stays constant. However, when the input voltage changes the parameter will be set to the new value. The input voltage overrules manual changes.
 
+<!-- manual:exclude -->
 ![CV-MAP Intro](./CVMap-unlocked.gif)
+<!-- /manual:exclude -->
 
 ### Slew-limiting and input-scaling
 
@@ -77,12 +90,20 @@ CTX is a companion module for CV-MAP: The expander allows you to name each insta
 
 CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold up to 8 characters for naming CV-MAP.
 
+<!-- manual:exclude -->
 ![CV-MAP CTX](./CVMap-Ctx.gif)
+<!-- /manual:exclude -->
 
 ### A tutorial and showcase of **CV-MAP CTX** made by VCV Rack Ideas
 
+<!-- manual:exclude -->
 <a href="https://www.youtube.com/watch?v=BfQuliXOAkM" target="_blank"><img src="https://img.youtube.com/vi/BfQuliXOAkM/0.jpg" style="width:100%" /></a>
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=BfQuliXOAkM
+-->
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.0.2
@@ -115,3 +136,5 @@ CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold 
 
 CV-MAP was introduced in v1.0 of PackOne.  
 CTX for CV-MAP was introduced in v1.9 of PackOne.
+
+<!-- /manual:exclude -->

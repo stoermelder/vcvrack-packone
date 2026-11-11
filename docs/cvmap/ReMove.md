@@ -1,10 +1,18 @@
+<!-- manual:exclude -->
 # stoermelder ReMOVE Lite
+<!-- /manual:exclude -->
 
 ReMOVE Lite is a utility module for recording and replaying movements of any parameter on any module in Rack. It supports up to 8 recorded sequences, various sampling rates, different recording modes, a phase input for directly controlling the playback and more settings. Though it is not its main purpose, ReMOVE can also be used as a CV recorder. All ports of ReMOVE Lite are monophonic.
 
+<!-- manual:exclude -->
 ![ReMOVE Intro](./ReMove-intro.gif)
+<!-- /manual:exclude -->
 
 A really epic [tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from [Omri Cohen](https://omricohencomposer.bandcamp.com/) showcasing ReMOVE Lite.
+
+<!-- manual:only
+https://www.youtube.com/watch?v=Dd0EESJhPZA
+-->
 
 Another fabulous [tutorial video](https://www.youtube.com/watch?v=P9bFPuCLuMs) from [Artem Leonov](https://artemleonov.bandcamp.com/) using 8 instances of ReMOVE Lite with MIDI mapping.
 
@@ -35,7 +43,9 @@ Actual recording of automation data starts on the first mouse click ('touch') on
 
 - **Sample & Hold-Mode** (added in v1.0.4) - This mode records exactly one sample of the value of the mapped parameter. This can be useful for sequencing a parameter value in combination with the play mode 'Loop Sequences'.
 
+<!-- manual:exclude -->
 ![ReMOVE Sample & Hold](./ReMove-sh.gif)
+<!-- /manual:exclude -->
 
 Recording is only possible when a parameter is mapped, even when using the IN-port.
 
@@ -82,7 +92,9 @@ Same behavior as most sequencers: _RUN_ can be configured for playback as 'high'
 ![ReMOVE IN-input](./ReMove-reset.png)
 
 Using ReMOVE in a sequencer scenario that records a random source and plays it back multiple times.
+<!-- manual:exclude -->
 ![ReMOVE sequencing](./ReMove-seq.gif)
+<!-- /manual:exclude -->
 
 ### _REC_-input
 
@@ -117,6 +129,9 @@ Since v1.3.0, there is a third option, EOC, on the context menu for outputting a
 
 - Parameter changes are not reported back to the plugin host by default if ReMOVE Lite is used in a plugin version of VCV Rack. In v2.2.0, a context menu option was added to enable this behavior, which might cause higher CPU usage of the plugin.
 
+<!-- manual:exclude -->
 ## Changelog
 
 ReMOVE Lite was introduced in v1.0.2 of PackOne.
+
+<!-- /manual:exclude -->

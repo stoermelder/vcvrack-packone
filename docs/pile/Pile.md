@@ -1,12 +1,18 @@
+<!-- manual:exclude -->
 # stoermelder PILE and POLY-PILE
+<!-- /manual:exclude -->
 
 PILE and POLY-PILE are utility modules that convert increment and decrement triggers into absolute voltage. PILE is monophonic; POLY-PILE supports up to 16 polyphonic channels.
 
+<!-- manual:exclude -->
 ![PILE introduction](./Pile-intro.png)
+<!-- /manual:exclude -->
 
 Triggering the _INC_ and _DEC_ ports increases or decreases the output voltage within the selected range, with the voltage jump set by the _SIZE_ trimpot. The context menu offers multiple range options: unipolar 0–5V or 0–10V, and bipolar –5–5V or –10–10V.
 
+<!-- manual:exclude -->
 ![PILE increment/decrement](./Pile-incdec.gif)
+<!-- /manual:exclude -->
 
 ### SLEW
 
@@ -24,6 +30,7 @@ POLY-PILE has a _RESET_ port that triggers a reset to 0V when no cable is connec
 
 PILE and POLY-PILE pair well with the MIDI-STEP module, which outputs increment and decrement triggers for endless rotary knobs on your MIDI controller.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.5.0
@@ -33,3 +40,5 @@ PILE and POLY-PILE pair well with the MIDI-STEP module, which outputs increment 
     - Removed slew-limiting after preset-load
 - v2.4.0
     - POLY-PILE: Added support for polyphonic reset triggers (#431)
+
+<!-- /manual:exclude -->

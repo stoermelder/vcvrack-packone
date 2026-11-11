@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder HIVE
+<!-- /manual:exclude -->
 
 HIVE is a random ratcheting sequencer with 4 independent outputs which run on a common 2-dimensional hexagonal grid. HIVE is an oddball and a close relative of [MAZE](./Maze.md): Almost everything works the same way except for the playheads running on a grid consisting of hexagonal cells.
 
+<!-- manual:exclude -->
 ![HIVE Intro](./Hive-intro.gif)
+<!-- /manual:exclude -->
 
 HIVE was kindly contributed to PackOne by [Lexandra Maxine](https://github.com/xandramax) and this is what she has to say about the sequencer:  
 
@@ -24,9 +28,14 @@ HIVE was kindly contributed to PackOne by [Lexandra Maxine](https://github.com/x
 
 A lush example of how HIVE and MAZE can work together:
 
+<!-- manual:exclude -->
 [![HIVE and MAZE](https://img.youtube.com/vi/KYbfuj7EbbQ/0.jpg)](https://www.youtube.com/watch?v=KYbfuj7EbbQ)
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=KYbfuj7EbbQ
+-->
 
-
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.8.0
@@ -40,3 +49,5 @@ A lush example of how HIVE and MAZE can work together:
   - Fixed broken SHIFT/R- input
 - v2.7.0
   - Improved rendering performance
+
+<!-- /manual:exclude -->

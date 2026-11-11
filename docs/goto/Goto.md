@@ -1,12 +1,18 @@
+<!-- manual:exclude -->
 # stoermelder GOTO
+<!-- /manual:exclude -->
 
 GOTO is a utility module that moves the current viewport of VCV Rack to interesting locations in your patch. Up to 10 jump points can be recalled using key combinations Shift+1, Shift+2, … Shift+0, or via CV.
 
+<!-- manual:exclude -->
 ![GOTO intro](./Goto-intro.png)
+<!-- /manual:exclude -->
 
 Each jump point of GOTO is bound to a specific module or a selection of modules in your patch. Already used jump points are lit in yellow and can be cleared by long-pressing the button again. The current zoom level is also saved and recalled when a jump point is activated.
 
+<!-- manual:exclude -->
 ![GOTO jump](./Goto-jump.gif)
+<!-- /manual:exclude -->
 
 ### Jump Points
 
@@ -45,6 +51,7 @@ There are two modes available:
 - **Smooth transition** - By default the viewport jumps directly to the bound module(s). Enabling this option moves the viewport smoothly to the new position, which may increase graphical processing load.
 - **Ignore zoom level** - By default GOTO recalls the zoom level at binding time. Enabling this option keeps the current zoom level unchanged when jumping.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.6.0
@@ -58,3 +65,5 @@ There are two modes available:
     - Fixed broken zoom behavior when jumping by buttons on the panel
 - v2.2.0
     - Jump-points can be multiple modules/a selection instead of a single module
+
+<!-- /manual:exclude -->

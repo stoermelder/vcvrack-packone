@@ -1,8 +1,21 @@
+<!-- manual:exclude -->
 # stoermelder SIREN
+<!-- /manual:exclude -->
 
 SIREN is an audio file browser and playback module - a collaboration with [Omri Cohen](https://omricohen-music.com/): you can drop samples out of the browser onto your sampler modules. SIREN is not a sampler module - it helps you organizing your samples and improving the workflow with sampler modules in VCV Rack.
 
+<!-- manual:exclude -->
 ![SIREN Intro](./Siren-intro.gif)
+<!-- /manual:exclude -->
+
+Here is a tutorial video by Omri himself:
+
+<!-- manual:exclude -->
+<a href="https://www.youtube.com/watch?v=zmS-yfGyC2o" target="_blank"><img src="https://img.youtube.com/vi/zmS-yfGyC2o/0.jpg" style="width:100%" /></a>
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=zmS-yfGyC2o
+-->
 
 **Features**
 
@@ -30,7 +43,9 @@ You can add as many roots as you like and switch between them via the same menu.
 
 The **◀** and **▶** arrow buttons flanking the source button cycle through your roots without opening the menu.
 
+<!-- manual:exclude -->
 ![SIREN sources](./Siren-sources.gif)
+<!-- /manual:exclude -->
 
 The lower part of the source menu controls how audio is processed:
 
@@ -71,7 +86,9 @@ Two handles at the top edge of the waveform define the playback range:
 
 The highlighted region between them is the active playback range.
 
+<!-- manual:exclude -->
 ![SIREN Trim points](./Siren-trim.gif)
+<!-- /manual:exclude -->
 
 ### Loop
 
@@ -82,11 +99,15 @@ Click the **Loop** context menu option to repeat playback between the IN and OUT
 
 **Drag** any file from the browser onto a compatible module to load it there. If a trim region is set, only that region is prepared for the drop.
 
+<!-- manual:exclude -->
 ![SIREN Drag-and-Drop](./Siren-drop.gif)
+<!-- /manual:exclude -->
 
 You can also start a drag from anywhere in your patch: hold `Ctrl/Cmd + Shift` and click, then drag — SIREN will load the last selected sample and start a drag-and-drop from that point.
 
+<!-- manual:exclude -->
 ![SIREN Drag-and-Drop](./Siren-drop-2.gif)
+<!-- /manual:exclude -->
 
 The **Resample on drop**, **Resample quality**, **Convert to WAV on drop**, **Folder for converted/trimmed files**, and **Always copy** options in the source menu (see [Setting Up](#setting-up)) control how the file is prepared when it is handed to another module. **Resample on playback** applies to SIREN's own L/R outputs and has no effect on drops.
 
@@ -106,7 +127,9 @@ The **tag bar** at the bottom of the browser lists all known tags as chips. Clic
 
 Multiple chips can be active at once, and include and exclude states can be mixed. When several included tags are active, only files carrying **all** of them are shown; any excluded tag further removes files that carry it. **Right-click** the tag bar for filter actions.
 
+<!-- manual:exclude -->
 ![SIREN Tag filtering](./Siren-tags.gif)
+<!-- /manual:exclude -->
 
 Right-click a file to open its context menu. Under **Tags**:
 
@@ -153,7 +176,9 @@ Alongside plain text, the search field accepts numeric filter terms:
 
 Filter terms can be combined with each other and with plain text, e.g. `kick bpm:140 length:<1s`. A folder matches a filter if any file inside it does. Files for which the relevant info hasn't been read yet (see [Indexing](#indexing)) won't match a filter — run **Index metadata for all files** first if filters seem to miss results.
 
+<!-- manual:exclude -->
 ![SIREN filter expressions](./Siren-filtering.gif)
+<!-- /manual:exclude -->
 
 **Note** - BPM information is extracted from the filename.
 
@@ -202,6 +227,7 @@ SIREN can shift the pitch of the current sample or trim region without changing 
 
 - **Waveform cache** — The first time a file is previewed, SIREN builds a waveform cache in your Rack user folder (`Stoermelder-P1/siren-cache/`). Subsequent opens are instant.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.5.0
@@ -218,3 +244,5 @@ SIREN can shift the pitch of the current sample or trim region without changing 
 - v2.x.x
   - Added support for "Light" ui theme
   - Fixed possible crash on patch loading (#476)
+
+<!-- /manual:exclude -->

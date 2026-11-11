@@ -13,3 +13,5 @@ plugin.dll
 plugin.dylib
 plugin.so
 AGENTS.md
+# Generated VCV Library manual (plugin-manual.mk)
+/manual

@@ -1,14 +1,20 @@
+<!-- manual:exclude -->
 # stoermelder STROKE
+<!-- /manual:exclude -->
 
 STROKE is a utility module which converts any hotkey command (assuming it is not used anywhere else in Rack) into triggers or gates. Additionally, the module provides some special commands which aren't available anywhere else in Rack.
 
+<!-- manual:exclude -->
 ![STROKE Intro](./Stroke-intro.png)
+<!-- /manual:exclude -->
 
 The module provides ten independent mapping slots which are unmapped by default. A slot needs to be "learned" for a hotkey using the context menu option _Learn_. The currently assigned key is visible on the display and its modifiers (ALT, CTRL/CMD and SHIFT) on the LEDs.
 
 The module also supports mouse-button events: If your mouse has more than three buttons, these can be mapped the same way as hotkeys; modifiers apply as well. Since v1.9.0, the left, right, and middle mouse buttons can be mapped in STROKE when used with modifiers.
 
+<!-- manual:exclude -->
 ![STROKE learn](./Stroke-learn.gif)
+<!-- /manual:exclude -->
 
 <a name="view-scroll"></a>
 <a name="add-module"></a>
@@ -59,6 +65,7 @@ The module also supports mouse-button events: If your mouse has more than three 
 
 - While you can assign duplicate hotkeys, only one of them will work.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.7.0
@@ -91,3 +98,5 @@ The module also supports mouse-button events: If your mouse has more than three 
 - v2.3.0
     - Fixed broken _Zoom out_ command
     - Fixed broken Toggle-commands on different UI Scale
+
+<!-- /manual:exclude -->

@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder MACRO
+<!-- /manual:exclude -->
 
 MACRO is a utility module designed to control up to **four parameters** simultaneously. It includes **two CV output ports**, each configurable independently. Built-in slew-limiting and scaling options allow fine-tuned adjustments for every parameter and output.
 
+<!-- manual:exclude -->
 ![MACRO intro](./Macro-intro.png)
+<!-- /manual:exclude -->
 
 ### Mapping parameters
 
@@ -25,7 +29,9 @@ Each slot and CV output features Low/High sliders to:
 - Apply linear transformations (e.g., inversion).
 - Presets are available, and the current scaling formula is displayed in the context menu.
 
+<!-- manual:exclude -->
 ![MACRO context](./Macro-scaling.gif)
+<!-- /manual:exclude -->
 
 ### _IN_-port
 
@@ -37,6 +43,9 @@ The usage of the _IN_-port is optional. If the port is unconnect, the input valu
 
 - By default, MACRO does not report parameter changes to the host (VCV Rack plugin). v2.2.0+: Enable reporting via the context menu (this may increase CPU usage).
 
+<!-- manual:exclude -->
 ## Changelog
 
 MACRO was introduced in v1.8 of PackOne.
+
+<!-- /manual:exclude -->

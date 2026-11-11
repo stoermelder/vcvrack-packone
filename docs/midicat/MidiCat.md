@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder MIDI-CAT and expanders MEM, CTX, CLK and FINE
 
 - [Mapping parameters](#mapping-parameters)
@@ -15,6 +16,7 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
@@ -31,7 +33,9 @@ Besides these new features the module brings the goodies known from stoermelder'
 - ..."Locate and indicate" on slot's context menu for finding mapped parameters and
 - ...unlocked parameters for changes by mouse or by preset loading or using a preset-manager like stoermelder's [8FACE](../eightface/EightFace.md).
 
+<!-- manual:exclude -->
 ![MIDI-CAT intro](./MidiCat-intro.gif)
+<!-- /manual:exclude -->
 
 ## Quick Reference
 
@@ -74,23 +78,35 @@ A typical workflow for mapping your MIDI-controller will look like this:
 
 Since v1.7.0 a blinking mapping indicator will indicate the bound parameter for the mapping-slot which is currently selected. 
 
+<!-- manual:exclude -->
 ![MIDI-CAT mapping](./MidiCat-map.gif)
+<!-- /manual:exclude -->
 
 If you like to know more on MIDI-mapping in VCV Rack please refer to one of the existing tutorials like [this one](https://www.youtube.com/watch?v=Dd0EESJhPZA) from [Omri Cohen](https://omricohencomposer.bandcamp.com/).
+
+<!-- manual:only
+https://www.youtube.com/watch?v=Dd0EESJhPZA
+-->
 
 In v1.7.0 new mapping options have been added to MIDI-CAT to achieve even faster mappings without the need for touching every single parameter of a module:
 
 - **Map module (left)** - Place MIDI-CAT directly on the left side of the module you like to map. Use the option _Map module (left)_ on the context menu to fill the mapping slots with all parameters of the module. Please note that there are two different variants available: _Clear first_ clears all mappings slots before the slots of MIDI-CAT are filled, _Keep MIDI assignments_ will not clear the assigned MIDI controls but all bindings to parameters. The latter option is useful if you want to reuse the controls of your MIDI device and re-map them onto a different module. Mapping can be also enabled by Ctrl/Cmd+Shift+E (_Clear first_) or Shift+E (_Keep MIDI assignments_).
 
+<!-- manual:exclude -->
 ![MIDI-CAT module left](./MidiCat-map-left.gif)
+<!-- /manual:exclude -->
 
 - **Map module (select)** - This option changes your cursor into a crosshair which needs to be pointed onto any module within your patch by clicking on the panel. The variants _Clear first_ and _Keep MIDI assignments_ work the same way as for _Map module (left)_. Mapping can be also enabled by Ctrl/Cmd+Shift+D (_Clear first_) or Shift+D (_Keep MIDI assignments_).
 
+<!-- manual:exclude -->
 ![MIDI-CAT module select](./MidiCat-map-select.gif)
+<!-- /manual:exclude -->
 
 - **Map parameters by selection** (Added in v2.0.0) - This option allows you to map several parameters at once by applying a selection bound box around them. All parameters must be on the same module and the selection box cannot span multiple modules. The sub-option *Clear* clears all mappings of MIDI-CAT before and sub-option *Append* appends newly mapped parameters at the end. The options with additional *bind LED* are described in [LED-binding for MIDI-feedback](#led-binding-for-midi-feedback).
 
+<!-- manual:exclude -->
 ![MIDI-CAT selection](./MidiCat-map-selection.gif)
+<!-- /manual:exclude -->
 
 ### Input modes for CCs ("Soft-takeover" or "Pickup")
 
@@ -171,10 +187,15 @@ For some MIDI controllers which don't support different simultaneous "layers" bu
 This is an experimental feature which was introduced in v2.0.0: It adds the ability to send MIDI-feedback according to the state of an LED on a module instead of the parameter's actual value. This is useful for buttons, which behave in a momentary way and do not represent the state of the parameter. Please note: the LED must be on the same module as the mapped parameter and cannot be on any other module.
 Here is a unpolished introduction video to demonstrate the configuration steps and how this feature works:
 
+<!-- manual:exclude -->
 [![LED-binding](https://img.youtube.com/vi/w6AYmfzIuZ4/hqdefault.jpg )](https://www.youtube.com/watch?v=w6AYmfzIuZ4)
 
 [stoermelder STRIP-file for Impromptu GATE-SEQ-64](MidiCat-LaunchPadMiniMk3-GateSeq64-FactoryCustom3.vcvss)  
 [Modified template for LaunchPad Mini Mk3](MidiCat-LaunchPadMiniMk3-FactoryCustom3.syx)
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=w6AYmfzIuZ4
+-->
 
 ### Hotkeys
 
@@ -224,7 +245,9 @@ Note: These hotkeys are active when the MIDI-CAT widget is hovered.
 <a name="overlay"></a>
 - MIDI-CAT uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](../trial-and-error/Me.md) module.
 
+<!-- manual:exclude -->
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
+<!-- /manual:exclude -->
 
 - Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. A context menu option is available to enable this behavior - it might cause higher CPU usage of the plugin (since v2.2.0).
 
@@ -243,7 +266,9 @@ A typical workflow will look like this:
 
 Stored module-mappings can be recalled by context menu option _Apply mapping_ or hotkey Shift+V while hovering MIDI-CAT or using the button on the panel of MEM. The cursor changes to a crosshair and the MIDI-mapping is loaded into MIDI-CAT after you click on a panel of module in your patch and MEM contains a mapping for this module-type.
 
+<!-- manual:exclude -->
 ![MEM workflow](./MidiCat-Mem.gif)
+<!-- /manual:exclude -->
 
 MEM should be considered as a sort of "memory-unit" for MIDI-CAT: The module-specific mappings are saved inside the MEM-module and can be exported using Rack's preset functionality on the context menu. This means you can reuse the same mappings in different instances of MIDI-CAT or multiple patches, independently of any current mapping of MIDI-CAT.
 
@@ -252,7 +277,9 @@ MEM is not designed to map and recall mappings for different types of modules th
 <a name="mem-scan"></a>
 Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your patch from top-left to bottom-right and apply a stored mapping to the next/previous module of the current mapped module. Modules without a mapping available in MEM will be skipped while scanning obviously. This function is especially useful when triggering _Next_ and _Prev_ with a MIDI controller which allows you to control your patch without touching the mouse or keyboard and without static mapping, for example.
 
+<!-- manual:exclude -->
 ![MEM workflow](./MidiCat-Mem-scan.gif)
+<!-- /manual:exclude -->
 
 Added in v2.2.0: MEM has a restriction list to restrict the modules considered by the buttons _Prev_ and _Next_. By default, all modules in the current patch are considered if the restriction list is empty. The restriction list is managed by selecting a group of modules and pushing "Save". 
 
@@ -270,7 +297,9 @@ CTX is a second companion module for MIDI-CAT: The expander allows you to name e
 
 CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used at the same time as the MEM-expander. The display can hold up to 8 characters for naming MIDI-CAT.
 
+<!-- manual:exclude -->
 ![CTX workflow](./MidiCat-Ctx.gif)
+<!-- /manual:exclude -->
 
 Additionally, MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also be mapped to a MIDI controller which allows you to start MIDI mapping by a MIDI message.
 
@@ -296,6 +325,7 @@ After fine-tuning is finished and gates on 10% input and 1/2/5% input are low, t
 
 FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](../stroke/Stroke.md) using keyboard hotkeys, for example.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.1.0
@@ -367,3 +397,5 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
 - v2.6.0
     - Ignore incoming MIDI messages while module is bypassed
     - Fixed incorrect 14-bit handling of CC32
+
+<!-- /manual:exclude -->

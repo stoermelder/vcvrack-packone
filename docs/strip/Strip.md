@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder STRIP
+<!-- /manual:exclude -->
 
 STRIP is a module for managing a strip of modules. A "strip" is a group of modules formed in a single row of Rack without any empty spaces between them, directly next to STRIP on the left or right side. STRIP provides functionality to disable, to randomize and to save or load strips of modules. Copy and paste is possible, too.
 
+<!-- manual:exclude -->
 ![STRIP Intro](./Strip-intro.gif)
+<!-- /manual:exclude -->
 
 STRIP uses Rack v1's expander-mechanism to traverse the modules in a group. Changing the modules in a strip is simply moving them a bit in Rack and creating an empty space between the rest of the modules. 
 
@@ -16,7 +20,9 @@ The sections _ON_, _OFF_ and _RAND_ provide CV control of options only available
 
 **Disclaimer: Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules if unexpected behavior occurs or high CPU usage is noticeable.**
 
+<!-- manual:exclude -->
 ![STRIP RAND](./Strip-rand.gif)
+<!-- /manual:exclude -->
 
 The modes for the _ON_-section are:
 
@@ -42,7 +48,9 @@ Added in v1.8.0: The option _Load with replace_ removes all attached modules dir
 
 When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.  
 
+<!-- manual:exclude -->
 ![STRIP copy and paste](./Strip-copy.gif)
+<!-- /manual:exclude -->
 
 <a name="preset"></a>
 Added in v1.8.0: The _Preset_ context menu option lists all vcvss-files stored in the folder \<Rack-user-folder\>/Stoermelder-P1/presets/Strip. The \<Rack-user-folder\> can be opened with the top‑most submenu item or according to the [official documentation](https://vcvrack.com/manual/FAQ#where-is-the-rack-user-folder). Subfolders are not supported at the moment.
@@ -55,6 +63,7 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
 
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.0.4
@@ -90,12 +99,25 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
     - Fixed missing module-id mapping when adding using STRIP (#402)
     - Added option to remove items from included/excluded parameters list
 
+<!-- /manual:exclude -->
+
+<!-- manual:exclude -->
 # stoermelder STRIP-BAY
+<!-- /manual:exclude -->
+<!-- manual:only
+### stoermelder STRIP-BAY
+-->
 
 STRIP-BAY is a companion module for STRIP: It is used to name some "patching-points" like a patch-bay in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-BAY modules can be used in a STRIP and mapped by identical text identifiers.
 
+<!-- manual:exclude -->
 [![STRIP-BAY usage](https://img.youtube.com/vi/xGKoQdN9K60/0.jpg)](https://www.youtube.com/watch?v=xGKoQdN9K60)
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=xGKoQdN9K60
+-->
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.9.0
@@ -111,3 +133,5 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
 - v2.7.0
     - Reduced resource consumption (one shared worker for all STRIP modules)
     - Fixed a background worker that could stall indefinitely
+
+<!-- /manual:exclude -->

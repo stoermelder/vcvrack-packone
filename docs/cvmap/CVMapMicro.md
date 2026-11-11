@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder µMAP
+<!-- /manual:exclude -->
 
 µMAP is a single slot of [CV‑MAP](./CVMap.md) with attenuation and an output port. Please refer to the [CV‑MAP](./CVMap.md) manual to see how this module works.
 
+<!-- manual:exclude -->
 ![µMAP Intro](./CVMapMicro-intro.png)
+<!-- /manual:exclude -->
 
 ### _OFFSET_
 
@@ -25,6 +29,7 @@ The input signal can be scaled using the trimpot from –200% to 200%; its defau
 
 - By default, parameter changes are not reported back to the plugin host when µMAP is used in a plugin version of VCV Rack. In v2.2.0, a context menu option was added to enable this behavior, which may increase CPU usage.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.0.2
@@ -37,3 +42,5 @@ The input signal can be scaled using the trimpot from –200% to 200%; its defau
     - Added input voltage display
 - v2.1.0
     - Improved mapping logic to allow more parameters to be mapped
+
+<!-- /manual:exclude -->

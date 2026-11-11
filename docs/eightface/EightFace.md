@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder 8FACE and 8FACEx2
 
 - [Usage](#usage)
@@ -9,16 +10,25 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its side and uses buttons and LEDs to manage each of its preset-slots. 8FACEx2 offers sixteen preset slots.
 
 **Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behavior (i.e. crashes) occurs or high CPU usage is noticeable.**
 
+<!-- manual:exclude -->
 ![8FACE Intro](./EightFace-intro.gif)
+<!-- /manual:exclude -->
 
+<!-- manual:exclude -->
 ### Amazing tutorial video from [Omri Cohen](https://omricohencomposer.bandcamp.com/)
 
 <a href="https://www.youtube.com/watch?v=S2j6W2nvuC8" target="_blank"><img src="https://img.youtube.com/vi/S2j6W2nvuC8/0.jpg" style="width:100%" /></a>
+
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=S2j6W2nvuC8
+-->
 
 ### Stability and performance
 
@@ -66,7 +76,9 @@ The fun begins when you use the port labelled _SLOT_ for selecting preset slots 
 There are different modes for _SLOT_-port available, configured by context menu option:
 
 
+<!-- manual:exclude -->
 ![8FACE sequencing](./EightFace-trig.gif)
+<!-- /manual:exclude -->
 
 | Mode | Description | Reset behavior |
 |------|-------------|------|
@@ -82,10 +94,13 @@ There are different modes for _SLOT_-port available, configured by context menu 
 | **C4** | This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on. Channel 2 on the _SLOT_-input responds to triggers to re-trigger the currently selected snapshot. | No effect |
 | **Arm** (renamed from "Clock" in v1.1.0) | This mode is a kind of buffered trigger: First apply a clock signal on _SLOT_. Then you "arm" any slot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows manual preset changes synchronized to a clock. | Clears the armed slot |
 
+<!-- manual:exclude -->
 ![8FACE arm mode](./EightFace-clock.gif)
+<!-- /manual:exclude -->
 
 With the option _Autoload first preset_ on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to acquire even more preset slots. The option _Autoload last active preset_ works the same way.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.0.5
@@ -128,3 +143,5 @@ With the option _Autoload first preset_ on the context menu you can autoload the
 - v2.7.0
     - Fixed crash in Rack plugin for certain modules if no plugin-window is open
     - Fixed "Autoload" setting not saved and not reliable working
+
+<!-- /manual:exclude -->

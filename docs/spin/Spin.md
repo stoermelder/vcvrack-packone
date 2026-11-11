@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder SPIN
+<!-- /manual:exclude -->
 
 SPIN is a utility module that converts mouse‑wheel events or middle mouse‑button clicks into triggers. It is especially useful with [SAIL](../sail/Sail.md): together they provide mouse‑wheel control of hovered parameters and fine‑control via the middle mouse‑button.
 
+<!-- manual:exclude -->
 ![SPIN intro](./Spin-intro.gif)
+<!-- /manual:exclude -->
 
 All ports of the module output a voltage of **10 V**. _INC_ and _DEC_ are used for positive and negative mouse‑wheel changes, respectively, while **M‑CLICK** outputs 10 V for middle‑mouse‑button events.
 
@@ -19,6 +23,7 @@ There are several options available in the context menu:
 
 Please note that you cannot use multiple instances of this module with the same settings; only the first instance will receive and handle events. However, you can use multiple instances with different modifiers.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.7.0
@@ -27,3 +32,5 @@ Please note that you cannot use multiple instances of this module with the same 
     - Improved transition between scrolling and parameter adjustments on hover (#260)
 - v2.0.0
     - Fixed middle mouse button handling in Rack v2 (#372)
+
+<!-- /manual:exclude -->

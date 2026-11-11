@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder ME
+<!-- /manual:exclude -->
 
 ME (_mouse enhancements_) is an experimental utility module which provides a screen overlay on parameter changes made by mouse.
 
+<!-- manual:exclude -->
 ![ME intro](./Me-intro.gif)
+<!-- /manual:exclude -->
 
 ### Overlay settings
 
@@ -18,9 +22,12 @@ The magnifier is a circular screen loupe that captures and magnifies the area ar
 - **Size (radius)**: Controls the radius of the display circle in pixels.
 - **Zoom factor**: Controls the magnification level.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.1.0
     - Added magnifier feature
 - v2.0.0
     - Fixed usage in multiple plugin-instances
+
+<!-- /manual:exclude -->

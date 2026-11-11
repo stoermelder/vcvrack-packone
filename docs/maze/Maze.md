@@ -1,10 +1,19 @@
+<!-- manual:exclude -->
 # stoermelder MAZE
+<!-- /manual:exclude -->
 
 MAZE is a random ratcheting sequencer with 4 independent outputs which run on a common 2-dimensional grid. This module is all about randomness and limitations, so you can't control everything.
 
+<!-- manual:exclude -->
 ![MAZE intro](./Maze-intro.png)
+<!-- /manual:exclude -->
 
+<!-- manual:exclude -->
 [Live stream](https://www.youtube.com/watch?v=pOcYGj1Qb9M) of [Omri Cohen](https://omricohencomposer.bandcamp.com/) using MAZE for sequencing.
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=pOcYGj1Qb9M
+-->
 
 ### The grid
 
@@ -36,13 +45,17 @@ The grid can be sized from 2×2 up to 32×32 with the slider on the context menu
 
 Each playhead has its own clock and reset port. Every clock‑trigger moves the playhead one cell forward according to the current progressing direction. A reset‑trigger returns the playhead to its start position, which can be set in the _Edit‑mode_ of the grid. Triggers on _CLK_ and _RESET_ of the yellow channel are normalized to the other ports if no cable is connected. Normalization can also be disabled (since v1.6.0).
 
+<!-- manual:exclude -->
 ![MAZE clock and reset](./Maze-clock.gif)
+<!-- /manual:exclude -->
 
 ### _TURN_ ports 
 
 A trigger on the _TURN_-port turns the current progressing direction of the playhead 90 degrees to the right or 180 degrees (this setting is found in _Edit‑mode_). Triggers of the yellow channel are normalized to the other ports. Normalization can also be disabled (since v1.6.0).
 
+<!-- manual:exclude -->
 ![MAZE turn](./Maze-turn.gif)
+<!-- /manual:exclude -->
 
 ### _SHIFT/L_ and _SHIFT/R_ ports
 
@@ -50,7 +63,9 @@ Triggers on _SHIFT/L_ or _SHIFT/R_ shift all playheads one lane to the left or t
 
 ### Edit-mode of the grid
 
+<!-- manual:exclude -->
 ![MAZE Edit-mode](./Maze-edit1.gif)
+<!-- /manual:exclude -->
 
 The grid can be switched to _Edit‑mode_ on the context menu. While in _Edit‑mode_ the reset‑positions of each playhead can be modified by drag and drop. Every time _RESET_ is triggered the respective playhead will return to this cell on the grid.
 
@@ -81,6 +96,7 @@ There are additional settings on the context menu of each playhead:
 
 - The module continues its normal operation while in *Edit‑mode*.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.3.0
@@ -95,3 +111,5 @@ There are additional settings on the context menu of each playhead:
   - Fixed broken reset‑behavior
 - v2.7.0
   - Improved rendering performance
+
+<!-- /manual:exclude -->

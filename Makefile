@@ -89,5 +89,6 @@ ifdef DEBUGPLUGIN
 endif
 
 
+include plugin-manual.mk
 include plugin-test.mk
 include plugin-check.mk

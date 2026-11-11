@@ -1,4 +1,6 @@
+<!-- manual:exclude -->
 # stoermelder RAW
+<!-- /manual:exclude -->
 
 RAW is a digital effect based on the dynamics of bistable systems, according to the work of:
 
@@ -11,11 +13,16 @@ RAW is a digital effect based on the dynamics of bistable systems, according to 
 
 Some contributions to the original implementation have been made by [Jatin Chowdhury](https://github.com/jatinchowdhury18) which improve the stability of the algorithm and add a parameter for nonlinearity asymmetry.
 
+<!-- manual:exclude -->
 ![RAW intro](./Raw-intro.png)
+<!-- /manual:exclude -->
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.8.0
     - Initial release
 - v1.9.0
     - Added basic limiting to prevent rare instabilities (#214)
+
+<!-- /manual:exclude -->

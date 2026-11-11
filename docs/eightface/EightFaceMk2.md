@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder 8FACE mk2
 
 - [Binding modules](#binding-modules)
@@ -9,6 +10,7 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 8FACE mk2 is a module for storing, recalling and sequencing different presets of any module in Rack. The _mk2_ version is an evolution of [8FACE](EightFace.md) and provides additional functions, inspired by [TRANSIT](../transit/Transit.md):
 
@@ -18,7 +20,9 @@
 
 **Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behavior occurs (i.e. crashes) or high CPU usage is noticeable.**
 
+<!-- manual:exclude -->
 ![8FACE mk2 intro](./EightFaceMk2-intro.gif)
+<!-- /manual:exclude -->
 
 ### Stability and performance
 
@@ -48,11 +52,15 @@ At least one module must be bound to 8FACE mk2 before the module can be used. It
 
 - **Bind module (left)** - Place any module in Rack to the left of 8FACE mk2. By selecting _Bind module (left)_ the module gets bound by 8FACE mk2.
 
+<!-- manual:exclude -->
 ![8FACE mk2 bind left](./EightFaceMk2-bind-left.gif)
+<!-- /manual:exclude -->
 
 - **Bind module (select one)** - Selecting _Bind module (select one)_ turns the mouse pointer into a crosshair. After you click on the panel of a module this module gets bound by 8FACE mk2.
 
+<!-- manual:exclude -->
 ![8FACE mk2 bind select](./EightFaceMk2-bind-select.gif)
+<!-- /manual:exclude -->
 
 - **Bind modules (select multiple)** - Same as _Bind module (select one)_ but allows selecting multiple modules in a row. Click on some empty space to stop the binding process.
 - **Bind modules (current selection)** - Binds all modules which are currently selected (red shading in Rack).
@@ -61,17 +69,23 @@ At least one module must be bound to 8FACE mk2 before the module can be used. It
 
 Modules can be unbound at any point by context menu option. Please note that presets in snapshots won't be deleted for unbound modules.
 
+<!-- manual:exclude -->
 ![8FACE mk2 bind select](./EightFaceMk2-unbind.gif)
+<!-- /manual:exclude -->
 
 All bound modules are decorated with a colored bounding box. The color of the box can be changed in the context menu or it can be disabled completely.
 
+<!-- manual:exclude -->
 ![8FACE mk2 bind select](./EightFaceMk2-box.gif)
+<!-- /manual:exclude -->
 
 ### Saving snapshots in write-mode
 
 Write-mode is used to save snapshots in 8FACE mk2 after some modules have been bound: A snapshot consists of the presets of all bound modules. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short-press one of the 8 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
 
+<!-- manual:exclude -->
 ![8FACE mk2 write-mode](./EightFaceMk2-write.gif)
+<!-- /manual:exclude -->
 
 There are also some options on the context menu of the snapshot-buttons:
 
@@ -83,7 +97,9 @@ There are also some options on the context menu of the snapshot-buttons:
 - **Shift front** (added in v1.10.0) - Moves all snapshots one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
 - **Shift back** (added in v1.10.0) - Moves all snapshots one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffected.
 
+<!-- manual:exclude -->
 ![8FACE mk2 write-mode](./EightFaceMk2-write-context.gif)
+<!-- /manual:exclude -->
 
 A blinking white LED signals the snapshot that was last applied. Please keep in mind that you can change bound modules manually and these changes will not be recognized by 8FACE mk2.
 
@@ -97,7 +113,9 @@ Auto-mode (added in v2.0.0) stores presets automatically to the current slot rig
 
 The fun begins when you use the port labelled _CV_ for selecting snapshots by CV. Although there are 8 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
 
+<!-- manual:exclude -->
 ![8FACE mk2 CV-port](./EightFaceMk2-sel.gif)
+<!-- /manual:exclude -->
 
 Modes for _CV_ on the contextual menu. The **RESET** input restarts the sequence based on the mode:
 
@@ -121,7 +139,9 @@ Modes for _CV_ on the contextual menu. The **RESET** input restarts the sequence
 
 Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE mk2 does and the setup is done analogously. +8 itself provides no further options.
 
+<!-- manual:exclude -->
 ![+8 expander](./EightFaceMk2-8.gif)
+<!-- /manual:exclude -->
 
 ### Tips
 
@@ -133,6 +153,7 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 - [GLUE](../glue/Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.9.0
@@ -165,3 +186,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Fixed inefficient implementation of _Safe mode_/_Unsafe mode_/_Unsafe fast mode_
     - Fixed crash in Rack plugin for certain modules if no plugin-window is open
     - Fixed a background worker that could stall indefinitely
+
+<!-- /manual:exclude -->

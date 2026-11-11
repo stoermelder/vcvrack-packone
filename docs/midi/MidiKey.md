@@ -1,4 +1,6 @@
+<!-- manual:exclude -->
 # stoermelder MIDI-KEY
+<!-- /manual:exclude -->
 
 MIDI-KEY is a utility module for converting MIDI messages from your MIDI controller to keyboard events. It allows triggering hotkeys directly from MIDI.
 
@@ -7,6 +9,7 @@ MIDI-KEY is a utility module for converting MIDI messages from your MIDI control
 - Visual feedback: The module highlights active mappings for clarity.
 - Save and load presets: Store your mappings for reuse across projects.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.0.0
@@ -17,3 +20,5 @@ MIDI-KEY is a utility module for converting MIDI messages from your MIDI control
     - Fixed occasional crash in browser preview
 - v2.6.0
     - Ignore incoming MIDI messages while module is bypassed
+
+<!-- /manual:exclude -->

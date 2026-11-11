@@ -1,4 +1,6 @@
+<!-- manual:exclude -->
 # stoermelder BOLT
+<!-- /manual:exclude -->
 
 BOLT is a module that applies various boolean functions to up to four input signals. "Another module for boolean functions," you might ask? It offers two special twists:
 
@@ -8,7 +10,9 @@ BOLT is a module that applies various boolean functions to up to four input sign
 
 It also includes rarely available functions such as [NAND](https://en.wikipedia.org/wiki/Sheffer_stroke) and [NOR](https://en.wikipedia.org/wiki/Logical_NOR).
 
+<!-- manual:exclude -->
 ![BOLT Intro](./Bolt-intro.gif)
+<!-- /manual:exclude -->
 
 This module integrates several boolean‑logic modules into a single compact housing and combines them with a sequential switch or a signal router.
 
@@ -26,7 +30,9 @@ The _OP_ port modulates the boolean function. It is monophonic. In the context m
 
 - **Trigger** – When a trigger is received, the module advances to the next function, as if the button were pressed.
 
+<!-- manual:exclude -->
 ![BOLT Op](./Bolt-op.gif)
+<!-- /manual:exclude -->
 
 ### Input ports
 
@@ -42,7 +48,10 @@ The module offers three output modes:
 
 - **Trigger on change** – The module outputs a trigger whenever the boolean function changes.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.0.2
     - Initial release
+
+<!-- /manual:exclude -->

@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder SAIL
+<!-- /manual:exclude -->
 
 SAIL is a utility module. It allows you to control any module parameter which is currently hovered by the mouse pointer with CV.
 
+<!-- manual:exclude -->
 ![SAIL intro](./Sail-intro.png)
+<!-- /manual:exclude -->
 
 This module is especially helpful when used with VCV MIDI‑CC: you can map a specific MIDI CC and change any parameter currently hovered with the same control on your MIDI device. The indicator LED on top of the module signals when a parameter is hovered.
 
@@ -11,7 +15,9 @@ This module is especially helpful when used with VCV MIDI‑CC: you can map a 
 There are two modes available on the context menu for the _IN_-port:  
 In "Differential" mode, the voltage delta is applied to the current value of the hovered parameter. If the Shift key is held or the _MOD_ port is high (≥ 1V), the precision is increased tenfold. In "Absolute" mode, the input voltage (0..10V) is directly mapped onto the parameter’s range.
 
+<!-- manual:exclude -->
 ![SAIL OUT-port](./Sail-absolute.gif)
+<!-- /manual:exclude -->
 
 ### _INC_/_DEC_-ports
 
@@ -21,13 +27,17 @@ SAIL supports triggers to increment or decrement the hovered parameter; the _STE
 
 The _SLEW_ parameter and input port smooth changes applied to the hovered parameter, reducing “steppiness”.
 
+<!-- manual:exclude -->
 ![SAIL slew](./Sail-slew.gif)
+<!-- /manual:exclude -->
 
 ### _OUT_-port
 
 Additionally, the module can convert the current value of the hovered parameter to voltage on the _OUT_ port. In Reduced mode, only changes made by SAIL update the output voltage; in Full mode, all changes (mouse or MIDI mapping) update the output voltage.
 
+<!-- manual:exclude -->
 ![SAIL OUT-port](./Sail-out.gif)
+<!-- /manual:exclude -->
 
 ### Tips
 
@@ -38,8 +48,11 @@ Additionally, the module can convert the current value of the hovered parameter 
 <a name="overlay"></a>
 - SAIL uses an overlay window that displays parameter changes at the bottom of the screen (since v1.9.0). The overlay is enabled by default and can be disabled via the context menu. Appearance adjustments can be made with the [stoermelder ME](../trial-and-error/Me.md) module.
 
+<!-- manual:exclude -->
 ![SAIL overlay](./Sail-overlay.gif)
+<!-- /manual:exclude -->
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.5.0
@@ -49,3 +62,5 @@ Additionally, the module can convert the current value of the hovered parameter 
     - Added overlay showing current parameter changes on the bottom of the screen
 - v2.3.0
     - Fixed occasional crash (#358)
+
+<!-- /manual:exclude -->

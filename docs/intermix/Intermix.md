@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder INTERMIX
 
 - [Basic Usage](#basic-usage)
@@ -10,6 +11,7 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 INTERMIX is a precision adder matrix featuring 8 inputs and 8 outputs. The module allows you to mix any combination of inputs and route them to any output using a grid of toggle pads. INTERMIX supports scene-based preset storage with smooth fading between scenes and multiple input modes including constant voltages.
 
@@ -119,13 +121,17 @@ INTERMIX supports three expander modules that extend its functionality. Expander
 
 The INTERMIX-GATE expander outputs a 10V gate signal whenever at least one pad in a row is active. This is useful for generating gate signals that correspond to which outputs are currently active.
 
+<!-- manual:exclude -->
 ![INTERMIX-GATE expander](./Intermix-gate.gif)
+<!-- /manual:exclude -->
 
 ### INTERMIX-ENV Expander
 
 The INTERMIX-ENV expander outputs envelope or gate signals for each input column. When fading is enabled, it outputs envelope shapes following the fade curves; otherwise it outputs simple gate signals.
 
+<!-- manual:exclude -->
 ![INTERMIX-ENV expander](./Intermix-env.gif)
+<!-- /manual:exclude -->
 
 - **Fade-aware** - If _FADE_ is enabled and an input uses "Linear fade" mode, outputs an envelope shape
 - **Column selection** - The expander tracks the currently selected column
@@ -134,7 +140,9 @@ The INTERMIX-ENV expander outputs envelope or gate signals for each input column
 
 The INTERMIX-FADE expander provides individual fade-in and fade-out control for each pad of a specific input column. This allows precise timing control for each input when using linear fade mode.
 
+<!-- manual:exclude -->
 ![INTERMIX-FADE expander](./Intermix-fade.gif)
+<!-- /manual:exclude -->
 
 1. Select which input column the expander should control (shown on the expander display)
 2. For each pad in that column, set custom fade-in and fade-out times
@@ -160,6 +168,7 @@ The maximum fade time can be set in the context menu (4s, 15s, or 60s). The defa
 
 - Attenuverters can be excluded from scene storage if you want to keep them consistent across scenes
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.4.0
@@ -183,3 +192,5 @@ The maximum fade time can be set in the context menu (4s, 15s, or 60s). The defa
     - Added fade length setting (4s, 15s, 60s) (#432)
     - Added reset input for resetting scene selection (#433)
     - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
+
+<!-- /manual:exclude -->

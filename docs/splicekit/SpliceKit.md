@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder SPLICE-KIT
 
 - [Port assignment](#port-assignment)
@@ -15,6 +16,7 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a single port anywhere in the current patch, and pressing two buttons creates or removes a cable between them — turning cable-heavy patching into something you can play from a grid controller.
 
@@ -296,7 +298,10 @@ Each of these cables is still added or removed one at a time behind the scenes �
 - MIDI-triggered scene switches happen off the audio thread already, so SPLICE-KIT itself never freezes waiting on this — but the momentary engine pause for each cable change still happens and can still be heard.
 - If you plan to switch scenes or trigger Randomize live, it's worth testing that specific transition beforehand at your actual buffer size to confirm it's clean, rather than discovering an audible click during a performance.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v2.6.0
     - Initial release of SPLICE-KIT
+
+<!-- /manual:exclude -->

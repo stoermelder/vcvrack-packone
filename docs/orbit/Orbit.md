@@ -1,8 +1,12 @@
+<!-- manual:exclude -->
 # stoermelder ORBIT
+<!-- /manual:exclude -->
 
 ORBIT is a module designed for use in polyphonic scenarios, allowing precise control over the panning of each channel/voice within a stereo image.
 
+<!-- manual:exclude -->
 ![ORBIT Intro](./Orbit-intro.png)
+<!-- /manual:exclude -->
 
 ### Inputs and Controls
 
@@ -36,9 +40,12 @@ ORBIT offers various methods for generating random panning positions, controlled
 
 The output can be configured as polyphonic (with the same number of channels as _IN_) or summed to single channels for left and right.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.9.0
   - Initial release
 - v2.0.0
   - Added output level control (#286)
+
+<!-- /manual:exclude -->

@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder TRANSIT
 
 - [Binding parameters](#binding-parameters)
@@ -13,12 +14,19 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 TRANSIT is a utility module for morphing parameters of other modules from one "snapshot" to another utilizing Rack's parameter-mapping functionality. The module provides 12 snapshot-slots and can be extended with up to fifteen extender-modules called +T.
 
 There is a nice [video overview](https://www.youtube.com/watch?v=qnjBrlkcYOw) from [Artem Leonov](https://artemleonov.bandcamp.com/) of _VCV Rack Ideas_ showcasing a preview-build of TRANSIT.
 
+<!-- manual:only
+https://www.youtube.com/watch?v=qnjBrlkcYOw
+-->
+
+<!-- manual:exclude -->
 ![TRANSIT intro](./Transit-intro.gif)
+<!-- /manual:exclude -->
 
 ### Binding parameters
 
@@ -26,17 +34,23 @@ At least one parameter (knob, fader, switch...) must be bound to TRANSIT before 
 
 - **Bind module (left)** - Place any module in Rack to the left of TRANSIT. By selecting _Bind module (left)_ all parameters of the module get bound by TRANSIT.
 
+<!-- manual:exclude -->
 ![TRANSIT bind left](./Transit-bind-left.gif)
+<!-- /manual:exclude -->
 
 - **Bind module (select)** - Selecting _Bind module (select)_ turns the mouse pointer into a crosshair. After you click on the panel of a module all parameters of this module get bound by TRANSIT.
 
+<!-- manual:exclude -->
 ![TRANSIT bind select](./Transit-bind-select.gif)
+<!-- /manual:exclude -->
 
 - **Bind single parameter** - Selecting _Bind single parameter_ turns the mouse pointer into a crosshair. After you click on a parameter of any module this parameter gets bound by TRANSIT.
 
 - **Bind multiple parameters** - This mode works the same way as _Bind single parameter_ except the binding mode is not disabled automatically and multiple parameters can be bound in a row.
 
+<!-- manual:exclude -->
 ![TRANSIT bind parameter](./Transit-bind-param.gif)
+<!-- /manual:exclude -->
 
 TRANSIT is designed to bind parameters from different modules at the same time and technically there is no limitation on the number of parameters which can be bound. Please note that the CPU usage for morphing between snapshots increases linearly with the number of bound parameters.
 
@@ -46,7 +60,9 @@ Parameters can be unbound at any point by unmapping the mapping indicator. Pleas
 
 Write-mode is used to save snapshots in TRANSIT after some parameters have been bound: A snapshot consists of the values all bound parameters are currently set to. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short-press one of the 12 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
 
+<!-- manual:exclude -->
 ![TRANSIT write-mode](./Transit-write.gif)
+<!-- /manual:exclude -->
 
 There are also some options on the context menu of the snapshot-buttons:
 
@@ -58,7 +74,9 @@ There are also some options on the context menu of the snapshot-buttons:
 - **Shift front** (added in v1.10.0) - Moves all snapshots one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
 - **Shift back** (added in v1.10.0) - Moves all snapshots one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffected.
 
+<!-- manual:exclude -->
 ![TRANSIT write-mode](./Transit-write-context.gif)
+<!-- /manual:exclude -->
 
 A blinking white LED signals the snapshot that was last applied to the parameters. Please keep in mind that you can change bound parameters manually which will not be recognized by TRANSIT.
 
@@ -68,7 +86,9 @@ In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
 
 Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots to the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot; this duration can also be controlled by CV (0–10 V). The CV input is always additive — it adds to the global _FADE_ knob when a slot uses the default fade time, and it adds to the per-slot fade time when a slot has its own fade setting. There is also a trimpot for setting the shape of the transition; in the middle position, the parameters are morphed linearly.
 
+<!-- manual:exclude -->
 ![TRANSIT morph](./Transit-morph.gif)
+<!-- /manual:exclude -->
 
 TRANSIT provides several precision-settings on the contextual menu which influence the CPU usage when morphing snapshots: Audio rate, Lower CPU (1/8), Lowest CPU (1/64, default in standalone Rack), Even lower CPU (1/256, default in plugin mode) and Crazy low CPU (1/1024).
 
@@ -99,7 +119,9 @@ Modes for _SEL_ on the contextual menu. The _RESET_ input restarts the sequence 
 | **Arm** | This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. | Clears the armed snapshot |
 | **Phase** (added in v1.9.0) | This mode behaves differently than the other modes: An input voltage of 0–10V scans continuously through the stored snapshots. A voltage of 0V sets the parameters to the first usable snapshot, and 10V sets the parameters to the last active snapshot (as set via "Set as last"); in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider. | No effect |
 
+<!-- manual:exclude -->
 ![TRANSIT SEL-port](./Transit-sel.gif)
+<!-- /manual:exclude -->
 
 ### _OUT_-port
 
@@ -119,7 +141,9 @@ TRANSIT brings an _OUT_-port for different purposes:
 
 Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
+<!-- manual:exclude -->
 ![TRANSIT OUT-port](./Transit-out.gif)
+<!-- /manual:exclude -->
 
 ### Fade time
 
@@ -147,7 +171,9 @@ TRANSIT provides 12 snapshot-slots and supports extending this number with +T ex
 
 Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
 
+<!-- manual:exclude -->
 ![+T expander](./Transit-t.gif)
+<!-- /manual:exclude -->
 
 ### Transit-Pad expander
 
@@ -310,6 +336,7 @@ Right-clicking on the empty area of the XY-display opens the following menu. The
 
 - Parameter changes are not reported back to the plugin-host by default if TRANSIT is used in a plugin-version of VCV Rack. In v2.1.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.7.0
@@ -357,3 +384,5 @@ Right-clicking on the empty area of the XY-display opens the following menu. The
     - Fixed "Bind parameters by selection" when spanning multiple modules
 - v2.7.0
     - Added color setting for mapping indicators
+
+<!-- /manual:exclude -->

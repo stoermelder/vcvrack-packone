@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder GLUE
 
 - [Basic Usage](#basic-usage)
@@ -8,10 +9,13 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 GLUE is a utility module that provides the ability to put small text labels on modules in VCV Rack. Labels can be used to annotate modules, mark important settings, or add notes to your patches.
 
+<!-- manual:exclude -->
 ![GLUE intro](./Glue-intro.png)
+<!-- /manual:exclude -->
 
 ### Basic Usage
 
@@ -19,7 +23,9 @@ Labels can be placed after arming the labeling mode by pressing the _LABEL_ butt
 
 After a new label is placed, GLUE automatically unlocks itself: In *locked mode* (LED lit in yellow) all labels are transparent to actions and cannot be edited. In *unlocked mode* (LED off) labels can be moved within the boundaries of their modules and edited via the context menu.
 
+<!-- manual:exclude -->
 ![GLUE labeling](./Glue-label.gif)
+<!-- /manual:exclude -->
 
 While in *unlocked mode*, you can use the hotkey Ctrl+G to place a label at the current mouse position and Ctrl+X to remove a label while hovering over it.
 
@@ -49,7 +55,9 @@ While each label keeps its own settings for appearance, the module provides defa
 
 By default, each label receives a small random skew upon placement to create a natural look. If you prefer a clean, aligned appearance, skewing can be disabled via the context menu.
 
+<!-- manual:exclude -->
 ![GLUE skew](./Glue-skew.gif)
+<!-- /manual:exclude -->
 
 ### Label Customization
 
@@ -76,6 +84,7 @@ Since v1.9.0, GLUE can consolidate multiple instances of itself in a patch. If y
 
 - GLUE supports labels within stoermelder STRIP-files (since v1.7.0). Ensure GLUE is included in your strip-file for labels to persist.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.6.0
@@ -97,3 +106,5 @@ Since v1.9.0, GLUE can consolidate multiple instances of itself in a patch. If y
     - Added option to add labels to cables (#247)
 - v2.7.0
     - Fixed lost cable labels on "Consolidate GLUE"
+
+<!-- /manual:exclude -->

@@ -1,11 +1,15 @@
+<!-- manual:exclude -->
 # stoermelder MIDI-PLUG
+<!-- /manual:exclude -->
 
 MIDI-PLUG is a utility module for MIDI routing that enables:
 - Merging messages from different MIDI ports
 - Filtering MIDI messages by channel
 - Duplicating messages to two separate output ports
 
+<!-- manual:exclude -->
 ![MIDI-PLUG intro](./MidiPlug-intro.png)
+<!-- /manual:exclude -->
 
 Each of the two output ports (located in the lower section) can be configured in different operating modes:
 
@@ -21,6 +25,7 @@ Additionally, the input ports (upper section) also support MIDI channel filterin
 
 Note: System messages always pass through unaffected in all modes.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.9.0
@@ -29,3 +34,5 @@ Note: System messages always pass through unaffected in all modes.
   - Removed MIDI "Loopback" driver as a dedicated loopback driver is available in Rack 2.2.0
 - v2.6.0
   - Ignore incoming MIDI messages while module is bypassed
+
+<!-- /manual:exclude -->

@@ -1,12 +1,25 @@
+<!-- manual:exclude -->
 # stoermelder MB
+<!-- /manual:exclude -->
 
 MB is a module for experimental replacement for Rack's module browser, formerly available in stoermelder's PackTau. It brings back the browser from Rack v0.6x and has a modified browsers from Rack v1.x and v2.x with adjustable preview size, favorites, extended filtering options, custom tags and more.
 
+<!-- manual:exclude -->
 ![MB intro](./Mb-intro.png)
+<!-- /manual:exclude -->
 
 ### Introduction by Omri Cohen
 
-<a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>
+<!-- manual:exclude -->
+<a href="https://www.youtube.com/watch?v=7DSTPIHWOVg&t=1639s" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>
+
+<a href="https://www.youtube.com/watch?v=0HPpTFtqhCw" target="_blank"><img src="https://img.youtube.com/vi/0HPpTFtqhCw/0.jpg" style="width:100%" /></a>
+<!-- /manual:exclude -->
+<!-- manual:only
+https://www.youtube.com/watch?v=7DSTPIHWOVg&t=1639s
+
+https://www.youtube.com/watch?v=0HPpTFtqhCw
+-->
 
 ## Custom tags
 
@@ -219,6 +232,7 @@ the same either way; only the moment they are prepared changes. Preparation paus
 scroll, search or zoom, and uses only leftover time within a frame, so it never delays the browser
 itself. Disabled by default.
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.8
@@ -274,3 +288,5 @@ itself. Disabled by default.
     - Fixed "Newest" module manifest download if Rack user folder is on different disk
 - v2.x.x
     - Added hotkey `Ctrl+Shift+Space` to show only hidden modules in the browser
+
+<!-- /manual:exclude -->

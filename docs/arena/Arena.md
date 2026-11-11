@@ -1,3 +1,4 @@
+<!-- manual:exclude -->
 # stoermelder ARENA
 
 - [IN-ports and OUT-ports](#in-ports-and-out-ports)
@@ -10,10 +11,13 @@
 - [Changelog](#changelog)
 
 ### Overview
+<!-- /manual:exclude -->
 
 ARENA is a two-dimensional mixer with 8 inputs with 8 assigned outputs, 4 mixed outputs with 16 motion sequences each and various modulation options. In the center of the module is a big colorful screen that visualizes the positions of the inputs and outputs in two-dimensional space and their modulated parameters.
 
+<!-- manual:exclude -->
 ![ARENA Intro](./Arena-intro.gif)
+<!-- /manual:exclude -->
 
 The module produces no signal on its own.
 
@@ -31,9 +35,13 @@ The module has 8 input-ports with assigned controls for _Amount_ and _Radius_ an
 
 Each channel has several settings that can be changed by the context-menu of the small text-display or directly on the white circle in the center-screen.
 
+<!-- manual:exclude -->
 ![ARENA radius](./Arena-radius.gif)
+<!-- /manual:exclude -->
 
+<!-- manual:exclude -->
 ![ARENA amount](./Arena-amount.gif)
+<!-- /manual:exclude -->
 
 For visualization a line is drawn between a white (input) and yellow (mix) circle on the screen if the input is in range according to the radius. The brightness of the outer circle and the connecting line visuals the current amount-value of the input.
 
@@ -41,7 +49,9 @@ For visualization a line is drawn between a white (input) and yellow (mix) circl
 
 The position in 2D space of each input (and mix-output) can be changed by mouse on the center screen. Of course this is a module in virtual modular so there are CV inputs with assigned attenuverters for modulating x and y positions. The voltage range can be set to -5..5V or 0..10V, and note that attenuverters must be opened to use any input voltage.
 
+<!-- manual:exclude -->
 ![ARENA xy](./Arena-xy.gif)
+<!-- /manual:exclude -->
 
 ### _MOD_ ports
 
@@ -75,11 +85,15 @@ The mix output combines the signals from all input channels that fall within the
 
 Each of the 4 mixed outputs can be motion sequenced with up to 16 different motion paths. To enter edit mode, click on the number display of the mix channel. In edit mode, the number display is lit in red and the center screen shows "SEQ-EDIT" in the bottom corner. The start point of the motion is set by a left mouse click, and the motion is recorded by mouse movement with the left mouse button held down. To exit edit mode, click again on the number display.
 
+<!-- manual:exclude -->
 ![ARENA motion sequencing](./Arena-motion1.gif)
+<!-- /manual:exclude -->
 
 Additionally, there are some predefined motion paths that can be scaled in x/y directions and can be parameterized if available, like circles, saws, or spirals. A random path can also be generated.
 
+<!-- manual:exclude -->
 ![ARENA motion presets](./Arena-motion2.gif)
+<!-- /manual:exclude -->
 
 There are some edit options available to modify a recorded path or one of the presets: flip horizontally or flip vertically, and rotate. A path can also be copied and pasted to another sequencing slot.
 
@@ -127,8 +141,11 @@ Right-click on the main module panel (away from channels) to access these option
 
 The colored circles on the center screen representing inputs and mix outputs cannot be mapped to MIDI controls with modules like MIDI-MAP. Instead, ARENA has small "mapping circles" next to the CV inputs for X and Y positions that can be mapped like normal parameters.
 
+<!-- manual:exclude -->
 ![ARENA MIDI mapping](./Arena-map.gif)
+<!-- /manual:exclude -->
 
+<!-- manual:exclude -->
 ## Changelog
 
 - v1.3.0
@@ -153,3 +170,5 @@ The colored circles on the center screen representing inputs and mix outputs can
     - Fixed out-of-range sequence selection for _SEQ_-mode "0..10V"
     - Fixed "Scale" out-mode using the configured number of mix-ports
     - Fixed broken "Clear" in SEQ-EDIT mode
+
+<!-- /manual:exclude -->
