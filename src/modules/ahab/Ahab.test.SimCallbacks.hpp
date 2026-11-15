@@ -6,37 +6,39 @@
 #include "Ahab.test.hpp"
 
 
-TEST_CASE("Callbacks are invoked", "[AhabSim]") {
+TEST_CASE("Tick and reset notifications reach the right consumers", "[AhabSim]") {
 	AhabSim sim;
-	
-	bool ui_tick_called = false;
+
 	bool dsp_tick_called = false;
-	bool reset_called = false;
-	
-	sim.setUiTickCallback([&](Field const* f) {
-		ui_tick_called = true;
-	});
-	
+	bool dsp_reset_called = false;
+
 	sim.setDspTickCallback([&](Oevent_list const* events) {
 		dsp_tick_called = true;
 	});
-	
-	sim.setUiResetCallback([&]() {
-		reset_called = true;
+	sim.setDspResetCallback([&]() {
+		dsp_reset_called = true;
 	});
-	
-	// Step should trigger callbacks
+
+	// A step advances the display counter and calls the DSP tick callback.
+	uint32_t seq = sim.getDisplaySeq();
 	sim.stepRequest();
 	sim.process();
-	
-	REQUIRE(ui_tick_called == true);
 	REQUIRE(dsp_tick_called == true);
-	
-	// Reset should trigger reset callback
+	REQUIRE(sim.getDisplaySeq() != seq);
+
+	// A reset advances the reset epoch and calls the DSP reset callback.
+	uint32_t epoch = sim.getResetEpoch();
 	sim.resetRequest();
 	sim.process();
-	
-	REQUIRE(reset_called == true);
+	REQUIRE(dsp_reset_called == true);
+	REQUIRE(sim.getResetEpoch() != epoch);
+
+	// Replacing the field is a reset as well.
+	epoch = sim.getResetEpoch();
+	Usz h, w;
+	REQUIRE(sim.loadRectFromOrcaRequest("..\n..", 0, 0, h, w, true));
+	sim.process();
+	REQUIRE(sim.getResetEpoch() != epoch);
 }
 
 TEST_CASE("DSP reset callback fires on reset and field replace", "[AhabSim]") {

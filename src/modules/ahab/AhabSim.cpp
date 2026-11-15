@@ -640,7 +640,7 @@ void AhabSim::reset() {
 	oevent_list_clear(&oevent_list_);
 	tick_number_.store(0);
 
-	if (ui_reset_callback_ptr) ui_reset_callback_ptr();
+	resetEpoch.fetch_add(1, std::memory_order_release);
 	if (dsp_reset_callback_ptr) dsp_reset_callback_ptr();
 }
 
@@ -699,6 +699,7 @@ void AhabSim::replaceField(Glyph* cells, Usz nh, Usz nw) {
 	// Drop any events emitted by the previous field so they never fire against
 	// the newly loaded one (mirrors AhabSim::reset()).
 	oevent_list_clear(&oevent_list_);
+	resetEpoch.fetch_add(1, std::memory_order_release);
 	if (dsp_reset_callback_ptr) dsp_reset_callback_ptr();
 }
 
@@ -733,8 +734,7 @@ void AhabSim::step() {
 	orca_run(field_.buffer, mbuf_.buffer, field_.height, field_.width, t, &oevent_list_, random_seed_, &host_);
 	tick_number_.fetch_add(1, std::memory_order_relaxed);
 
-	// Call the callback without holding any locks
-	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
+	displaySeq.fetch_add(1, std::memory_order_release);
 	if (dsp_tick_callback_ptr) dsp_tick_callback_ptr(&oevent_list_);
 }
 
@@ -806,7 +806,7 @@ void AhabSim::process() {
 	}
 	exclusion.leaveDsp();
 
-	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
+	displaySeq.fetch_add(1, std::memory_order_release);
 }
 
 // Callback function for operator '<' to read CV port value

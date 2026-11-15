@@ -69,21 +69,13 @@ void primeAhabWidget(Test::Harness& h, AhabWidget* mw) {
 	h.events().select(mw->simWidget);
 }
 
-// Publishes module->sim's current buffer into simWidget->display_field, the same swap
-// drawLayer() does with the display_ready pointer (Ahab.cpp:856-866) minus the NVG drawing —
-// needed by the handful of shortcuts (Ctrl+Shift+7, Ctrl+C, Ctrl+X) that read display_field
-// rather than the sim's own live buffer, since a test never calls drawLayer(). field_copy()
-// allocates display_field.buffer via realloc if it's still the field_init()'d NULL (a raw
-// `.height =`/`.width =` assignment without this leaves buffer null and segfaults on first
-// read - see field_resize_raw() in dep/orca-c/field.c).
+// Publishes module->sim's current buffer into simWidget->display_field, the same copy the
+// widget's step() makes when the DSP has changed something - needed by the handful of shortcuts
+// (Ctrl+Shift+7, Ctrl+C, Ctrl+X) that read display_field rather than the sim's live buffer,
+// since these tests never run a frame.
 void syncDisplayField(AhabModule* m, AhabWidget* mw) {
-	Usz h, w;
-	m->sim->getDisplayBuffer(h, w);
-	Field src;
-	src.buffer = const_cast<Glyph*>(m->sim->getFieldBuffer());
-	src.height = (U16) h;
-	src.width = (U16) w;
-	field_copy(&src, &mw->simWidget->display_field);
+	(void)m;
+	mw->simWidget->takeDisplaySnapshot();
 }
 
 }
@@ -151,9 +143,11 @@ TEST_CASE("Ahab Widget: a remote select reaches the widget and repaints the disp
 	REQUIRE(s.cursor_x == 5); REQUIRE(s.cursor_y == 3);
 	REQUIRE(s.sel_x == 5); REQUIRE(s.sel_y == 3); REQUIRE(s.sel_w == 4); REQUIRE(s.sel_h == 2);
 
-	// The next DSP block publishes a tick, which dirties the framebuffer so the new
-	// selection is drawn even though the simulation is stopped.
+	// The next DSP block advances the display counter; the widget's next frame sees it and
+	// dirties the framebuffer, so the new selection is drawn even though the simulation is
+	// stopped.
 	h.dspStep();
+	mw->simWidget->step();
 	REQUIRE(fb->dirty);
 }
 
@@ -583,4 +577,39 @@ TEST_CASE("Ahab Widget: context menu reflects a rebound shortcut, not the old de
 	CHECK(copy->rightText == RACK_MOD_CTRL_NAME "+Q");
 
 	Keymaps::resetForTest();
+}
+
+
+TEST_CASE("Ahab Widget: step() copies the sim's field into display_field", "[ahab][widget]") {
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	m->simRunning = false;
+
+	m->sim->setFieldSizeRequest(5, 7, false);
+	m->sim->setGlyphRequest(2, 3, 'Q', Mark_flag_input, false);
+	stepSim(m);
+	mw->simWidget->step();
+
+	Field const& df = mw->simWidget->display_field;
+	REQUIRE(df.height == 5);
+	REQUIRE(df.width == 7);
+	REQUIRE(df.buffer[2 * 7 + 3] == 'Q');
+}
+
+TEST_CASE("Ahab Widget: a sim reset moves the cursor home on the next step()", "[ahab][widget]") {
+	Test::Harness h;
+	AhabModule* m = h.addModule<AhabModule>("Ahab");
+	AhabWidget* mw = addAhabWidget(h, m);
+	m->simRunning = false;
+	mw->simWidget->step();
+
+	mw->simWidget->editorApply([&](AhabEditorState& st) { st.setCursor(2, 3, 10, 10); });
+	REQUIRE(mw->simWidget->editor().cursor_x != 0);
+
+	m->sim->resetRequest();
+	m->process({});
+	mw->simWidget->step();
+	REQUIRE(mw->simWidget->editor().cursor_x == 0);
+	REQUIRE(mw->simWidget->editor().cursor_y == 0);
 }

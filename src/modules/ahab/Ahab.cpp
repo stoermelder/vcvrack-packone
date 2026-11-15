@@ -591,7 +591,8 @@ struct AhabSimWidget : OpaqueWidget {
 	// Scratch for serializing the selection of display_field (copy, save selection).
 	AhabClipboard clipboard;
 	Mbuf_reusable display_mbuf;
-	const Field* display_ready = nullptr;
+	uint32_t lastDisplaySeq_ = 0;
+	uint32_t lastResetEpoch_ = 0;
 
 	// Mouse handling: click to set cursor, drag to create a temporary selection
 	math::Vec mousePos;
@@ -663,9 +664,8 @@ struct AhabSimWidget : OpaqueWidget {
 		if (module) {
 			this->module = module;
 			// Set tick callback for display updates
-			module->sim->setUiTickCallback(std::bind(&AhabSimWidget::simTick, this, std::placeholders::_1));
-			module->sim->setUiResetCallback(std::bind(&AhabSimWidget::reset, this));
 			module->sim->notifyTick();
+			lastResetEpoch_ = module->sim->getResetEpoch();
 			reset();
 
 			keymap = registerActions();
@@ -683,10 +683,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	// Obtain a local snapshot of the simulator display read buffer
 	void takeDisplaySnapshot() {
-		if (display_ready) {
-			module->sim->copyForDisplay(&display_field, &display_mbuf);
-			display_ready = nullptr;
-		}
+		module->sim->copyForDisplay(&display_field, &display_mbuf);
 	}
 
 	inline void notifyUiChanged() { 
@@ -706,10 +703,22 @@ struct AhabSimWidget : OpaqueWidget {
 		notifyUiChanged();
 	}
 
-	// Tick callback from the simulator (called from DSP thread after step())
-	void simTick(const Field* f) {
-		display_ready = f;
-		notifyUiChanged();
+	// Once per frame on the UI thread: picks up what the DSP changed since the last frame. The
+	// audio thread only bumps counters, it never calls into the widget.
+	void step() override {
+		OpaqueWidget::step();
+		if (!module) return;
+		uint32_t epoch = module->sim->getResetEpoch();
+		if (epoch != lastResetEpoch_) {
+			lastResetEpoch_ = epoch;
+			reset();
+		}
+		uint32_t seq = module->sim->getDisplaySeq();
+		if (seq != lastDisplaySeq_) {
+			lastDisplaySeq_ = seq;
+			takeDisplaySnapshot();
+			notifyUiChanged();
+		}
 	}
 
 	void simClear() {
@@ -976,7 +985,6 @@ struct AhabSimWidget : OpaqueWidget {
 		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 25.f, topColor, bottomColor));
 		nvgFill(args.vg);
 
-		takeDisplaySnapshot();
 		// Draw the display field
 		renderer.draw(args.vg, &display_field, display_mbuf.buffer, box.size, editor(), module ? module->simRunning : false);
 

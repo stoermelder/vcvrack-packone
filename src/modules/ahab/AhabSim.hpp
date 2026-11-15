@@ -47,10 +47,6 @@ public:
 	Usz cvIn(Usz port, Usz a, Usz b);
 	void cvOut(Usz port, Usz a, Usz b, Usz value);
 
-	// Callback type for tick notifications to the UI object
-	using UiTickCallback = std::function<void(Field const*)>;
-	// Reset callback: used to notify when the sim has been reset
-	using UiResetCallback = std::function<void()>;
 	// Reset callback: used to notify DSP-side consumers (e.g. the module) when the
 	// sim has been reset or its field replaced, so they can drop pending state.
 	using DspResetCallback = std::function<void()>;
@@ -89,10 +85,6 @@ public:
 	void setRandomSeed(Usz seed) { random_seed_ = seed; }
 	Usz getRandomSeed() const { return random_seed_; }
 
-	void setUiTickCallback(UiTickCallback cb) {
-		ui_tick_callback_ptr = cb ? std::move(cb) : 0;
-	}
-
 	void setDspTickCallback(TickDspCallback cb) {
 		dsp_tick_callback_ptr = cb ? std::move(cb) : 0;
 	}
@@ -105,9 +97,11 @@ public:
 		dsp_output_writer_ptr = cb ? std::move(cb) : 0;
 	}
 
-	void setUiResetCallback(UiResetCallback cb) {
-		ui_reset_callback_ptr = cb ? std::move(cb) : 0;
-	}
+	// Change counters the UI polls once per frame instead of being called back from the audio
+	// thread. displaySeq advances whenever the field may have changed (after step() and after a
+	// command drain); resetEpoch advances when the sim is reset or its field replaced.
+	uint32_t getDisplaySeq() const { return displaySeq.load(std::memory_order_acquire); }
+	uint32_t getResetEpoch() const { return resetEpoch.load(std::memory_order_acquire); }
 
 	void setDspResetCallback(DspResetCallback cb) {
 		dsp_reset_callback_ptr = cb ? std::move(cb) : 0;
@@ -207,12 +201,8 @@ private:
 	std::atomic<Usz> tick_number_;
 	Usz random_seed_;
 
-	// Tick callback stored as a shared_ptr. We use the free functions
-	// std::atomic_load / std::atomic_store for atomic access without needing
-	// an std::atomic wrapper (these overloads are provided for shared_ptr).
-	UiTickCallback ui_tick_callback_ptr;
-	// Reset callback (stored atomically as shared_ptr)
-	UiResetCallback ui_reset_callback_ptr;
+	std::atomic<uint32_t> displaySeq{0};
+	std::atomic<uint32_t> resetEpoch{0};
 	// Reset callback for DSP-side consumers (e.g. the module)
 	DspResetCallback dsp_reset_callback_ptr;
 	// Callback for into DSP class
