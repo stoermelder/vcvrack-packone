@@ -242,5 +242,6 @@ Most of the shortcuts above can be changed in `<Rack user folder>/Stoermelder-P1
     - Undo and redo now restore the cursor and selection
     - Added support for "Light" ui theme
     - Fixed behavior of Copy/Pasting grid content with an active selection
+    - Fixed possible crashes when editing, undoing, saving or loading while playing, and when adding or removing a second AHAB
 
 <!-- /manual:exclude -->

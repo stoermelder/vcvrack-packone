@@ -40,5 +40,5 @@ static Test::TestContext<> testContext;
 // - Ahab.test.generator.hpp: AhabPatternBuffer + randomizer generation
 #include "Ahab.test.generator.hpp"
 
-// Two-thread DSP/UI stress test (hidden, run with FILTER='[threads]'), included last.
+// Two-thread DSP/UI stress test (run on its own with FILTER='[threads]'), included last.
 #include "Ahab.test.threads.hpp"

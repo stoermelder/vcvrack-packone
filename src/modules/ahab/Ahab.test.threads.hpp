@@ -6,10 +6,10 @@
 
 // Two-thread stress test: a real DSP thread runs process() while the test thread plays the UI.
 // Every other test in this binary drives both roles from one thread, so none of them can see a
-// data race between the two. It is hidden ([.threads]) because it is expected to crash or to
-// report races until the DSP/UI exclusion work lands; run it explicitly:
+// data race between the two. In the default (ASan) run it only has to not crash and not
+// deadlock; the real assertion is the thread sanitizer's report, which must show nothing but
+// tolerated dirty reads (see docs/ahab/Ahab_threading.md):
 //
-//   make -j8 DEBUGPLUGIN=1 testrun-one NAME=Ahab FILTER='[threads]'
 //   rm -rf build/test && make -j8 DEBUGPLUGIN=1 SANITIZER=thread testrun-one NAME=Ahab FILTER='[threads]'
 //
 // What the UI side exercises:
@@ -32,7 +32,7 @@ int ahabRunForMs(int ms, F fn) {
 }
 }
 
-TEST_CASE("Ahab Threads: DSP process() against UI display copy, edits, undo, resize and save", "[.threads][ahab]") {
+TEST_CASE("Ahab Threads: DSP process() against UI display copy, edits, undo, resize and save", "[threads][ahab]") {
 	Test::Harness h;
 	AhabModule* m = h.addModule<AhabModule>("Ahab");
 	AhabWidget* mw = addAhabWidget(h, m);
