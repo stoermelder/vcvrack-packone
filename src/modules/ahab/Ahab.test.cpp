@@ -39,3 +39,6 @@ static Test::TestContext<> testContext;
 // Headless pure-data tests (no sim, no widget), included last:
 // - Ahab.test.generator.hpp: AhabPatternBuffer + randomizer generation
 #include "Ahab.test.generator.hpp"
+
+// Two-thread DSP/UI stress test (hidden, run with FILTER='[threads]'), included last.
+#include "Ahab.test.threads.hpp"
