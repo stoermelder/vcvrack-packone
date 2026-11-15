@@ -74,13 +74,12 @@ bool AhabSim::convertFileToOrca(const std::string& path, std::string& outOrca, U
 	return true;
 }
 
-static std::unordered_map<void*, AhabSim*> callbackMap;
-
 AhabSim::AhabSim()
 	: tick_number_(0), random_seed_(0) {
-	// Register this instance for callback from the sim. This is thread-safe as 
-	// new instances are only created when the dsp engine is sychronized
-	callbackMap[(void*)&oevent_list_] = this;
+	// orca_run hands ctx back to the thunks, so this instance must stay at its address.
+	host_.ctx = this;
+	host_.cv_in = &AhabSim::cvInThunk;
+	host_.cv_out = &AhabSim::cvOutThunk;
 
 	// Initialize single buffer
 	field_init(&field_);
@@ -91,9 +90,6 @@ AhabSim::AhabSim()
 }
 
 AhabSim::~AhabSim() {
-	// Unregister this instance
-	callbackMap.erase((void*)&oevent_list_);
-
 	oevent_list_deinit(&oevent_list_);
 	mbuf_reusable_deinit(&mbuf_);
 	field_deinit(&field_);
@@ -719,7 +715,7 @@ void AhabSim::step() {
 	oevent_list_clear(&oevent_list_);
 
 	Usz t = tick_number_.load(std::memory_order_relaxed);
-	orca_run(field_.buffer, mbuf_.buffer, field_.height, field_.width, t, &oevent_list_, random_seed_);
+	orca_run(field_.buffer, mbuf_.buffer, field_.height, field_.width, t, &oevent_list_, random_seed_, &host_);
 	tick_number_.fetch_add(1, std::memory_order_relaxed);
 
 	// Call the callback without holding any locks
@@ -794,14 +790,10 @@ void AhabSim::process() {
 }
 
 // Callback function for operator '<' to read CV port value
-extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {
-	auto it = callbackMap.find(ptr);
-	if (it == callbackMap.end()) return 0;
-	AhabSim* sim = it->second;
-
+Usz AhabSim::cvIn(Usz port_num, Usz a, Usz b) {
 	// Numeric ports '1'..'4' -> index 1..4
 	if (port_num >= 1 && port_num <= 4) {
-		float v = sim->readDspInput(port_num - 1);
+		float v = readDspInput(port_num - 1);
 		float s = std::min(std::max(0.0f, std::roundf(v * 3.5f)), 35.0f);
 		Usz val = Usz(s * float(b - a) / 35.f) + a;
 		return val;
@@ -809,7 +801,7 @@ extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {
 
 	// Letter ports 'a'..'d' -> map V/oct to nearest note glyph
 	if (port_num >= 10 && port_num <= 13) {
-		float v = sim->readDspInput(port_num - 10);
+		float v = readDspInput(port_num - 10);
 		int semitone = int(std::roundf(v * 12.0f));
 		int s12 = semitone % 12;
 		return s12;
@@ -818,17 +810,21 @@ extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {
 	return 0;
 }
 
+Usz AhabSim::cvInThunk(void* ctx, Usz port, Usz a, Usz b) {
+	return static_cast<AhabSim*>(ctx)->cvIn(port, a, b);
+}
+
+void AhabSim::cvOutThunk(void* ctx, Usz port, Usz a, Usz b, Usz value) {
+	static_cast<AhabSim*>(ctx)->cvOut(port, a, b, value);
+}
+
 float AhabSim::readDspInput(size_t port_num) const {
 	if (dsp_input_reader_ptr) return dsp_input_reader_ptr(port_num);
 	return 0;
 }
 
 // Callback function for operator '>' to write CV port value
-extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value) {
-	auto it = callbackMap.find(ptr);
-	if (it == callbackMap.end()) return;
-	AhabSim* sim = it->second;
-
+void AhabSim::cvOut(Usz port_index, Usz a, Usz b, Usz value) {
 	// Numeric ports '1'..'4' => port_num 0..3.
 	// value is glyph index (0..35). Voltage should be step / 3.5 (so 35 -> 10V).
 	// a = min, b = max
@@ -838,7 +834,7 @@ extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value
 		if (b > a) {
 			voltage = float(s - a) / float(b - a) * 10.0f;
 		}
-		sim->writeDspOutput(port_index - 1, voltage, 0);
+		writeDspOutput(port_index - 1, voltage, 0);
 		return;
 	}
 
@@ -846,7 +842,7 @@ extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value
 	// a = octave, b = gate length
 	if (port_index >= 10 && port_index <= 13) {
 		float voltage = float(value + a * 12) / 12.0f;
-		sim->writeDspOutput(port_index - 10, voltage, b);
+		writeDspOutput(port_index - 10, voltage, b);
 		return;
 	}
 }

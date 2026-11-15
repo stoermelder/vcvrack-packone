@@ -36,9 +36,15 @@ public:
 	AhabSim();
 	~AhabSim();
 
-	// Non-copyable
+	// Pinned to its address: host_.ctx points at this instance.
 	AhabSim(const AhabSim&) = delete;
 	AhabSim& operator=(const AhabSim&) = delete;
+	AhabSim(AhabSim&&) = delete;
+	AhabSim& operator=(AhabSim&&) = delete;
+
+	// Host I/O for the '<' (CV in) and '>' (CV out) operators, called by orca_run on the DSP thread.
+	Usz cvIn(Usz port, Usz a, Usz b);
+	void cvOut(Usz port, Usz a, Usz b, Usz value);
 
 	// Callback type for tick notifications to the UI object
 	using UiTickCallback = std::function<void(Field const*)>;
@@ -184,7 +190,11 @@ private:
 	Field field_;
 	Mbuf_reusable mbuf_;
 
+	static Usz cvInThunk(void* ctx, Usz port, Usz a, Usz b);
+	static void cvOutThunk(void* ctx, Usz port, Usz a, Usz b, Usz value);
+
 	Oevent_list oevent_list_;
+	Orca_host host_;
 	std::atomic<Usz> tick_number_;
 	Usz random_seed_;
 
