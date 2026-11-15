@@ -8,7 +8,7 @@
 #include <vector>
 #include <cstdint>
 #include <dsp/ringbuffer.hpp>
-#include "AhabEditorState.hpp"
+#include "EditorState.hpp"
 #include "../../utils/UiDspExclusion.hpp"
 
 extern "C" {

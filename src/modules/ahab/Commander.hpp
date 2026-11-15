@@ -10,9 +10,9 @@
 #include <functional>
 #include <string>
 #include <midi.hpp>
-#include "AhabSim.hpp"
-#include "AhabEditorState.hpp"
-#include "AhabUdpOutput.hpp"
+#include "Sim.hpp"
+#include "EditorState.hpp"
+#include "UdpOutput.hpp"
 #include "../../utils/CommandLine.hpp"
 
 namespace StoermelderPackOne {

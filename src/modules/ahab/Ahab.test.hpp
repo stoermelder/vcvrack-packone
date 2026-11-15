@@ -13,7 +13,7 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
 #include "Ahab.hpp"
-#include "AhabSim.hpp"
+#include "Sim.hpp"
 
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Ahab;

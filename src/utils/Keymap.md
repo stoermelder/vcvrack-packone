@@ -4,7 +4,7 @@ A shared keyboard-mapping layer: a module registers its actions with default key
 rebind them in a file, and widgets attach behaviour to the actions. Used by Ahab and Mb.
 
 Files: [Keymap.hpp](Keymap.hpp), [Keymap.cpp](Keymap.cpp), tests in [Keymap.test.cpp](Keymap.test.cpp).
-Examples: [AhabKeymap.hpp](../modules/ahab/AhabKeymap.hpp), [MbKeymap.hpp](../modules/trial-and-error/MbKeymap.hpp).
+Examples: [Keymap.hpp](../modules/ahab/Keymap.hpp), [MbKeymap.hpp](../modules/trial-and-error/MbKeymap.hpp).
 
 GUI thread only. Never reachable from `process()`.
 

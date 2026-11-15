@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 #include "modules/midiesx/MidiEsx.hpp"
-#include "modules/ahab/AhabMidiDriver.hpp"
+#include "modules/ahab/MidiDriver.hpp"
 
 Plugin* pluginInstance;
 

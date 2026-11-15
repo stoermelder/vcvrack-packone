@@ -1,7 +1,7 @@
 #include "../../plugin.hpp"
-#include "AhabRenderer.hpp"
+#include "Renderer.hpp"
 #include "Ahab.hpp"
-#include "AhabEditorState.hpp"
+#include "EditorState.hpp"
 #include "../../ui/DisplayTheme.hpp"
 #include <cmath>
 #include <nanovg.h>

@@ -1,7 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "AhabSim.hpp"
-#include "AhabScratchPad.hpp"
+#include "Sim.hpp"
+#include "ScratchPad.hpp"
 #include <cstdint>
 #include <vector>
 #include <functional>

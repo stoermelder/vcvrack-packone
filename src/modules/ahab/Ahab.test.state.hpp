@@ -5,7 +5,7 @@
 // Included by Ahab.test.cpp.
 
 #include "../../test/test_plugin.hpp"
-#include "AhabEditorState.hpp"
+#include "EditorState.hpp"
 
 using StoermelderPackOne::Ahab::AhabEditorState;
 

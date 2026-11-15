@@ -1,5 +1,5 @@
 #include "Ahab.generator.hpp"
-#include "AhabPatternScore.hpp"
+#include "PatternScore.hpp"
 #include <algorithm>
 #include <set>
 #include <cassert>

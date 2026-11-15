@@ -1,6 +1,6 @@
 #pragma once
-#include "AhabSim.hpp"
-#include "AhabScratchPad.hpp"
+#include "Sim.hpp"
+#include "ScratchPad.hpp"
 #include <algorithm>
 #include <limits>
 #include <map>

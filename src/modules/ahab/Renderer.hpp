@@ -3,7 +3,7 @@
 #include <orca-c/field.h>
 #include <orca-c/gbuffer.h>
 #include <nanovg.h>
-#include "AhabEditorState.hpp"
+#include "EditorState.hpp"
 
 namespace StoermelderPackOne {
 namespace Ahab {

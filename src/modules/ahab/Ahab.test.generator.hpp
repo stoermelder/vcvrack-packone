@@ -6,10 +6,10 @@
 
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
-#include "AhabScratchPad.hpp"
+#include "ScratchPad.hpp"
 #include "Ahab.generator.hpp"
-#include "AhabPatternScore.hpp"
-#include "AhabSim.hpp"
+#include "PatternScore.hpp"
+#include "Sim.hpp"
 #include "Ahab.test.hpp"
 
 #include <map>

@@ -8,13 +8,13 @@
 #include "../../ui/DisplayTheme.hpp"
 #include "../../utils/UdpInput.hpp"
 #include "orca_examples.hpp"
-#include "AhabSim.hpp"
-#include "AhabUdpOutput.hpp"
-#include "AhabKeymap.hpp"
-#include "AhabMidiDriver.hpp"
-#include "AhabRenderer.hpp"
-#include "AhabEditorState.hpp"
-#include "AhabCommander.hpp"
+#include "Sim.hpp"
+#include "UdpOutput.hpp"
+#include "Keymap.hpp"
+#include "MidiDriver.hpp"
+#include "Renderer.hpp"
+#include "EditorState.hpp"
+#include "Commander.hpp"
 #include "Ahab.generator.hpp"
 #include <array>
 #include <memory>
@@ -607,7 +607,7 @@ struct AhabSimWidget : OpaqueWidget {
 
 	// Shared, process-wide across every Ahab instance (Keymaps::open("Ahab") returns the same
 	// object); handlers are this widget's own and are destroyed with it. Populated in
-	// setModule() once module is known - see AhabKeymap.hpp / registerHandlers() below.
+	// setModule() once module is known - see Keymap.hpp / registerHandlers() below.
 	std::shared_ptr<Keymap> keymap;
 	KeymapHandlers handlers{nullptr};
 
@@ -1200,7 +1200,7 @@ struct AhabSimWidget : OpaqueWidget {
 	// Registers this widget's own behaviour against the shared keymap's action ids - called
 	// once from setModule() once module is known. Bodies are unchanged from the dispatcher
 	// this replaced; only the condition (an if-chain of key/mod checks) is replaced by an
-	// action id. See AhabKeymap.hpp's header comment for why navigation is 32 separate actions
+	// action id. See Keymap.hpp's header comment for why navigation is 32 separate actions
 	// instead of one per direction.
 	void registerHandlers() {
 		handlers.on("edit.clear.selection", [this]{ clearSelection(); });

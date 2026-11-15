@@ -14,10 +14,9 @@ namespace vcv {
 // ---- Swappable engine-query layer ----
 // APP->engine->getFrame() is read-only production API with no public setter, so a test harness
 // that drives its own frame counter (Test::Harness) cannot make the engine's answer agree with
-// it by assignment. Five plugin call sites read getFrame() directly rather than taking
-// args.frame — SpliceKit.cpp:542,563,601 stamp outgoing MIDI (msg.frame = getFrame() + 1/2), and
-// Ahab.cpp:410 / AhabMidiDriver.cpp:95 do the same — so under an un-seamed harness those stamps
-// were always 1 or 2 instead of a real frame.
+// it by assignment. Plugin code that reads getFrame() directly rather than taking args.frame
+// (for example to stamp outgoing MIDI with getFrame() + 1/2) would, under an un-seamed harness,
+// always stamp 1 or 2 instead of a real frame.
 //
 // Same shape as UiAccess::hasWindow(): a single read-only query, mockable so production code
 // asking through the seam gets the harness's counter under test without knowing it is being
