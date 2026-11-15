@@ -32,6 +32,13 @@
 #   Text shown in the manual only.
 #   -->
 #
+# A whole page is excluded with this marker as the first line of the file (exact text, so it
+# can be quoted elsewhere). Such a file is dropped before anything else runs: no page, no
+# duplicate-name check, no images copied for it. A module's "manualUrl" must not point to it.
+#
+#   <!-- manual:exclude-file -->
+#   # Developer notes
+#
 # On `make dist`, plugin.json is rewritten in place: manualUrl/changelogUrl entries pointing into
 # the repository (MANUAL_GITHUB) are pointed to the Library manual instead.
 #
@@ -71,9 +78,16 @@ manual:
 	@rm -rf $(MANUAL_DIR)
 	@mkdir -p $(MANUAL_DIR)
 	@set -e; \
-	dupes=`for f in $(MANUAL_SOURCES); do echo "$${f##*/}"; done | sort | uniq -d`; \
-	if [ -n "$$dupes" ]; then echo "error: duplicate manual page names: $$dupes" >&2; exit 1; fi; \
+	sources=""; excluded=""; \
 	for f in $(MANUAL_SOURCES); do \
+		first=""; IFS= read -r first < "$$f" || true; \
+		first=`printf '%s' "$$first" | tr -d '\r' | sed 's/[[:space:]]*$$//'`; \
+		if [ "$$first" = "<!-- manual:exclude-file -->" ]; then excluded="$$excluded $$f"; \
+		else sources="$$sources $$f"; fi; \
+	done; \
+	dupes=`for f in $$sources; do echo "$${f##*/}"; done | sort | uniq -d`; \
+	if [ -n "$$dupes" ]; then echo "error: duplicate manual page names: $$dupes" >&2; exit 1; fi; \
+	for f in $$sources; do \
 		case "$$f" in \
 			README.md) page=plugin.md ;; \
 			CHANGELOG.md) page=changelog.md ;; \
@@ -83,9 +97,16 @@ manual:
 			-v assets="$(MANUAL_DIR)/.assets" -v skipext='$(MANUAL_SKIP_EXT)' \
 			-f $(MANUAL_SCRIPTS)/manual.awk "$$f" > "$(MANUAL_DIR)/$$page"; \
 	done; \
-	awk -F'"' -v prefix="$(MANUAL_GITHUB)$(MANUAL_DOCS)/" '$$2 == "slug" { slug = $$4 } \
-		$$2 == "manualUrl" && index($$4, prefix) == 1 { page = $$4; sub(/#.*/, "", page); sub(/.*\//, "", page); print slug, page }' \
-		plugin.json | while read -r slug page; do \
+	awk -F'"' -v github="$(MANUAL_GITHUB)" -v prefix="$(MANUAL_GITHUB)$(MANUAL_DOCS)/" '$$2 == "slug" { slug = $$4 } \
+		$$2 == "manualUrl" && index($$4, prefix) == 1 { page = $$4; sub(/#.*/, "", page); sub(/.*\//, "", page); print slug, page, substr($$4, length(github) + 1) }' \
+		plugin.json | while read -r slug page path; do \
+		path="$${path%%#*}"; \
+		for x in $$excluded; do \
+			if [ "$$x" = "$$path" ]; then \
+				echo "error: manualUrl of module $$slug points to $$x, which is excluded by manual:exclude-file" >&2; \
+				exit 1; \
+			fi; \
+		done; \
 		if [ ! -f "$(MANUAL_DIR)/$$slug.md" ] && [ -f "$(MANUAL_DIR)/$$page" ]; then \
 			cp "$(MANUAL_DIR)/$$page" "$(MANUAL_DIR)/$$slug.md"; \
 		fi; \
