@@ -61,6 +61,19 @@ TEST_CASE("DSP reset callback fires on reset and field replace", "[AhabSim]") {
 	REQUIRE(reset_calls == 2);
 }
 
+TEST_CASE("Destroying a sim deletes the commands it never drained", "[AhabSim]") {
+	// Queued commands, two of them with heap cells payloads, and no process() before the
+	// destructor. ASan fails on a double free; LeakSanitizer (where the platform has it) on a leak.
+	auto sim = std::unique_ptr<AhabSim>(new AhabSim());
+	sim->setFieldSize(4, 4);
+	Usz h, w;
+	REQUIRE(sim->loadRectFromOrcaRequest("AB\nCD", 0, 0, h, w, false));  // PASTE_CELLS
+	REQUIRE(sim->loadRectFromOrcaRequest("..\n..", 0, 0, h, w, true));   // REPLACE_FIELD
+	sim->setGlyphRequest(1, 1, 'X');
+	sim->undoRequest();
+	sim.reset();
+}
+
 TEST_CASE("Reset and field replace clear pending events", "[AhabSim]") {
 	AhabSim sim;
 

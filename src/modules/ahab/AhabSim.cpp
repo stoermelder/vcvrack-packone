@@ -93,6 +93,12 @@ AhabSim::AhabSim()
 }
 
 AhabSim::~AhabSim() {
+	// Commands the DSP never drained (the module was removed while edits were queued) would
+	// otherwise leak, together with their cells payloads. Rack has already taken the module out
+	// of the engine, so no process() can run concurrently.
+	while (!ui_cmd_queue_.empty()) {
+		delete ui_cmd_queue_.shift();
+	}
 	oevent_list_deinit(&oevent_list_);
 	mbuf_reusable_deinit(&mbuf_);
 	field_deinit(&field_);
