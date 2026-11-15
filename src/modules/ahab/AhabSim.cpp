@@ -85,7 +85,10 @@ AhabSim::AhabSim()
 	field_init(&field_);
 	field_init_fill(&field_, 1, 1, '.');
 	mbuf_reusable_init(&mbuf_);
-	mbuf_reusable_ensure_size(&mbuf_, 1, 1);
+	// Sized for the largest field up front, so step() never reallocates the mark buffer outside
+	// the command drain (the UI copies it concurrently).
+	mbuf_reusable_ensure_size(&mbuf_, MAX_FIELD_HEIGHT, MAX_FIELD_WIDTH);
+	memset(mbuf_.buffer, 0, mbuf_.capacity);
 	oevent_list_init(&oevent_list_);
 }
 
@@ -95,8 +98,9 @@ AhabSim::~AhabSim() {
 	field_deinit(&field_);
 }
 
-// UI thread operation - no locking needed (single UI thread assumed)
+// UI thread only, enters a UI section
 json_t* AhabSim::toJson() const {
+	UiSection section(exclusion);
 	Field const* f = &field_;
 	json_t* j = json_object();
 	json_object_set_new(j, "height", json_integer((int)f->height));
@@ -161,8 +165,9 @@ bool AhabSim::loadFromFileRequest(const std::string& path) {
 	return true;
 }
 
-// UI thread operation - no locking needed
+// UI thread only, enters a UI section
 bool AhabSim::saveToFile(const std::string& path) {
+	UiSection section(exclusion);
 	FILE* f = fopen(path.c_str(), "w");
 	if (!f) {
 		return false;
@@ -240,8 +245,9 @@ void AhabSim::restoreEditor(const AhabEditorState& saved) {
 	});
 }
 
-// UI thread operation - no locking needed (single UI thread assumed)
+// UI thread only, enters a UI section
 bool AhabSim::pushUndo() {
+	UiSection section(exclusion);
 	if (undo_limit_ == 0) return false;
 	// If limit reached, pop front of undo_history_
 	if (undo_history_.size() == undo_limit_) {
@@ -274,6 +280,13 @@ Glyph const* AhabSim::getFieldBuffer() const {
 
 Mark const* AhabSim::getMbufBuffer() const {
 	return mbuf_.buffer;
+}
+
+void AhabSim::copyForDisplay(Field* out, Mbuf_reusable* outMarks) {
+	UiSection section(exclusion);
+	field_copy(&field_, out);
+	mbuf_reusable_ensure_size(outMarks, out->height, out->width);
+	if (mbuf_.buffer) memcpy(outMarks->buffer, mbuf_.buffer, (size_t)out->height * out->width * sizeof(Mark));
 }
 
 void AhabSim::notifyTick() {
@@ -570,8 +583,9 @@ Usz AhabSim::getUndoCount() const {
 	return (Usz)undo_history_.size();
 }
 
-// UI thread operation
+// UI thread only, enters a UI section
 void AhabSim::setUndoLimit(Usz limit) {
+	UiSection section(exclusion);
 	undo_limit_ = limit;
 	while (undo_history_.size() > undo_limit_) {
 		field_deinit(&undo_history_.front().f);
@@ -583,8 +597,9 @@ void AhabSim::setUndoLimit(Usz limit) {
 	}
 }
 
-// UI thread operation
+// UI thread only, enters a UI section
 void AhabSim::resetUndo() {
+	UiSection section(exclusion);
 	// Clear undo and redo history
 	while (!undo_history_.empty()) {
 		field_deinit(&undo_history_.front().f);
@@ -728,7 +743,11 @@ void AhabSim::process() {
 	// Fast-path: nothing pending
 	if (!pending_ui_update_.load(std::memory_order_acquire)) return;
 
-	// Clear the request
+	// The UI is reading the buffers or changing the undo history: leave the commands queued and
+	// retry on the next call. The flag stays set, so nothing is lost.
+	if (!exclusion.tryEnterDsp()) return;
+
+	// Clear the request (only after the section was entered, never before)
 	pending_ui_update_.store(false, std::memory_order_relaxed);
 
 	// Drain UI->DSP command queue and apply each command on the DSP buffer.
@@ -785,6 +804,7 @@ void AhabSim::process() {
 		}
 		delete cmd;
 	}
+	exclusion.leaveDsp();
 
 	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
 }

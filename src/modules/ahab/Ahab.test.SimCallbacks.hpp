@@ -105,3 +105,79 @@ TEST_CASE("Display buffer access is thread-safe", "[AhabSim]") {
 	REQUIRE(h1 == 10);
 	REQUIRE(w1 == 10);
 }
+
+
+// DSP/UI exclusion: while the UI is inside a section the command drain is skipped and the
+// commands stay queued until the section ends.
+
+TEST_CASE("Drain waits while a UI section is held and applies afterwards", "[AhabSim]") {
+	AhabSim sim;
+	sim.setFieldSizeRequest(5, 5, false);
+	sim.process();
+
+	sim.exclusion.enterUi();
+	sim.setGlyphRequest(1, 1, 'X', Mark_flag_input, true);
+	sim.process();
+	REQUIRE(sim.getFieldBuffer()[1 * 5 + 1] == '.');
+	sim.exclusion.leaveUi();
+
+	sim.process();
+	REQUIRE(sim.getFieldBuffer()[1 * 5 + 1] == 'X');
+}
+
+TEST_CASE("Request methods work inside an outer UI section", "[AhabSim]") {
+	AhabSim sim;
+	sim.setFieldSizeRequest(5, 5, false);
+	sim.process();
+
+	sim.exclusion.enterUi();
+	sim.setGlyphRequest(0, 0, 'A', Mark_flag_input, true); // pushUndo nests
+	sim.fillRectRequest(1, 1, 2, 2, 'B');
+	sim.undoRequest();
+	REQUIRE(sim.canUndo());
+	sim.exclusion.leaveUi();
+	REQUIRE_FALSE(sim.exclusion.uiInside.load());
+
+	sim.process();
+	REQUIRE(sim.getFieldBuffer()[0] == '.'); // glyph then undone, in order
+}
+
+TEST_CASE("copyForDisplay copies content and marks for several field sizes", "[AhabSim]") {
+	const Usz sizes[][2] = {{1, 1}, {5, 5}, {9, 13}, {49, 97}};
+	for (auto& sz : sizes) {
+		AhabSim sim;
+		sim.setFieldSizeRequest(sz[0], sz[1], false);
+		sim.process();
+		Usz last = sz[0] * sz[1] - 1;
+		sim.setGlyphRequest(sz[0] - 1, sz[1] - 1, 'Z', Mark_flag_input, false);
+		sim.process();
+
+		Field out;
+		field_init(&out);
+		Mbuf_reusable marks;
+		mbuf_reusable_init(&marks);
+		sim.copyForDisplay(&out, &marks);
+
+		REQUIRE(out.height == sz[0]);
+		REQUIRE(out.width == sz[1]);
+		REQUIRE(memcmp(out.buffer, sim.getFieldBuffer(), sz[0] * sz[1]) == 0);
+		REQUIRE(out.buffer[last] == 'Z');
+		REQUIRE(memcmp(marks.buffer, sim.getMbufBuffer(), sz[0] * sz[1]) == 0);
+		REQUIRE((marks.buffer[last] & Mark_flag_input) != 0);
+		REQUIRE_FALSE(sim.exclusion.uiInside.load());
+
+		mbuf_reusable_deinit(&marks);
+		field_deinit(&out);
+	}
+}
+
+TEST_CASE("The mark buffer keeps its address across a resize to the maximum", "[AhabSim]") {
+	AhabSim sim;
+	Mark const* before = sim.getMbufBuffer();
+	sim.setFieldSizeRequest(MAX_FIELD_HEIGHT, MAX_FIELD_WIDTH, false);
+	sim.process();
+	REQUIRE(sim.getMbufBuffer() == before);
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(sim.getMbufBuffer() == before);
+}

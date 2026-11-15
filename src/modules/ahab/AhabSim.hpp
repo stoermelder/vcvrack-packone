@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <dsp/ringbuffer.hpp>
 #include "AhabEditorState.hpp"
+#include "../../utils/UiDspExclusion.hpp"
 
 extern "C" {
 	#include <orca-c/field.h>
@@ -139,9 +140,17 @@ public:
 
 	// Get display buffer dimensions (no longer uses indices with single buffer)
 	void getDisplayBuffer(Usz& height, Usz& width) const;
-	// Get pointer to field buffer
+	// Pointers into the live buffers. DSP thread only (commander, single-thread tests): the UI
+	// must use copyForDisplay(), because these buffers are reallocated inside the command drain.
 	Glyph const* getFieldBuffer() const;
 	Mark const* getMbufBuffer() const;
+
+	// UI thread only, enters a UI section. Copies the field and its marks into the caller's own
+	// buffers; `outMarks` is grown to fit.
+	void copyForDisplay(Field* out, Mbuf_reusable* outMarks);
+
+	// See the concurrency rule at the end of this class. Public so tests can hold a UI section.
+	mutable UiDspExclusion exclusion;
 
 	// Helpers for field management
 	void setFieldSize(Usz height, Usz width);
@@ -265,10 +274,23 @@ private:
 	// Set by `notifyTick()` on UI thread, processed by `process()` on DSP thread.
 	std::atomic<bool> pending_ui_update_{false};
 
-	// Concurrency model:
-	// - DSP thread (process): calls step() lock-free, writes to double buffers
-	// - UI thread: reads display data lock-free, requests edits
-	// - No synchronization needed between threads - double buffering prevents conflicts
+	// Concurrency rule:
+	// `field_.buffer`, `mbuf_.buffer` and the undo/redo deques change shape (reallocate, resize,
+	// push, pop) only inside a DSP section (the command drain in process()) or under Rack's
+	// exclusive engine lock (fromJson, onReset). The UI reads those buffers and touches the
+	// deques only inside a UI section, and keeps no pointer into them after leaving it.
+	// Everything else crossing threads is atomic or a tolerated dirty read (stale or torn
+	// values, height/width, undo counts). Code on the DSP thread never calls a method that
+	// enters a UI section.
+
+	// Enters a UI section for the lifetime of the guard, so early returns cannot leak the flag.
+	struct UiSection {
+		UiDspExclusion& e;
+		explicit UiSection(UiDspExclusion& e) : e(e) { e.enterUi(); }
+		~UiSection() { e.leaveUi(); }
+		UiSection(const UiSection&) = delete;
+		UiSection& operator=(const UiSection&) = delete;
+	};
 };
 
 } // namespace Ahab

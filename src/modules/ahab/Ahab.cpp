@@ -684,15 +684,7 @@ struct AhabSimWidget : OpaqueWidget {
 	// Obtain a local snapshot of the simulator display read buffer
 	void takeDisplaySnapshot() {
 		if (display_ready) {
-			field_copy((Field *)display_ready, &display_field);
-			mbuf_reusable_ensure_size(&display_mbuf, display_field.height, display_field.width);
-			// Get mark buffer from simulator
-			Usz h, w;
-			module->sim->getDisplayBuffer(h, w);
-			Mark const* mbuf = module->sim->getMbufBuffer();
-			if (mbuf && h == display_field.height && w == display_field.width) {
-				memcpy(display_mbuf.buffer, mbuf, h * w * sizeof(Mark));
-			}
+			module->sim->copyForDisplay(&display_field, &display_mbuf);
 			display_ready = nullptr;
 		}
 	}
