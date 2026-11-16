@@ -3,6 +3,7 @@
 #include "../../vcv/api.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../utils/digital.hpp"
+#include "../../utils/ClockInput.hpp"
 #include "../../ui/InfoWindow.hpp"
 #include "../../ui/FocusMode.hpp"
 #include "../../ui/DisplayTheme.hpp"
@@ -89,8 +90,8 @@ struct AhabModule : Module {
 	static constexpr Usz MAX_PENDING_COMMANDS = 8;
 	std::vector<PendingCommand> pendingCommands;
 
-	// Phase accumulator for simulation step timing
-	float clockPhase = 0.0f;
+	// Internal BPM clock and external CLK edges, as simulation steps.
+	ClockInput clock;
 
 	// Scheduled note-offs (handled on simulator tick)
 	struct ScheduledOff { Usz remaining_ticks; uint8_t channel; uint8_t note; };
@@ -126,17 +127,11 @@ struct AhabModule : Module {
 	dsp::SchmittTrigger clkButtonTrigger;
 	dsp::SchmittTrigger clkInConnectTrigger;
 	dsp::SchmittTrigger clkInDisconnectTrigger;
-	dsp::SchmittTrigger clkInTrigger;
 	dsp::PulseGenerator clkPulseGen;
 	dsp::SchmittTrigger resetTrigger;
 
-	// Clock divider/multiplier applied to the external CLK input.
-	ClockDividerEx clkDivider;
-	ClockMultiplier clkMultiplier;
 	/** [Stored to JSON] Clock ratio applied to the external CLK input. */
 	int clkRatioSetting = CLK_RATIO_MUL1;
-	/** Last applied ratio; divider/multiplier reconfigured only on change. */
-	int clkRatio = -1;
 
 	dsp::ClockDivider lightDivider;
 
@@ -208,11 +203,8 @@ struct AhabModule : Module {
 		gridStepCol = 8;
 		gridStepRow = 8;
 
-		clockPhase = 0.0;
+		clock.reset();
 		simRunning = true;
-		clkDivider.reset();
-		clkMultiplier.reset();
-		clkRatio = -1;
 		udpInput->reset();
 		pendingCommands.clear();
 		sim->setFieldSize(25, 49);
@@ -228,7 +220,7 @@ struct AhabModule : Module {
 	void setRunning(bool run) {
 		if (simRunning == run) return;
 		simRunning = run;
-		clockPhase = 0.0;
+		clock.resetPhase();
 		if (run) {
 			clkInConnectTrigger.state = dsp::SchmittTrigger::LOW;
 			clkInDisconnectTrigger.state = dsp::SchmittTrigger::LOW;
@@ -238,44 +230,10 @@ struct AhabModule : Module {
 		}
 	}
 
-	void processExternalClock() {
-		if (!simRunning) return;
-		int ratio = clkRatioSetting;
-		// Reconfigure the divider/multiplier only when the ratio changes.
-		if (ratio != clkRatio) {
-			clkRatio = ratio;
-			if (ratio == CLK_RATIO_DIV2) clkDivider.setDivision(2);
-			else if (ratio == CLK_RATIO_DIV4) clkDivider.setDivision(4);
-			else if (ratio == CLK_RATIO_MUL2 || ratio == CLK_RATIO_MUL4) clkMultiplier.reset();
-		}
-
-		if (clkInTrigger.process(inputs[CLK_INPUT].getVoltage())) {
-			// Raw clock edge on the CLK input
-			if (ratio == CLK_RATIO_MUL1) {
-				sim->step();
-				clockPhase = 0.0;
-			}
-			else if (ratio == CLK_RATIO_DIV2 || ratio == CLK_RATIO_DIV4) {
-				// Divider: emit one tick every N raw edges
-				if (clkDivider.process()) {
-					sim->step();
-					clockPhase = 0.0;
-				}
-			}
-			else {
-				// Multiplier: set up subdivisions for this clock cycle
-				clkMultiplier.tick();
-				clkMultiplier.trigger(ratio == CLK_RATIO_MUL2 ? 2 : 4);
-			}
-		}
-
-		// Multiplier emits its subdivided pulses across the clock cycle
-		if (ratio == CLK_RATIO_MUL2 || ratio == CLK_RATIO_MUL4) {
-			if (clkMultiplier.process()) {
-				sim->step();
-				clockPhase = 0.0;
-			}
-		}
+	// Divide/multiply factors of the CLK_RATIO_* setting, for ClockInput.
+	static void clockFactors(int ratio, int& multiply, int& divide) {
+		multiply = ratio == CLK_RATIO_MUL2 ? 2 : ratio == CLK_RATIO_MUL4 ? 4 : 1;
+		divide = ratio == CLK_RATIO_DIV2 ? 2 : ratio == CLK_RATIO_DIV4 ? 4 : 1;
 	}
 
 	// One BPM towards the `apm` target per internally clocked step.
@@ -307,7 +265,10 @@ struct AhabModule : Module {
 		}
 
 		bool clkInputConnected = inputs[CLK_INPUT].isConnected();
-		processExternalClock();
+		int multiply, divide;
+		clockFactors(clkRatioSetting, multiply, divide);
+		int ticks = clock.processExternal(simRunning, inputs[CLK_INPUT].getVoltage(), multiply, divide);
+		for (int i = 0; i < ticks; i++) sim->step();
 
 		// Reset input
 		if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
@@ -315,18 +276,11 @@ struct AhabModule : Module {
 		}
 
 		// Auto-advance simulation based on BPM when running and no external clock
-		if (simRunning && !clkInputConnected) {
-			// Calculate how much phase to advance per sample
-			float bpm = params[BPM_PARAM].getValue();
-			float hz = bpm / 60.0f *4.0f;  // Quarter note rate
-			float phasePerSample = hz * args.sampleTime;
-			
-			clockPhase += phasePerSample;
-			if (clockPhase >= 1.0) {
-				clockPhase -= 1.0;
-				sim->step();
-				stepBpmRamp();
-			}
+		ticks = clock.processInternal(args.sampleTime, simRunning && !clkInputConnected,
+			params[BPM_PARAM].getValue(), 4.f); // quarter note rate x 4
+		for (int i = 0; i < ticks; i++) {
+			sim->step();
+			stepBpmRamp();
 		}
 
 		outputs[CLK_OUTPUT].setVoltage(clkPulseGen.process(args.sampleTime) ? 10.0f : 0.0f);

@@ -769,7 +769,7 @@ TEST_CASE("Clock phase resets on run toggle and external clock", "[Ahab]") {
 	for (int i = 0; i < 1000; ++i) {
 		m->process(Test::makeProcessArgs(frame++, sampleRate));
 	}
-	REQUIRE(m->clockPhase > 0.0f);
+	REQUIRE(m->clock.phase() > 0.0f);
 
 	// Toggling run off then on resets the phase accumulator. The reset lands at
 	// ~0, not exactly 0: the BPM path re-accumulates a single sample's worth in
@@ -783,19 +783,19 @@ TEST_CASE("Clock phase resets on run toggle and external clock", "[Ahab]") {
 	m->process(Test::makeProcessArgs(frame++, sampleRate));
 	m->params[AhabModule::RUN_PARAM].setValue(1.0f);
 	m->process(Test::makeProcessArgs(frame++, sampleRate));
-	REQUIRE(m->clockPhase < 0.001f);
+	REQUIRE(m->clock.phase() < 0.001f);
 
 	// An external clock edge also resets the phase accumulator.
 	for (int i = 0; i < 1000; ++i) {
 		m->process(Test::makeProcessArgs(frame++, sampleRate));
 	}
-	REQUIRE(m->clockPhase > 0.0f);
+	REQUIRE(m->clock.phase() > 0.0f);
 	m->inputs[AhabModule::CLK_INPUT].channels = 1;
 	m->inputs[AhabModule::CLK_INPUT].setVoltage(0.0f);
 	m->process(Test::makeProcessArgs(frame++, sampleRate));
 	m->inputs[AhabModule::CLK_INPUT].setVoltage(10.0f);
 	m->process(Test::makeProcessArgs(frame++, sampleRate)); // edge → phase = 0
-	REQUIRE(m->clockPhase == 0.0f);
+	REQUIRE(m->clock.phase() == 0.0f);
 
 	Test::unregisterModule(m);
 }

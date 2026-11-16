@@ -172,14 +172,14 @@ TEST_CASE("Commander play and stop use the RUN logic and are idempotent", "[Ahab
 	Test::registerModule(m);
 
 	REQUIRE(m->simRunning);
-	m->clockPhase = 0.5f;
+	m->clock.setPhase(0.5f);
 	REQUIRE(exec(m, "play"));
 	REQUIRE(m->simRunning);
-	REQUIRE(m->clockPhase == 0.5f);   // already running: nothing is touched
+	REQUIRE(m->clock.phase() == 0.5f);   // already running: nothing is touched
 
 	REQUIRE(exec(m, "stop"));
 	REQUIRE_FALSE(m->simRunning);
-	REQUIRE(m->clockPhase == 0.0f);
+	REQUIRE(m->clock.phase() == 0.0f);
 	REQUIRE(exec(m, "stop"));
 	REQUIRE_FALSE(m->simRunning);
 
