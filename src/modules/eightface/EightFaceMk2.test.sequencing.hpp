@@ -104,7 +104,7 @@ TEST_CASE("TRIG_PINGPONG reverses direction at both ends", "[EightFaceMk2][seque
 	f.m->slotCvMode = SLOTCVMODE::TRIG_PINGPONG;
 	f.m->presetCount = 4;
 	f.m->preset = 0;
-	f.m->slotCvModeDir = 1;
+	f.m->slotSelector.setDirection(1);
 	f.settle();
 
 	// 0 -> 1 -> 2 -> 3 -> 2 -> 1 -> 0 -> 1 ...
@@ -122,8 +122,8 @@ TEST_CASE("TRIG_ALT produces the manual's literal 1,2,1,3,1,4... sequence", "[Ei
 	f.m->slotCvMode = SLOTCVMODE::TRIG_ALT;
 	f.m->presetCount = 6;
 	f.m->preset = 0;
-	f.m->slotCvModeDir = 1;
-	f.m->slotCvModeAlt = 0;
+	f.m->slotSelector.setDirection(1);
+	f.m->slotSelector.setAlt(0);
 	f.settle();
 
 	for (int expected : {1, 0, 2, 0, 3, 0, 4, 0, 5, 0}) {
@@ -177,7 +177,7 @@ TEST_CASE("TRIG_SHUFFLE visits every slot exactly once per permutation", "[Eight
 	f.m->slotCvMode = SLOTCVMODE::TRIG_SHUFFLE;
 	f.m->presetCount = 8;
 	f.m->preset = -1;
-	f.m->slotCvModeShuffle.clear();
+	f.m->slotSelector.setDeck({});
 	f.settle();
 
 	std::set<int> visited;
@@ -190,7 +190,7 @@ TEST_CASE("TRIG_SHUFFLE visits every slot exactly once per permutation", "[Eight
 	}
 	REQUIRE(visited.size() == 8);
 
-	// The bag refills (slotCvModeShuffle.size() == 0) and a new permutation starts -- still every
+	// The bag refills (the deck is empty) and a new permutation starts -- still every
 	// slot exactly once.
 	std::set<int> visited2;
 	for (int i = 0; i < 8; i++) {
@@ -373,11 +373,11 @@ TEST_CASE("RESET behavior matches the manual's Reset column, per mode", "[EightF
 	SECTION("TRIG_PINGPONG resets to slot 0 and forward direction") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_PINGPONG;
 		f.m->preset = 2;
-		f.m->slotCvModeDir = -1;
+		f.m->slotSelector.setDirection(-1);
 		f.settle();
 		f.pulseReset();
 		REQUIRE(f.m->preset == 0);
-		REQUIRE(f.m->slotCvModeDir == 1);
+		REQUIRE(f.m->slotSelector.direction() == 1);
 	}
 
 	SECTION("TRIG_ALT resets to slot 0") {
@@ -390,10 +390,10 @@ TEST_CASE("RESET behavior matches the manual's Reset column, per mode", "[EightF
 
 	SECTION("TRIG_SHUFFLE clears the pending permutation") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_SHUFFLE;
-		f.m->slotCvModeShuffle = {1, 2, 3};
+		f.m->slotSelector.setDeck({1, 2, 3});
 		f.settle();
 		f.pulseReset();
-		REQUIRE(f.m->slotCvModeShuffle.empty());
+		REQUIRE(f.m->slotSelector.deckEmpty());
 	}
 
 	SECTION("TRIG_RANDOM resets to slot 0") {

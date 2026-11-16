@@ -10,6 +10,8 @@
     - Added support for "Light" ui theme
     - Fixed behavior of Copy/Pasting grid content with an active selection
     - Fixed possible crashes when editing, undoing, saving or loading while playing, and when adding or removing a second AHAB
+- Modules [TRANSIT](./docs/transit/Transit.md), [8FACE](./docs/eightface/EightFace.md) and [8FACE-MK2](./docs/eightface/EightFaceMk2.md)
+    - Fixed port mode "Trigger alternating" playing the first slot twice in a row when descending
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added hotkey `Ctrl+Shift+Space` to show only hidden modules in the browser
 - Module [SIREN](./docs/siren/Siren.md)

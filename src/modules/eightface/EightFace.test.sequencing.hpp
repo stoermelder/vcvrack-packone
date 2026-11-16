@@ -111,7 +111,7 @@ TEST_CASE("TRIG_PINGPONG reverses at both ends", "[EightFace][sequencing]") {
 	f.m->slotCvMode = SLOTCVMODE::TRIG_PINGPONG;
 	f.m->presetCount = 4;
 	f.m->preset = 0;
-	f.m->slotCvModeDir = 1;
+	f.m->slotSelector.setDirection(1);
 	for (int i = 0; i < 100; i++) f.h.dspStep();
 
 	// 0 -> 1 -> 2 -> 3 -> 2 -> 1 -> 0 -> 1 ...
@@ -128,8 +128,8 @@ TEST_CASE("TRIG_ALT produces 1,2,1,3,1,4...", "[EightFace][sequencing]") {
 	f.m->slotCvMode = SLOTCVMODE::TRIG_ALT;
 	f.m->presetCount = 6;
 	f.m->preset = 0;
-	f.m->slotCvModeDir = 1;
-	f.m->slotCvModeAlt = 0;
+	f.m->slotSelector.setDirection(1);
+	f.m->slotSelector.setAlt(0);
 	for (int i = 0; i < 100; i++) f.h.dspStep();
 
 	for (int expected : {1, 0, 2, 0, 3, 0, 4, 0, 5, 0}) {
@@ -182,7 +182,7 @@ TEST_CASE("TRIG_SHUFFLE visits every slot once per permutation", "[EightFace][se
 	f.m->slotCvMode = SLOTCVMODE::TRIG_SHUFFLE;
 	f.m->presetCount = 8;
 	f.m->preset = -1;
-	f.m->slotCvModeShuffle.clear();
+	f.m->slotSelector.setDeck({});
 	for (int i = 0; i < 100; i++) f.h.dspStep();
 
 	std::set<int> visited;
@@ -335,11 +335,11 @@ TEST_CASE("RESET behavior per SLOTCVMODE", "[EightFace][sequencing]") {
 	SECTION("TRIG_PINGPONG resets to slot 0 and forward direction") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_PINGPONG;
 		f.m->preset = 2;
-		f.m->slotCvModeDir = -1;
+		f.m->slotSelector.setDirection(-1);
 		for (int i = 0; i < 100; i++) f.h.dspStep();
 		f.pulseReset();
 		REQUIRE(f.m->preset == 0);
-		REQUIRE(f.m->slotCvModeDir == 1);
+		REQUIRE(f.m->slotSelector.direction() == 1);
 	}
 
 	SECTION("TRIG_ALT resets to slot 0") {
@@ -352,10 +352,10 @@ TEST_CASE("RESET behavior per SLOTCVMODE", "[EightFace][sequencing]") {
 
 	SECTION("TRIG_SHUFFLE clears the pending permutation") {
 		f.m->slotCvMode = SLOTCVMODE::TRIG_SHUFFLE;
-		f.m->slotCvModeShuffle = {1, 2, 3};
+		f.m->slotSelector.setDeck({1, 2, 3});
 		for (int i = 0; i < 100; i++) f.h.dspStep();
 		f.pulseReset();
-		REQUIRE(f.m->slotCvModeShuffle.empty());
+		REQUIRE(f.m->slotSelector.deckEmpty());
 	}
 
 	SECTION("TRIG_RANDOM resets to slot 0") {

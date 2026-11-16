@@ -1041,7 +1041,7 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 
 	SECTION("Advances forward from presetFirst") {
 		module->preset = 2;
-		module->slotCvModeDir = 1;
+		module->slotSelector.setDirection(1);
 		trigger();
 		REQUIRE(module->preset == 3);
 		trigger();
@@ -1050,7 +1050,7 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 
 	SECTION("Bounces at presetLast - 1 and reverses direction") {
 		module->preset = 4; // one below presetLast-1 = 5
-		module->slotCvModeDir = 1;
+		module->slotSelector.setDirection(1);
 		trigger(); // n = 5 >= presetLast-1=5 → dir=-1, load 5
 		REQUIRE(module->preset == 5);
 		trigger(); // n = 5+(-1) = 4
@@ -1059,7 +1059,7 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 
 	SECTION("Bounces at presetFirst and reverses direction") {
 		module->preset = 3;
-		module->slotCvModeDir = -1;
+		module->slotSelector.setDirection(-1);
 		trigger(); // n = 2, n <= presetFirst=2 → dir=1, load 2
 		REQUIRE(module->preset == 2);
 		trigger(); // n = 3
@@ -1068,13 +1068,13 @@ TEST_CASE("TRIG_PINGPONG mode respects boundaries and direction", "[Transit]") {
 
 	SECTION("Reset goes to presetFirst and resets direction") {
 		module->preset = 5;
-		module->slotCvModeDir = -1;
+		module->slotSelector.setDirection(-1);
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
 		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 		h.dspStep();
 		REQUIRE(module->preset == 2);  // presetFirst
-		REQUIRE(module->slotCvModeDir == 1); // direction reset to forward
+		REQUIRE(module->slotSelector.direction() == 1); // direction reset to forward
 	}
 }
 
@@ -1114,26 +1114,26 @@ TEST_CASE("TRIG_ALT mode alternates between presetFirst and an advancing seconda
 
 	SECTION("Reset goes to presetFirst and resets direction and alt to 0") {
 		module->preset = 4;
-		module->slotCvModeDir = -1;
-		module->slotCvModeAlt = 3;
+		module->slotSelector.setDirection(-1);
+		module->slotSelector.setAlt(3);
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(10.0f);
 		h.dspStep();
 		module->inputs[TransitModule<12>::INPUT_RESET].setVoltage(0.0f);
 		h.dspStep();
 		REQUIRE(module->preset == 2);           // presetFirst
-		REQUIRE(module->slotCvModeDir == 1);    // direction reset
-		REQUIRE(module->slotCvModeAlt == 0);    // alt counter reset
+		REQUIRE(module->slotSelector.direction() == 1);    // direction reset
+		REQUIRE(module->slotSelector.alt() == 0);    // alt counter reset
 	}
 
 	SECTION("Alternates: from presetFirst, first trigger advances secondary; second trigger returns to presetFirst") {
 		// Start at presetFirst
 		module->preset = 2;
-		module->slotCvModeAlt = 2; // secondary at presetFirst
-		module->slotCvModeDir = 1;
+		module->slotSelector.setAlt(2); // secondary at presetFirst
+		module->slotSelector.setDirection(1);
 
 		// First trigger: preset == presetFirst → advance secondary and load it
 		trigger();
-		REQUIRE(module->preset == 3); // presetFirst + slotCvModeDir
+		REQUIRE(module->preset == 3); // presetFirst + direction
 
 		// Second trigger: preset != presetFirst → return to presetFirst
 		trigger();
@@ -1243,6 +1243,7 @@ TEST_CASE("TRIG_RANDOM mode respects boundaries", "[Transit]") {
 
 	SECTION("Random selection stays within boundaries") {
 		std::set<int> selected;
+		random::init(); // rack::random::u32() draws from an unseeded generator (always 0) until initialised
 		
 		// Ensure inputs are clear and accumulate resetTimer > 1ms
 		module->inputs[TransitModule<12>::INPUT_RESET].channels = 1;

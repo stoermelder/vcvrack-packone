@@ -4,6 +4,7 @@
 #include "../../utils/ShapedSlewLimiter.hpp"
 #include "../../utils/TaskProcessor.hpp"
 #include "../../utils/SpscLatestValue.hpp"
+#include "../../utils/SlotSelector.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../components/ParamHandleIndicator.hpp"
 #include "../../components/MenuColorLabel.hpp"
@@ -19,21 +20,7 @@ const int MAX_EXPANDERS = 15;
 
 static const NVGcolor MAPPING_INDICATOR_COLOR_DEFAULT = nvgRGB(0x40, 0xff, 0xff);
 
-enum class SLOTCVMODE {
-	OFF = -1,
-	TRIG_FWD = 2,
-	TRIG_REV = 4,
-	TRIG_PINGPONG = 5,
-	TRIG_ALT = 9,
-	TRIG_RANDOM = 6,
-	TRIG_RANDOM_WO_REPEAT = 7,
-	TRIG_RANDOM_WALK = 8,
-	TRIG_SHUFFLE = 10,
-	VOLT = 0,
-	C4 = 1,
-	ARM = 3,
-	PHASE = 11
-};
+using SLOTCVMODE = SlotCvMode; // values are saved in patches, see utils/SlotSelector.hpp
 
 enum class OUTMODE {
 	OFF = -2,
@@ -107,9 +94,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
-	int slotCvModeDir = 1;
-	int slotCvModeAlt = 0;
-	std::vector<int> slotCvModeShuffle;
+	SlotSelector slotSelector;
 
 	/** [Stored to JSON] */
 	OUTMODE outMode;
@@ -130,9 +115,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 	int presetProcessDivision;
 	ClockDividerEx presetProcessDivider;
 	ClockDividerEx padProcessDivider;
-
-	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::uniform_int_distribution<int> randDist;
 
 	/** [Stored to JSON] */
 	/*	This is owned by the engine thread */
@@ -385,26 +367,18 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 						break;
 					}
 					case SLOTCVMODE::TRIG_PINGPONG: {
-						slotCvModeDir = 1;
+						slotSelector.reset();
 						presetLoad(presetFirst);
 						break;
 					}
 					case SLOTCVMODE::TRIG_ALT: {
-						slotCvModeDir = 1;
-						slotCvModeAlt = 0;
+						slotSelector.reset();
 						presetLoad(presetFirst);
 						break;
 					}
 					case SLOTCVMODE::TRIG_SHUFFLE: {
-						slotCvModeShuffle.clear();
-						for (int i = presetFirst; i < presetLast; i++) {
-							slotCvModeShuffle.push_back(i);
-						}
-						std::mt19937 rng(random::u32());
-						std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
-						int p = std::min(std::max(presetFirst, slotCvModeShuffle.back()), presetLast - 1);
-						slotCvModeShuffle.pop_back();
-						presetLoad(p);
+						slotSelector.reset();
+						presetLoad(slotSelector.next(SlotCvMode::TRIG_SHUFFLE, preset, presetFirst, presetLast));
 						break;
 					}
 					default: {
@@ -419,99 +393,31 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ModuleChangeL
 			// CV input
 			if (Module::inputs[INPUT_CV].isConnected()) {
 				switch (slotCvMode) {
-					case SLOTCVMODE::VOLT: {
-						float voltage = clamp(Module::inputs[INPUT_CV].getVoltage(), 0.f, 10.f);
-						int range = presetLast - presetFirst;
-						int p = presetFirst + int((voltage / 10.f) * range);
-						if (p >= presetLast) p = presetLast - 1;
-						if (p < presetFirst) p = presetFirst;
-						presetLoad(p);
+					case SLOTCVMODE::VOLT:
+						presetLoad(SlotSelector::forLevel(SlotCvMode::VOLT, Module::inputs[INPUT_CV].getVoltage(), presetFirst, presetLast));
 						break;
-					}
 					case SLOTCVMODE::C4:
-						presetLoad(std::round(clamp(Module::inputs[INPUT_CV].getVoltage() * 12.f, float(presetFirst), float(presetLast - 1))));
+						presetLoad(SlotSelector::forLevel(SlotCvMode::C4, Module::inputs[INPUT_CV].getVoltage(), presetFirst, presetLast));
 						if (Module::inputs[INPUT_CV].getChannels() == 2 && slotC4Trigger.process(Module::inputs[INPUT_CV].getVoltage(1))) {
-							presetLoad(std::round(clamp(Module::inputs[INPUT_CV].getVoltage() * 12.f, float(presetFirst), float(presetLast - 1))), false, true);
+							presetLoad(SlotSelector::forLevel(SlotCvMode::C4, Module::inputs[INPUT_CV].getVoltage(), presetFirst, presetLast), false, true);
 						}
 						break;
 					case SLOTCVMODE::TRIG_FWD:
-						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							if (resetTimer.getTime() >= 1e-3f) {
-								int p = (preset + 1) % presetLast;
-								if (p == 0) p = presetFirst;
-								presetLoad(p);
-							}
-						}
-						break;
 					case SLOTCVMODE::TRIG_REV:
-						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							if (resetTimer.getTime() >= 1e-3f) {
-								int p = (preset - 1 + presetLast) % presetLast;
-								if (p == presetFirst - 1) p = presetLast - 1;
-								presetLoad(p);
-							}
-						}
-						break;
 					case SLOTCVMODE::TRIG_PINGPONG:
-						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							if (resetTimer.getTime() >= 1e-3f) {
-								int n = preset + slotCvModeDir;
-								if (n >= presetLast - 1)
-									slotCvModeDir = -1;
-								if (n <= presetFirst)
-									slotCvModeDir = 1;
-								presetLoad(n);
-							}
-						}
-						break;
 					case SLOTCVMODE::TRIG_ALT:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							if (resetTimer.getTime() >= 1e-3f) {
-								int n = presetFirst;
-								if (preset == presetFirst) {
-									n = slotCvModeAlt + slotCvModeDir;
-									if (n >= presetLast - 1)
-										slotCvModeDir = -1;
-									if (n <= presetFirst)
-										slotCvModeDir = 1;
-									slotCvModeAlt = std::max(presetFirst, std::min(n, presetLast - 1));
-								}
-								presetLoad(n);
+								presetLoad(slotSelector.next(slotCvMode, preset, presetFirst, presetLast));
 							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM:
-						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							if (randDist.min() != presetFirst || randDist.max() != presetLast - 1) randDist = std::uniform_int_distribution<int>(presetFirst, presetLast - 1);
-							presetLoad(randDist(randGen));
-						}
-						break;
 					case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT:
-						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							if (randDist.min() != presetFirst || randDist.max() != presetLast - 2) randDist = std::uniform_int_distribution<int>(presetFirst, presetLast - 2);
-							int p = randDist(randGen);
-							if (p >= preset) p++;
-							presetLoad(p);
-						}
-						break;
 					case SLOTCVMODE::TRIG_RANDOM_WALK:
-						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							int p = std::min(std::max(presetFirst, preset + (random::u32() % 2 == 0 ? -1 : 1)), presetLast - 1);
-							presetLoad(p);
-						}
-						break;
 					case SLOTCVMODE::TRIG_SHUFFLE:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							if (slotCvModeShuffle.size() == 0) {
-								for (int i = presetFirst; i < presetLast; i++) {
-									slotCvModeShuffle.push_back(i);
-								}
-								std::mt19937 rng(random::u32());
-								std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
-							}
-							int p = std::min(std::max(presetFirst, slotCvModeShuffle.back()), presetLast - 1);
-							slotCvModeShuffle.pop_back();
-							presetLoad(p);
+							presetLoad(slotSelector.next(slotCvMode, preset, presetFirst, presetLast));
 						}
 						break;
 					case SLOTCVMODE::ARM:
