@@ -123,7 +123,8 @@ inline void withModuleSnapshot(app::ModuleWidget* mw, Tutorial& tutorial, bool r
 ```
 
 Wires `onOpen`/`onClose` to snapshot the module's JSON on open and restore it on close, via
-`engine::Module`'s own generic `toJson()`/`fromJson()` (which call the module's `dataToJson()`/
+`APP->engine->moduleToJson()`/`moduleFromJson()` (which take the engine lock, so they never
+overlap `process()`, and call `engine::Module`'s generic `toJson()`/`fromJson()`, which call the module's `dataToJson()`/
 `dataFromJson()` internally) — every module already has this, so a tutorial gets a full
 snapshot/restore for free rather than hand-writing one. Every step is then free to call real,
 mutating module functions; nothing has to be undone step-by-step, because the whole module
@@ -141,7 +142,7 @@ inline Tutorial myModuleTutorial(app::ModuleWidget* mw) {
 }
 ```
 
-`resetOnOpen` fires the module's `onReset()` (the same "Initialize" the context menu uses)
+`resetOnOpen` calls `APP->engine->resetModule()`, which fires the module's `onReset()` (the same "Initialize" the context menu uses)
 right after snapshotting, so every step starts from the same defined state regardless of what
 the user had already set up.
 

@@ -218,8 +218,8 @@ inline void addStep(Tutorial& t, std::string title, std::string text, Target tar
 	t.steps.push_back(std::move(step));
 }
 
-// Wires tutorial.onOpen/onClose to snapshot the module's JSON on open (via toJson()) and restore
-// it on close (fromJson()), so any module can opt in without a hand-written snapshot struct. Any
+// Wires tutorial.onOpen/onClose to snapshot the module's JSON on open (APP->engine->moduleToJson())
+// and restore it on close (moduleFromJson()), so any module can opt in without a hand-written snapshot struct. Any
 // onOpen/onClose already set on `tutorial` run around the snapshot/restore: onOpen snapshots
 // first, then the given onOpen; onClose restores first, then the given onClose — so a fixup that
 // needs the just-restored state (e.g. reconciling live cables) sees it correctly.
@@ -238,18 +238,17 @@ inline void withModuleSnapshot(app::ModuleWidget* mw, Tutorial& tutorial, bool r
 		engine::Module* module = mw->module;
 		if (module) {
 			if (*snapshot) json_decref(*snapshot);
-			*snapshot = module->toJson();
-			if (resetOnOpen) {
-				engine::Module::ResetEvent e;
-				module->onReset(e);
-			}
+			// Through the engine, as ModuleWidget does: these take its lock, so they
+			// never overlap process() on the audio thread.
+			*snapshot = APP->engine->moduleToJson(module);
+			if (resetOnOpen) APP->engine->resetModule(module);
 		}
 		if (innerOpen) innerOpen();
 	};
 	tutorial.onClose = [mw, snapshot, innerClose]() {
 		engine::Module* module = mw->module;
 		if (*snapshot) {
-			if (module) module->fromJson(*snapshot);
+			if (module) APP->engine->moduleFromJson(module, *snapshot);
 			json_decref(*snapshot);
 			*snapshot = nullptr;
 		}
