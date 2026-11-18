@@ -1243,6 +1243,74 @@ TEST_CASE("rebuildRowWidgets: exclude-only filter keeps containers visible", "[S
 	REQUIRE(pane.rowContainer->children.size() == 1);
 }
 
+// A tag toggle keeps the row's context menu open while the rows are rebuilt. The menu's
+// callbacks must not touch the row (it is deleted by the rebuild) and must only request
+// a rebuild.
+namespace {
+struct MenuProbeDataSource : TestDataSource {
+	using TestDataSource::TestDataSource;
+	int changes = 0;
+	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode&, std::function<void()> onChanged) override {
+		menu->addChild(createMenuItem("probe", "", [this, onChanged]() { ++changes; if (onChanged) onChanged(); }));
+	}
+};
+}
+
+TEST_CASE("Row context menu: callbacks survive the row being rebuilt", "[Siren][Browser][Menu]") {
+	Test::Harness h;
+	SirenBrowserPane pane;
+	pane.box.size = Vec(200.f, 400.f);
+	pane.init(nullptr);
+	pane.setSize(pane.box.size);
+
+	auto ds = std::make_shared<MenuProbeDataSource>("/test/root");
+	pane.activeDs = ds;
+	pane.rows.push_back(makeFileEntry("a.wav"));
+	pane.rebuildRowWidgets();
+	REQUIRE(pane.rowContainer->children.size() == 1);
+	SirenTreeRow* row = dynamic_cast<SirenTreeRow*>(pane.rowContainer->children.front());
+	REQUIRE(row != nullptr);
+
+	event::Button e;
+	e.button = GLFW_MOUSE_BUTTON_RIGHT;
+	e.action = GLFW_PRESS;
+	e.pos = Vec(row->box.size.x - 2.f, 1.f);  // clear of the star button
+	std::vector<widget::Widget*> before = APP->scene->children.size() ? std::vector<widget::Widget*>(APP->scene->children.begin(), APP->scene->children.end()) : std::vector<widget::Widget*>();
+	row->onButton(e);
+
+	// Find the menu the row opened and its probe item.
+	ui::MenuItem* probe = nullptr;
+	widget::Widget* overlay = nullptr;
+	for (widget::Widget* w : APP->scene->children) {
+		if (std::find(before.begin(), before.end(), w) != before.end()) continue;
+		if (dynamic_cast<ui::MenuOverlay*>(w)) overlay = w;
+	}
+	REQUIRE(overlay != nullptr);
+	for (widget::Widget* menu : overlay->children) {
+		for (widget::Widget* item : menu->children) {
+			ui::MenuItem* mi = dynamic_cast<ui::MenuItem*>(item);
+			if (mi && mi->text == "probe") probe = mi;
+		}
+	}
+	REQUIRE(probe != nullptr);
+
+	// First toggle: the menu stays open; the row must not be deleted by the callback.
+	pane.rebuildDirty = false;
+	probe->onAction(event::Action());
+	REQUIRE(ds->changes == 1);
+	REQUIRE(pane.rebuildDirty == true);
+	REQUIRE(pane.rowContainer->children.size() == 1);
+	REQUIRE(pane.rowContainer->children.front() == row);
+
+	// Now the rebuild happens, deleting the row; the menu's callback must still work.
+	pane.rebuildRowWidgets();
+	probe->onAction(event::Action());
+	REQUIRE(ds->changes == 2);
+	REQUIRE(pane.rebuildDirty == true);
+
+	dynamic_cast<ui::MenuOverlay*>(overlay)->requestDelete();
+}
+
 TEST_CASE("rebuildRowWidgets: include filter hides container with no matching indexed files", "[Siren][Browser][Filter]") {
 	SirenBrowserPane pane;
 	pane.box.size = Vec(200.f, 400.f);

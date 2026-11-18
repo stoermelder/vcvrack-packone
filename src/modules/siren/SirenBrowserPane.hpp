@@ -1134,19 +1134,24 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 	}
 	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 		if (pane->activeDs) {
+			// The menu outlives this row: tag toggles keep it open while the rows are
+			// rebuilt (and deleted) underneath it. The callbacks therefore capture the
+			// pane and a copy of the node, never the row, and only request a rebuild.
+			SirenBrowserPane* pane = this->pane;
+			const DataSourceNode node = this->node;
 			ui::Menu* menu = createMenu();
 			menu->addChild(createMenuLabel(pane->activeDs->getDisplayName(node.relativePath)));
 			menu->addChild(new ui::MenuSeparator);
-			pane->activeDs->appendNodeMenuItems(menu, node, [this]() {
-				pane->rebuildRowWidgets();
+			pane->activeDs->appendNodeMenuItems(menu, node, [pane]() {
+				pane->requestRebuild();
 			});
 
 			menu->addChild(new ui::MenuSeparator);
-			menu->addChild(createMenuItem("Suggest tags", "", [this]() {
+			menu->addChild(createMenuItem("Suggest tags", "", [pane, node]() {
 				pane->startTagClassification(node);
 			}));
 
-			menu->addChild(createMenuItem("Clear tags", "", [this]() {
+			menu->addChild(createMenuItem("Clear tags", "", [pane, node]() {
 				DataSource* ds = pane->activeDs.get();
 				if (!ds) return;
 				MetadataStore* meta = ds->getMetadata();
