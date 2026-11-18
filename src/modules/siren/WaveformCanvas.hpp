@@ -1,8 +1,8 @@
 #pragma once
 #include <rack.hpp>
-#include "SirenAudio.hpp"
-#include "SirenStreamPlayer.hpp"
-#include "SirenDropHandler.hpp"
+#include "Audio.hpp"
+#include "StreamPlayer.hpp"
+#include "DropHandler.hpp"
 #include "../../ui/HoverScrollLock.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/DisplayTheme.hpp"

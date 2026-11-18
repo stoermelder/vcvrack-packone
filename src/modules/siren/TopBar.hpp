@@ -1,6 +1,6 @@
 #pragma once
 #include <rack.hpp>
-#include "SirenBrowserPane.hpp"
+#include "BrowserPane.hpp"
 #include "../../vcv/ui.hpp"
 #include "../../ui/DisplayTheme.hpp"
 

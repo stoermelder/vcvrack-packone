@@ -187,7 +187,7 @@ pipeline: $(OUT)
 	@echo
 	@echo "── Done ────────────────────────────────────────────────────────"
 	@echo "Generated model:  $(TRAIN_OUT)"
-	@echo "Next: copy it into src/modules/siren/SirenTagClassifier.cpp"
+	@echo "Next: copy it into src/modules/siren/TagClassifier.cpp"
 	@echo "       and rebuild the plugin (cd $(PLUGIN_ROOT) && make)."
 
 # ── Test the loader's folder-name parsers (no C++ extractor required) ──

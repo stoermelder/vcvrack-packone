@@ -1,4 +1,4 @@
-#include "SirenSettings.hpp"
+#include "Settings.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {

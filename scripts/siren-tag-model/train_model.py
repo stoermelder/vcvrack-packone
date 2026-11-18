@@ -464,7 +464,7 @@ def main() -> int:
     p = ArgumentParser(description=__doc__)
     p.add_argument("--csv", type=Path, required=True, help="Path to a CSV produced by generate_synthetic_dataset.py or your own loader.")
     p.add_argument("--out", type=Path, default=Path(__file__).parent / "build" / "SirenTagClassifier.generated.cpp",
-                   help="Where to write the generated C++ source file. The whole file is the model — copy it over src/modules/siren/SirenTagClassifier.cpp.")
+                   help="Where to write the generated C++ source file. The whole file is the model — copy it over src/modules/siren/TagClassifier.cpp.")
     p.add_argument("--n-estimators", type=int, default=24)
     p.add_argument("--max-depth", type=int, default=8)
     p.add_argument("--augment", type=int, default=0,
@@ -760,7 +760,7 @@ def main() -> int:
              thresholds=thresholds,
              training_params=training_params)
     print(f"\nWrote generated C++ to {args.out}")
-    print("Paste its contents into the marked region of src/modules/Siren/SirenTagClassifier.cpp, then rebuild.")
+    print("Paste its contents into the marked region of src/modules/Siren/TagClassifier.cpp, then rebuild.")
     return 0
 
 

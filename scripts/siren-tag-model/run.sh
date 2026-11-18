@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate a synthetic dataset, train a tiny model, and emit a C++ header
-# fragment you paste into src/modules/Siren/SirenTagClassifier.cpp.
+# fragment you paste into src/modules/Siren/TagClassifier.cpp.
 #
 # Usage:
 #   bash scripts/siren-tag-model/run.sh
@@ -73,7 +73,7 @@ echo
 echo "Next steps:"
 echo "  1. Open the generated file above."
 echo "  2. Copy its contents into the marked region of"
-echo "        src/modules/Siren/SirenTagClassifier.cpp"
+echo "        src/modules/Siren/TagClassifier.cpp"
 echo "  3. Bump MODEL_VERSION in feature_config.py if the"
 echo "     shape (number of features / classes) changed."
 echo "  4. Rebuild the plugin:  cd .. && make"

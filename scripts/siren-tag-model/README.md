@@ -13,7 +13,7 @@ developer's machine and the output is pasted into the plugin's source.
 > identical and produce the same output. See the ["`make` targets" section](#make-targets)
 > below for everything else.
 
-The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: 18 independent `scikit-learn` `RandomForestClassifier` heads (one per binary tag in the manifest) are trained on a labeled dataset of **53 audio features**, then transpiled to a plain C source file with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The result is pasted into `src/modules/siren/SirenTagClassifier.cpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
+The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: 18 independent `scikit-learn` `RandomForestClassifier` heads (one per binary tag in the manifest) are trained on a labeled dataset of **53 audio features**, then transpiled to a plain C source file with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The result is pasted into `src/modules/siren/TagClassifier.cpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
 
 Per-(row, class) sample weights let you push back on individual tag heads
 using a `Non-<Tag>/` folder convention — see the "Hard-negative folders"
@@ -29,7 +29,7 @@ It is read by:
 
 - the **C++ plugin** at module load time, via
   `Siren::starterTags()` and `Siren::starterTagKeywords()` in
-  `SirenMetadata.hpp` (uses jansson + the bundled `res/` directory),
+  `Metadata.hpp` (uses jansson + the bundled `res/` directory),
 - the **Python pipeline** at import time, via
   `tag_manifest.py`.
 
@@ -64,7 +64,7 @@ Current vocabulary (alphabetical), 4 categories:
 | Snare        | source   | Mid-frequency transient with noise component and sharp attack |
 | Vocal        | source   | Voice or vocal-like material: sung voice, formant tones |
 
-> The C++ `SirenMetadata.hpp::fallbackTags()` returns a separate 15-tag list
+> The C++ `Metadata.hpp::fallbackTags()` returns a separate 15-tag list
 > (adds `One-Shot` and `Stab`, drops `Atmospheric`) used by the test harness
 > and as a safety net when the JSON manifest can't be read at load time. It
 > is **not** what the classifier scores against — only `SirenTags.json` is.
@@ -148,7 +148,7 @@ forward FFT pass. They are the main reason the feature count grew from the
 original 32; they add temporal-dynamics signal at very low cost.
 
 The feature contract is defined in `feature_config.py` (`FEATURE_NAMES`) and
-implemented in `src/modules/siren/SirenTagClassifierApi.hpp`
+implemented in `src/modules/siren/TagClassifierApi.hpp`
 (`TagClassifier::extractFeatures()`). **The C++ implementation is the
 authoritative source** — it is the one and only feature extractor, used by
 both the plugin and the training pipeline.
@@ -352,14 +352,14 @@ pffft headers from the plugin/Rack tree. It has no dependency on
 
 ## Paste the result into the plugin
 
-The generated file is the entire `SirenTagClassifier.cpp` — there is no
+The generated file is the entire `TagClassifier.cpp` — there is no
 "marked region" anymore, the whole file is the model. Copy
 `build/SirenTagClassifier.generated.cpp` over
-`src/modules/siren/SirenTagClassifier.cpp` and rebuild:
+`src/modules/siren/TagClassifier.cpp` and rebuild:
 
 ```bash
 cp scripts/siren-tag-model/build/SirenTagClassifier.generated.cpp \
-   src/modules/siren/SirenTagClassifier.cpp
+   src/modules/siren/TagClassifier.cpp
 cd ../..   # back to the plugin root
 make
 ```
@@ -656,7 +656,7 @@ microseconds per clip at the call sites in the browser pane.
 **Build fails with `static_assert` mismatch** — `SIREN_TAG_NUM_FEATURES` in
 the API header is `53` but the generated source was trained with a different
 count. Re-run `bash run.sh` and paste the new `SirenTagClassifier.generated.cpp`
-over `src/modules/siren/SirenTagClassifier.cpp`. The generated file
+over `src/modules/siren/TagClassifier.cpp`. The generated file
 self-checks with `static_assert(::StoermelderPackOne::Siren::SIREN_TAG_NUM_FEATURES == 53, ...)`.
 
 ## When you're done

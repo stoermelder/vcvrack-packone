@@ -1,12 +1,12 @@
 #pragma once
 #include <rack.hpp>
-#include "SirenDataSource.hpp"
-#include "SirenAudio.hpp"
+#include "DataSource.hpp"
+#include "Audio.hpp"
 #include <fstream>
 #include "../../vcv/fs.hpp"
 #include "../../vcv/ui.hpp"
 
-// dr_libs — declarations only (implementations compiled in SirenDrLibs.cpp)
+// dr_libs — declarations only (implementations compiled in DrLibs.cpp)
 #include "../../../dep/drlibs/dr_wav.h"
 #include "../../../dep/drlibs/dr_flac.h"
 #include "../../../dep/drlibs/dr_mp3.h"

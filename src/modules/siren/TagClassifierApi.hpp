@@ -1,7 +1,7 @@
 #pragma once
 // Feature extraction API and model registration interface.
 //
-// This header is self-contained — it does NOT include SirenTagClassifier.cpp
+// This header is self-contained — it does NOT include TagClassifier.cpp
 // (the auto-generated model). The model is compiled into the plugin via the
 // root Makefile's `wildcard src/**/**/*.cpp` glob and registers itself at
 // static-init time by calling TagClassifier::_setLoader(). The actual
@@ -10,14 +10,14 @@
 //
 // Consumers that only need feature extraction (e.g. the CLI tool
 // siren_extract_features) include this header alone. Consumers that need
-// classification must link the generated SirenTagClassifier.cpp into the
+// classification must link the generated TagClassifier.cpp into the
 // binary; in the plugin this happens automatically.
 //
 // SIREN_TAG_NUM_FEATURES is owned here (not by the generated model).
 // The generated source contains a static_assert that verifies the counts
 // match (53 at the time of writing).
 
-#include "SirenAudioStream.hpp"     // AudioStream interface — no Rack dependency
+#include "AudioStream.hpp"     // AudioStream interface — no Rack dependency
 #include <pffft.h>
 #include <algorithm>
 #include <cmath>
@@ -48,7 +48,7 @@ struct SuggestedTag {
 
 namespace TagClassifierDetail {
 
-// STFT constants — see SirenBpmDetector.hpp:108-115 for rationale.
+// STFT constants — see BpmDetector.hpp:108-115 for rationale.
 // These are the BPM detector's analysis params; the tag classifier uses its
 // own TAG_* params below. 8820 Hz is fine for BPM (kicks < 200 Hz) but too
 // low for tag classification, where HiHat/Cymbal/bright-Snare discrimination
@@ -190,7 +190,7 @@ struct SpectralAccum {
 // Public API
 struct TagClassifier {
 	// Model registration
-	// SirenTagClassifier.cpp calls registerModel() from its anonymous
+	// TagClassifier.cpp calls registerModel() from its anonymous
 	// namespace so the model is available as soon as its header is included
 	// in a TU. Feature extraction works without registration; classification
 	// requires it (returns empty if no model is loaded).
@@ -229,7 +229,7 @@ struct TagClassifier {
 		return info;
 	}
 
-	// Called by SirenTagClassifier.cpp at static-init time to register a
+	// Called by TagClassifier.cpp at static-init time to register a
 	// deferred loader. The loader itself runs on the first scoring call.
 	static void _setLoader(void (*fn)()) {
 		_model().lazyInit = fn;

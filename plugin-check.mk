@@ -20,9 +20,9 @@ CHECK_STD ?= c++11
 CHECK_TEST_STD ?= c++14
 CHECK_FLAGS := $(filter -I% -D%,$(FLAGS))
 
-# Machine-generated sources: nobody edits them, and SirenTagClassifier.cpp alone is
+# Machine-generated sources: nobody edits them, and TagClassifier.cpp alone is
 # 89k lines and was half of all findings.
-CHECK_EXCLUDE := src/modules/siren/SirenTagClassifier.cpp
+CHECK_EXCLUDE := src/modules/siren/TagClassifier.cpp
 CHECK_EXCLUDE += $(wildcard src/**/**/*.test.*.?pp)
 
 CHECK_SOURCES := $(wildcard src/*.?pp src/**/*.?pp src/**/**/*.?pp)

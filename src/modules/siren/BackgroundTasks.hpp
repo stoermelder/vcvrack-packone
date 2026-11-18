@@ -1,9 +1,9 @@
 #pragma once
 #include <rack.hpp>
-#include "SirenDataSource.hpp"
-#include "SirenMetadata.hpp"
-#include "SirenTagClassifierApi.hpp"
-#include "SirenBpmDetector.hpp"
+#include "DataSource.hpp"
+#include "Metadata.hpp"
+#include "TagClassifierApi.hpp"
+#include "BpmDetector.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 #include "../../vcv/ui.hpp"

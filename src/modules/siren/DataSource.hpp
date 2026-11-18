@@ -3,11 +3,11 @@
 #include <sstream>
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../vcv/api.hpp"
-#include "SirenPaths.hpp"
-#include "SirenMetadata.hpp"
-#include "SirenAudioStream.hpp"
-#include "SirenAudio.hpp"
-#include "SirenRender.hpp"
+#include "Paths.hpp"
+#include "Metadata.hpp"
+#include "AudioStream.hpp"
+#include "Audio.hpp"
+#include "Render.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -16,7 +16,7 @@ namespace Siren {
 // should be created for it. "fs" (FileSystemDataSource) is the default and,
 // currently, the only type — kept explicit so future source types (e.g.
 // cloud or hardware-backed libraries) can be distinguished from plain
-// filesystem roots. See createDataSource() in SirenFileSystem.hpp.
+// filesystem roots. See createDataSource() in FileSystem.hpp.
 struct RootContainer {
 	std::string path;
 	std::string type = "fs";
@@ -32,13 +32,13 @@ struct RootContainer {
 };
 
 namespace filesystem {
-	// Defined in SirenFileSystem.hpp. Declared here so createRootContainer()
+	// Defined in FileSystem.hpp. Declared here so createRootContainer()
 	// below can dispatch to it without a circular include.
 	RootContainer createRootContainer(const std::string& path);
 }
 
 // Builds the RootContainer for `path` with `type`, dispatching to the
-// type-specific factory (mirroring createDataSource() in SirenFileSystem.hpp)
+// type-specific factory (mirroring createDataSource() in FileSystem.hpp)
 // so `name` is always derived consistently with the DataSource that will
 // browse it. "fs" (the default, and currently the only type) maps to
 // filesystem::createRootContainer.
@@ -345,7 +345,7 @@ struct DataSource {
 };
 
 namespace filesystem {
-	// Defined in SirenFileSystem.hpp. Declared here so createDataSource()
+	// Defined in FileSystem.hpp. Declared here so createDataSource()
 	// below can dispatch to it without a circular include.
 	std::shared_ptr<DataSource> createDataSource(const RootContainer& root);
 }

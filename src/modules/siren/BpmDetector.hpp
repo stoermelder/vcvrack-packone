@@ -1,6 +1,6 @@
 #pragma once
-#include "SirenTagClassifierApi.hpp"
-#include "SirenDataSource.hpp"
+#include "TagClassifierApi.hpp"
+#include "DataSource.hpp"
 #include <pffft.h>
 #include <regex>
 #include <array>

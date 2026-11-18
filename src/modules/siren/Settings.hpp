@@ -1,7 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../../vcv/api.hpp"
-#include "SirenDataSource.hpp"
+#include "DataSource.hpp"
 
 
 namespace StoermelderPackOne {

@@ -2,7 +2,7 @@
 
 The output is a complete `.cpp` — there is no surrounding plugin header
 to paste into. The whole file is the model: it includes
-`SirenTagClassifierApi.hpp`, emits the per-class m2cgen bodies + uniform
+`TagClassifierApi.hpp`, emits the per-class m2cgen bodies + uniform
 bridges + Platt-scaled dispatcher, and self-registers via a static
 initializer (lazy, via `_setLoader()`).
 
@@ -171,7 +171,7 @@ def emit_cpp(
 ) -> None:
     """Write the generated C++ source file to ``out_path``.
 
-    The result is consumed by ``src/modules/siren/SirenTagClassifier.cpp``
+    The result is consumed by ``src/modules/siren/TagClassifier.cpp``
     (the whole file IS the model — the developer copies it over after
     running ``run.sh``).
 
@@ -257,7 +257,7 @@ def emit_cpp(
             v = training_params[k]
             parts.append(f"//   {k} = {v!r}")
     parts.append("")
-    parts.append('#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES')
+    parts.append('#include "TagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES')
     parts.append("#include <cmath>    // for exp() in Platt sigmoid calibration")
     parts.append("#include <cstddef>")
     parts.append("#include <cstring>  // for memcpy in m2cgen-emitted bodies")

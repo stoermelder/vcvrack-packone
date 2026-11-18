@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <climits>
 #include <vector>
-#include "SirenAudio.hpp"
-#include "SirenAudioStream.hpp"
+#include "Audio.hpp"
+#include "AudioStream.hpp"
 #include <SoundTouch.h>
 
 namespace StoermelderPackOne {

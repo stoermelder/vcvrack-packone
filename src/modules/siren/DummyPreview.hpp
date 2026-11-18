@@ -1,7 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include <cmath>
-#include "SirenAudio.hpp"
+#include "Audio.hpp"
 #include "../../ui/DisplayTheme.hpp"
 
 

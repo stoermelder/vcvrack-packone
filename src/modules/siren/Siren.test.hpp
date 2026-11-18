@@ -1,6 +1,6 @@
 #pragma once
-#include "SirenMetadata.hpp"
-#include "SirenDataSource.hpp"
+#include "Metadata.hpp"
+#include "DataSource.hpp"
 #include "../../test/test_mock.hpp"
 #include <mutex>
 

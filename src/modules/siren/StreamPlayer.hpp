@@ -1,8 +1,8 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "SirenSettings.hpp"
-#include "SirenAudioStream.hpp"
-#include "SirenDataSource.hpp"
+#include "Settings.hpp"
+#include "AudioStream.hpp"
+#include "DataSource.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <memory>

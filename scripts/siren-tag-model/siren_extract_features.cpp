@@ -37,8 +37,8 @@
 #  pragma GCC diagnostic pop
 #endif
 
-// ── Feature extractor (no Rack dependency via SirenAudioStream.hpp) ──────────
-#include "../../../src/modules/siren/SirenTagClassifierApi.hpp"
+// ── Feature extractor (no Rack dependency via AudioStream.hpp) ──────────
+#include "../../../src/modules/siren/TagClassifierApi.hpp"
 
 #include <algorithm>
 #include <cctype>

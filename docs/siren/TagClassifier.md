@@ -8,30 +8,30 @@ The classifier is implemented as a small C function compiled into the plugin —
 
 ```
 res/data/SirenTags.json          ← tag vocabulary (18 tags, source of truth)
-SirenMetadata.hpp                ← tagManifest() / starterTags() / starterTagKeywords()
+Metadata.hpp                ← tagManifest() / starterTags() / starterTagKeywords()
                                    loaders (jansson + rack::asset::plugin + isTesting short-circuit)
-SirenTagClassifierApi.hpp        ← feature extraction (SIREN_TAG_NUM_FEATURES = 53)
+TagClassifierApi.hpp        ← feature extraction (SIREN_TAG_NUM_FEATURES = 53)
                                    TagClassifier model-registration slot (lazy-loaded on first use)
                                    filename-keyword boost helpers
                                    STFT helpers (Hann window, PFFFT setup guard, magnitudes, flux,
                                    median-filter, mean-subtract, peak-count)
-SirenTagClassifier.cpp           ← auto-generated model body (compiled into the plugin via the
+TagClassifier.cpp           ← auto-generated model body (compiled into the plugin via the
                                    `wildcard src/**/**/*.cpp` glob in the root Makefile;
                                    includes API, registers itself via _setLoader() at static init)
-SirenBrowserPane.hpp             ← right-click menu + startTagClassification() entry point
-SirenTopBar.hpp                  ← "Suggest tags on all files" + cancel menu
-SirenBackgroundTasks.hpp         ← SirenClassifyTask: worker thread, recursive folder scan,
+BrowserPane.hpp             ← right-click menu + startTagClassification() entry point
+TopBar.hpp                  ← "Suggest tags on all files" + cancel menu
+BackgroundTasks.hpp         ← SirenClassifyTask: worker thread, recursive folder scan,
                                    per-file classification, post-scan confirm dialog
-SirenBpmDetector.hpp             ← independent; also includes the API header for shared STFT helpers
+BpmDetector.hpp             ← independent; also includes the API header for shared STFT helpers
 src/ui/AutoTagDialog.hpp         ← generic TagConfirmDialog<TPayload> +
                                    AsyncTagConfirmDialog<TPayload> (legacy, kept for Mb)
 
 siren_extract_features (CLI)     ← includes API only; no model needed for feature extraction
 ```
 
-**Dependency direction.** `SirenTagClassifier.cpp` (model) → `SirenTagClassifierApi.hpp` (API). The API does not include the model. The model registers itself through a static initializer when the `.cpp` is linked into the plugin, using a lazy-init slot (`_setLoader`) that fires on the first `score()` / `classify()` call. `extractFeatures()` always works with no model loaded.
+**Dependency direction.** `TagClassifier.cpp` (model) → `TagClassifierApi.hpp` (API). The API does not include the model. The model registers itself through a static initializer when the `.cpp` is linked into the plugin, using a lazy-init slot (`_setLoader`) that fires on the first `score()` / `classify()` call. `extractFeatures()` always works with no model loaded.
 
-The plugin picks the model up without an explicit `#include`: the root `Makefile` uses `SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)`, so `SirenTagClassifier.cpp` is compiled and linked automatically. The CLI tool (`scripts/siren-tag-model/siren_extract_features.cpp`) does **not** compile that `.cpp`, so it gets feature extraction with zero model code linked.
+The plugin picks the model up without an explicit `#include`: the root `Makefile` uses `SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)`, so `TagClassifier.cpp` is compiled and linked automatically. The CLI tool (`scripts/siren-tag-model/siren_extract_features.cpp`) does **not** compile that `.cpp`, so it gets feature extraction with zero model code linked.
 
 ## Tag vocabulary
 
@@ -58,7 +58,7 @@ Defined in `res/data/SirenTags.json` (single source of truth). Capitalized names
 | Snare | source | Snare drum: mid-frequency transient with noise component |
 | Vocal | source | Vocal or vocal-like: sung voice, formant tones |
 
-A 15-tag **fallback list** lives in `SirenMetadata.hpp::fallbackTags()` and is used by the test harness and when the JSON manifest cannot be read on disk. The fallback intentionally contains `One-Shot` and `Stab` so older patches keep their tags readable; they are never *suggested* by the classifier.
+A 15-tag **fallback list** lives in `Metadata.hpp::fallbackTags()` and is used by the test harness and when the JSON manifest cannot be read on disk. The fallback intentionally contains `One-Shot` and `Stab` so older patches keep their tags readable; they are never *suggested* by the classifier.
 
 ### Manifest schema
 
@@ -80,7 +80,7 @@ Each tag entry carries:
 | `classifier_can_suggest` | boolean | When `true`, the classifier may surface this tag; when `false`, it stays editable only. Currently `true` for every shipped tag. |
 | `keywords` | object | Optional. Maps each filename keyword to its reliability prior in `(0, 1]`. Word-boundary matched against the filename stem; the matched prior is fused with the audio score by noisy-OR in `TagClassifier::applyFilenameBoosts`. Use `0.9` for reliable cues and a lower prior for ambiguous ones (`loop`, `fx`, `sub`, `hat`). |
 
-The manifest is parsed once per module load by `tagManifest()` in `SirenMetadata.hpp` into a `TagManifest { tags, keywords }`. The function short-circuits to `fallbackTags()` when `isTesting()` is true (no asset path is available in the test harness), and falls back on parse failure with a `WARN` log. The keyword map is consumed by the browser pane via `starterTagKeywords()` and registered into `TagClassifier` at the start of each classification.
+The manifest is parsed once per module load by `tagManifest()` in `Metadata.hpp` into a `TagManifest { tags, keywords }`. The function short-circuits to `fallbackTags()` when `isTesting()` is true (no asset path is available in the test harness), and falls back on parse failure with a `WARN` log. The keyword map is consumed by the browser pane via `starterTagKeywords()` and registered into `TagClassifier` at the start of each classification.
 
 ## Feature extraction
 
@@ -88,7 +88,7 @@ All features are in `[0, 1]`. The extractor reads the first 30 s of audio, decim
 
 The rate is deliberately higher than the BPM detector's 8820 Hz: the metallic / high-frequency tags (HiHat, Cymbal, bright Snare) carry their discriminating energy above the 4.41 kHz Nyquist the old rate implied, and `TAG_FFT_SIZE` is raised in proportion so frequency resolution stays ~21.5 Hz/bin.
 
-The feature order is the contract between `extractFeatures()` in `SirenTagClassifierApi.hpp` and `feature_config.FEATURE_NAMES` in the training pipeline — they must match exactly. **`SIREN_TAG_NUM_FEATURES` is defined in `SirenTagClassifierApi.hpp`** (currently `53`), not in the generated model header; the generated header contains a `static_assert` to catch retraining mismatches.
+The feature order is the contract between `extractFeatures()` in `TagClassifierApi.hpp` and `feature_config.FEATURE_NAMES` in the training pipeline — they must match exactly. **`SIREN_TAG_NUM_FEATURES` is defined in `TagClassifierApi.hpp`** (currently `53`), not in the generated model header; the generated header contains a `static_assert` to catch retraining mismatches.
 
 ### Time-domain (computed before STFT)
 
@@ -166,7 +166,7 @@ The MFCC deltas are computed in the same per-hop pass as the base MFCCs — the 
 
 ### Extraction pipeline
 
-`extractFeatures(AudioStream& stream, float out[53])` in `SirenTagClassifierApi.hpp` runs in four phases:
+`extractFeatures(AudioStream& stream, float out[53])` in `TagClassifierApi.hpp` runs in four phases:
 
 1. **`prepareMono`** — read the stream, decimate, mix to mono, peak-normalise to ±1.0. (`prepareMono` takes a `targetSR` parameter, default `TARGET_SR` 8820 so the BPM detector is unaffected; the tag classifier passes `TAG_TARGET_SR`.)
 2. **`extractTimeDomainFeatures`** — ZCR, RMS + crest, the 32-block temporal envelope (centroid, tail/head, attack, RMS variance, entropy), 100 ms-block envelope autocorrelation (lags corresponding to 0.25–4 s), and harmonic ratio over the 49–1100 Hz pitch band using up to ~0.5 s of audio (`min(mono.size(), max(4096, outSR / 2))`).
@@ -201,7 +201,7 @@ The 4-arg `classify(stream, filePath, k=5, ...)` overload applies `applyFilename
 
 ## API
 
-`SirenTagClassifierApi.hpp` is self-contained and depends only on `SirenAudioStream.hpp` (which uses `<cstdint>`). It defines `SIREN_TAG_NUM_FEATURES = 53`, `SuggestedTag`, and the `TagClassifier` namespace:
+`TagClassifierApi.hpp` is self-contained and depends only on `AudioStream.hpp` (which uses `<cstdint>`). It defines `SIREN_TAG_NUM_FEATURES = 53`, `SuggestedTag`, and the `TagClassifier` namespace:
 
 - `TagClassifier::extractFeatures(AudioStream&, float out[53], float maxDurationSeconds = 30.f)` — always available; performs the full feature pipeline. Clamps output to `[0, 1]`; returns all-zeros if the stream is invalid or yields fewer than 4 STFT hops.
 - `TagClassifier::score(const float features[53], float* out)` — runs the registered model over a feature vector, writing `numClasses()` floats to `out` (18 in the shipped model). Clamps both inputs and outputs to `[0, 1]`. No-op if no model is loaded.
@@ -226,10 +226,10 @@ Model registration is internal and used only by the generated `.cpp`:
 
 The **Suggest tags** entry points live in two places:
 
-- `SirenBrowserPane.hpp::startTagClassification(DataSourceNode)` — wired to the right-click menu on any file or folder in the browser tree, with menu label **Suggest tags**.
-- `SirenTopBar.hpp` source menu — **Suggest tags on all files** bulk-classifies the active root (a synthetic root `DataSourceNode` is constructed and passed to `startTagClassification`). A **Cancel tag classification** entry appears while a scan is in flight.
+- `BrowserPane.hpp::startTagClassification(DataSourceNode)` — wired to the right-click menu on any file or folder in the browser tree, with menu label **Suggest tags**.
+- `TopBar.hpp` source menu — **Suggest tags on all files** bulk-classifies the active root (a synthetic root `DataSourceNode` is constructed and passed to `startTagClassification`). A **Cancel tag classification** entry appears while a scan is in flight.
 
-Both paths converge on `SirenClassifyTask` (`SirenBackgroundTasks.hpp`), which owns the worker:
+Both paths converge on `SirenClassifyTask` (`BackgroundTasks.hpp`), which owns the worker:
 
 1. **Single file** — a one-element file list; `TagClassifier::classify(*stream, f, 5)` (filename-aware) runs on the worker thread.
 2. **Container** — recursively collects audio files via `DataSource::loadChildrenSync` and classifies each. Per-tag payloads accumulate all `relPath`s scoring `≥ 0.5`.
@@ -261,7 +261,7 @@ Per-class Platt calibration is fitted by `fit_calibration()` in `train_model.py`
 To roll a new model into the plugin:
 
 1. `make pipeline` (or `bash scripts/siren-tag-model/run.sh`).
-2. Copy `build/SirenTagClassifier.generated.cpp` over `src/modules/siren/SirenTagClassifier.cpp`.
+2. Copy `build/SirenTagClassifier.generated.cpp` over `src/modules/siren/TagClassifier.cpp`.
 3. Rebuild.
 4. Bump `MODEL_VERSION` in `scripts/siren-tag-model/feature_config.py` when the new model should be distinguishable from the old one.
 
@@ -285,14 +285,14 @@ In the CSV format produced by `load_folder_dataset.py`, hard negatives are recor
 
 | File | Role |
 |------|------|
-| `src/modules/siren/SirenTagClassifierApi.hpp` | Self-contained API. Defines `SIREN_TAG_NUM_FEATURES = 53`, all 53 features, lazy model registration, filename-keyword boosting. No Rack or model dependency. Shared with `SirenBpmDetector.hpp` for the STFT helpers. |
-| `src/modules/siren/SirenTagClassifier.cpp` | Auto-generated model body (18-class, currently ≈5 MB of m2cgen-emitted code). Includes the API, self-registers via a `_setLoader()` / `_siren_load_model()` static initializer pair (lazy: `registerModel()` fires on the first scoring call, not at static init), and embeds a `SIREN_TAG_TRAINING_INFO_JSON` blob for runtime diagnostics. Regenerated by `run.sh` / `make train`; do not hand-edit. |
-| `src/modules/siren/SirenBackgroundTasks.hpp` | `SirenClassifyTask` — owns the worker thread, the recursive file collection for folders, the per-file `TagClassifier::classify()` call, the `tagToRels` aggregation, and the post-scan confirm dialog. |
-| `src/modules/siren/SirenAudioStream.hpp` | `AudioStream` interface (pure virtual, `<cstdint>` only). Used by both the API and the CLI tool. |
-| `src/modules/siren/SirenMetadata.hpp` | Loads the tag manifest + keyword map at module load time via jansson (`starterTags()`, `starterTagKeywords()`). Has a 15-tag fallback list for tests and parse failures. |
-| `src/modules/siren/SirenBrowserPane.hpp` | UI integration. Right-click context menu on any file/folder with **Suggest tags** entry; `startTagClassification()` method that constructs a `SirenClassifyTask` and wires the apply callback into `MetadataStore::addTag`. |
+| `src/modules/siren/TagClassifierApi.hpp` | Self-contained API. Defines `SIREN_TAG_NUM_FEATURES = 53`, all 53 features, lazy model registration, filename-keyword boosting. No Rack or model dependency. Shared with `BpmDetector.hpp` for the STFT helpers. |
+| `src/modules/siren/TagClassifier.cpp` | Auto-generated model body (18-class, currently ≈5 MB of m2cgen-emitted code). Includes the API, self-registers via a `_setLoader()` / `_siren_load_model()` static initializer pair (lazy: `registerModel()` fires on the first scoring call, not at static init), and embeds a `SIREN_TAG_TRAINING_INFO_JSON` blob for runtime diagnostics. Regenerated by `run.sh` / `make train`; do not hand-edit. |
+| `src/modules/siren/BackgroundTasks.hpp` | `SirenClassifyTask` — owns the worker thread, the recursive file collection for folders, the per-file `TagClassifier::classify()` call, the `tagToRels` aggregation, and the post-scan confirm dialog. |
+| `src/modules/siren/AudioStream.hpp` | `AudioStream` interface (pure virtual, `<cstdint>` only). Used by both the API and the CLI tool. |
+| `src/modules/siren/Metadata.hpp` | Loads the tag manifest + keyword map at module load time via jansson (`starterTags()`, `starterTagKeywords()`). Has a 15-tag fallback list for tests and parse failures. |
+| `src/modules/siren/BrowserPane.hpp` | UI integration. Right-click context menu on any file/folder with **Suggest tags** entry; `startTagClassification()` method that constructs a `SirenClassifyTask` and wires the apply callback into `MetadataStore::addTag`. |
 | `src/modules/siren/Siren.cpp` | Module + audio streaming. |
-| `src/modules/siren/SirenBpmDetector.hpp` | Also includes the API header (shares STFT setup). |
+| `src/modules/siren/BpmDetector.hpp` | Also includes the API header (shares STFT setup). |
 | `src/ui/AutoTagDialog.hpp` | Generic `TagConfirmDialog<TPayload>` plus a legacy `AsyncTagConfirmDialog<TPayload>` adapter (kept for the Mb module). Siren instantiates `TagConfirmDialog<std::string>` directly. |
 | `res/data/SirenTags.json` | 18-tag vocabulary (source of truth for plugin and training pipeline). |
 | `src/modules/siren/SirenTagClassifierAPI.test.cpp` | Not yet written. Would pattern-match `SirenBpmDetector.test.cpp` (`MockAudioStream` + `AudioStream` factories for synthesised tones, noise, transients) and assert qualitative feature behaviour — e.g. high `spectral_centroid` for a bright tone, high `sub_bass_ratio` for an 80 Hz sine, high `onset_density` for a click train, high `harmonic_ratio` for a sustained sine, distinct `mfcc_0..mfcc_2` for tonal vs. noise streams. |

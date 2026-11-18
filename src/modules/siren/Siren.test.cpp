@@ -1,10 +1,10 @@
 #include "../../test/framework.hpp"
 #include "Siren.cpp"
 #include "Siren.test.hpp"
-#include "SirenDataSource.hpp"
-#include "SirenBpmDetector.hpp"
-#include "SirenFileSystem.hpp"
-#include "SirenBackgroundTasks.hpp"
+#include "DataSource.hpp"
+#include "BpmDetector.hpp"
+#include "FileSystem.hpp"
+#include "BackgroundTasks.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

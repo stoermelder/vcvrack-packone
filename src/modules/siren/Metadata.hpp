@@ -5,7 +5,7 @@
 #include <map>
 #include <utility>
 #include <vector>
-#include "SirenPaths.hpp"
+#include "Paths.hpp"
 
 
 namespace StoermelderPackOne {

@@ -3,15 +3,15 @@
 #include "../../components/Knobs.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
 #include "../../ui/DisplayTheme.hpp"
-#include "SirenSettings.hpp"
-#include "SirenDataSource.hpp"
-#include "SirenFileSystem.hpp"
-#include "SirenAudio.hpp"
-#include "SirenStreamPlayer.hpp"
-#include "SirenBrowserPane.hpp"
-#include "SirenPreviewPane.hpp"
-#include "SirenTopBar.hpp"
-#include "SirenVuMeter.hpp"
+#include "Settings.hpp"
+#include "DataSource.hpp"
+#include "FileSystem.hpp"
+#include "Audio.hpp"
+#include "StreamPlayer.hpp"
+#include "BrowserPane.hpp"
+#include "PreviewPane.hpp"
+#include "TopBar.hpp"
+#include "VuMeter.hpp"
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -50,7 +50,7 @@ struct SirenModule : Module {
 	std::atomic<float> trimIn{0.f};
 	std::atomic<float> trimOut{1.f};
 
-	// Streaming playback (fill thread + ring buffer); see SirenStreamPlayer.hpp
+	// Streaming playback (fill thread + ring buffer); see StreamPlayer.hpp
 	StreamPlayer player{&trimIn, &trimOut};
 
 	// VU meter — written by DSP thread, read by UI thread

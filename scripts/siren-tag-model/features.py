@@ -41,7 +41,7 @@ def find_cpp_extractor() -> str:
     return str(binary)
 
 
-# Mirrors the tag-classifier STFT constants in SirenTagClassifierApi.hpp
+# Mirrors the tag-classifier STFT constants in TagClassifierApi.hpp
 # (the TAG_* params used by extractFeatures(), not the BPM detector's).
 _TARGET_SR  = 22050
 _FFT_SIZE   = 1024

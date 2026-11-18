@@ -41,7 +41,7 @@
 //   train_rows = 8610
 //   train_samples = 8610
 
-#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES
+#include "TagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES
 #include <cmath>    // for exp() in Platt sigmoid calibration
 #include <cstddef>
 #include <cstring>  // for memcpy in m2cgen-emitted bodies
