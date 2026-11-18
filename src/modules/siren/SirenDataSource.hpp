@@ -7,7 +7,7 @@
 #include "SirenMetadata.hpp"
 #include "SirenAudioStream.hpp"
 #include "SirenAudio.hpp"
-#include <SoundTouch.h>
+#include "SirenRender.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -360,315 +360,30 @@ inline std::shared_ptr<DataSource> createDataSource(const RootContainer& root) {
 
 
 
-// Shift the pitch of `samples` by `semitones` while preserving duration, using
-// the SoundTouch library. `samples` is interleaved float PCM with `channels`
-// channels at `sampleRate`. A no-op (0 semitones) returns immediately.
-inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRate, float semitones) {
-	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
-	if (semitones == 0.f) return;
-
-	soundtouch::SoundTouch st;
-	st.setSampleRate((uint)sampleRate);
-	st.setChannels((uint)channels);
-	st.setPitchSemiTones(semitones);
-	st.setTempo(1.0);
-
-	int64_t totalFrames = (int64_t)(samples.size() / (size_t)channels);
-	std::vector<float> out;
-	out.reserve(samples.size());
-
-	const uint blockFrames = 4096;
-	std::vector<float> block(blockFrames * (size_t)channels);
-	for (int64_t pos = 0; pos < totalFrames; pos += blockFrames) {
-		uint n = (uint)std::min((int64_t)blockFrames, totalFrames - pos);
-		std::copy(samples.begin() + (size_t)(pos * channels),
-			samples.begin() + (size_t)((pos + n) * channels), block.begin());
-		st.putSamples(block.data(), n);
-
-		uint received;
-		while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
-			out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
-		}
-	}
-	st.flush();
-	uint received;
-	while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
-		out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
-	}
-	samples = std::move(out);
-}
-
-// Decode the trimmed region from src/id and shift its pitch by `semitones`
-// without changing its duration. Runs on the worker thread.
-// trimIn/trimOut are normalised [0, 1] over the full file. Preserves the
-// source's full channel count (e.g. 5.1 surround stays 6-channel) — playback
-// downmixes to stereo at the fill-thread stage, not here, and applyRepitch()
-// is channel-count agnostic.
+// Loop / repitch previews: render the trimmed region at the source rate.
 inline AudioPreviewResult buildRepitchPreview(DataSource& src, const std::string& id,
 		float trimIn, float trimOut, float semitones) {
-	AudioPreviewResult result;
-
-	AudioInfo info;
-	if (!src.loadAudioInfo(id, info)) return result;
-	if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return result;
-
-	int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
-	int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
-	startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
-	endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
-	int64_t trimFrames = endFrame - startFrame;
-	if (trimFrames <= 0) return result;
-
-	int ch = info.channels;
-	result.samples.resize((size_t)(trimFrames * ch));
-
 	auto stream = src.openAudioStream(id);
-	if (!stream) return result;
-	stream->seekTo(startFrame);
-	int64_t framesRead = stream->readF32(result.samples.data(), trimFrames);
-	if (framesRead <= 0) return result;
-	result.samples.resize((size_t)(framesRead * ch));
-
-	applyRepitch(result.samples, ch, info.sampleRate, semitones);
-	if (result.samples.empty()) return result;
-
-	result.channels = ch;
-	result.sampleRate = info.sampleRate;
-	result.durationSeconds = (float)(result.samples.size() / (size_t)ch) / (float)info.sampleRate;
-	result.ok = true;
-	return result;
+	if (!stream) return AudioPreviewResult();
+	RenderSpec spec;
+	spec.trimIn = trimIn;
+	spec.trimOut = trimOut;
+	spec.repitchSemitones = semitones;
+	return renderRegion(*stream, spec);
 }
 
-
-// Generic declick: zero out the first and last frame of every channel.
-// NOTE: this is NOT used for loop export. Loop files are left pristine — the
-// applyLoopCrossfade seam is already continuous, and fading the ends to zero would
-// only trade the boundary click for an audible low-frequency "bump" (an amplitude
-// hole) on steep material with no quiet zero crossing. Forcing a single endpoint
-// sample to zero only makes sense when the file is played once (a hard start/end).
-// Kept as a small utility / fallback building block.
-inline void applyDeclick(std::vector<float>& samples, int channels) {
-	if (channels <= 0 || samples.empty()) return;
-	int64_t N = (int64_t)(samples.size() / (size_t)channels);
-	if (N < 2) return;
-
-	for (int ch = 0; ch < channels; ch++) {
-		samples[(size_t)ch] = 0.f;
-		samples[(size_t)((N - 1) * channels + ch)] = 0.f;
-	}
-}
-
-// Declick for trimmed (non-loop) files: search for zero crossings within a 5 ms
-// window at the start and end and trim the buffer to those crossing points.
-// This avoids waveform modification — the audio simply starts/ends where the
-// signal naturally crosses zero. Falls back to applyDeclick (short cosine fade)
-// for any boundary where no zero crossing exists within the search window.
-inline void applyDeclickZeroCross(std::vector<float>& samples, int channels, int sampleRate) {
-	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
-	int64_t N = (int64_t)(samples.size() / (size_t)channels);
-	if (N < 4) return;
-
-	const int64_t window = std::min((int64_t)(sampleRate / 200), N / 4);  // 5 ms
-
-	// Trim start: advance to the first zero crossing (where signal crosses zero on ch 0).
-	bool foundStart = false;
-	for (int64_t f = 1; f < window; f++) {
-		float prev = samples[(size_t)((f - 1) * channels)];
-		float cur  = samples[(size_t)(f * channels)];
-		if (prev * cur <= 0.f) {
-			samples.erase(samples.begin(), samples.begin() + (size_t)(f * channels));
-			N -= f;
-			foundStart = true;
-			break;
-		}
-	}
-
-	// Trim end: retreat to the last zero crossing searching backward.
-	bool foundEnd = false;
-	for (int64_t f = 1; f < window; f++) {
-		int64_t pos = N - f;
-		if (pos <= 0) break;
-		float prev = samples[(size_t)((pos - 1) * channels)];
-		float cur  = samples[(size_t)(pos * channels)];
-		if (prev * cur <= 0.f) {
-			samples.resize((size_t)(pos * channels));
-			N = pos;
-			foundEnd = true;
-			break;
-		}
-	}
-
-	// For any boundary with no crossing in the window, fall back to a 5 ms
-	// cosine fade. applyDeclick uses only 16 samples (correct for loop files
-	// where the boundary is already near-zero); re-implement the longer fade here.
-	if (!foundStart || !foundEnd) {
-		int64_t Nfb = (int64_t)(samples.size() / (size_t)channels);
-		int64_t fadeFrames = std::min((int64_t)(sampleRate / 200), Nfb / 4);  // 5 ms
-		if (fadeFrames >= 2) {
-			for (int64_t f = 0; f < fadeFrames; f++) {
-				float gain = std::sin((float)f / (float)(fadeFrames - 1) * float(M_PI) * 0.5f);
-				for (int ch = 0; ch < channels; ch++) {
-					if (!foundStart) samples[(size_t)(f * channels + ch)] *= gain;
-					if (!foundEnd)   samples[(size_t)((Nfb - 1 - f) * channels + ch)] *= gain;
-				}
-			}
-		}
-	}
-}
-
-
-// Loop crossfade post-processing
-// Rotation + crossfade: makes a sample loop-ready so that looping at the
-// file boundaries produces a smooth transition.
-//
-// Technique:
-//   1. Find the frame M nearest to the midpoint that crosses zero on channel 0
-//      (minimises the click at the new loop-point).
-//   2. Rearrange: [original[M..N-1], original[0..M-1]]  (swap halves)
-//   3. Crossfade the join: blend the last C frames of the second half (fade-out)
-//      with the first C frames of the first half (fade-in) into a single C-frame
-//      region.  This handles the formerly-glitchy original end→start transition.
-//   4. Output length = N − C.
-//
-// After this the new loop point (output end → output start) lands at the
-// original midpoint M, which is typically a quieter/smoother splice location.
-//
-// `samples` is interleaved float PCM with `channels` channels.
-// `sampleRate` is used only to convert `crossfadeSecs` to frame count.
-// `crossfadeSecs` is clamped so that C ≤ min(M, N-M) − 1; a too-long
-// crossfade is silently shortened rather than failing.
-inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sampleRate, float crossfadeSecs) {
-	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
-	int64_t N = (int64_t)(samples.size() / (size_t)channels);
-	if (N < 4) return;
-
-	// Find the zero-crossing of channel 0 within a ¼-second window around the midpoint
-	// that has the lowest splice amplitude (|prev| + |cur|). Minimising amplitude at
-	// the splice — not just proximity to the midpoint — is what eliminates the click:
-	// a zero crossing at -0.8 → +0.6 looks valid but still sounds audible.
-	// We scan the whole window rather than stopping at the first crossing found, so
-	// we can trade a bit of search time for a much quieter loop point.
-	// `mid` is fixed so the symmetric probe positions are always mid ± d.
-	const int64_t mid = N / 2;
-	int64_t M = mid;
-	{
-		const int64_t searchWindow = std::min(N / 4, (int64_t)(sampleRate / 4));
-		float bestScore = std::numeric_limits<float>::max();
-		bool foundCrossing = false;
-		// Fallback for material with no zero crossing in the window (e.g. a DC
-		// offset): remember the sample closest to zero so the seam still lands at
-		// the smallest possible discontinuity instead of an arbitrary jump at the
-		// exact midpoint.
-		float bestAbs = std::numeric_limits<float>::max();
-		int64_t bestAbsPos = mid;
-		for (int64_t d = 0; d <= searchWindow; d++) {
-			for (int sign : {-1, 1}) {
-				int64_t pos = mid + sign * d;
-				if (pos <= 0 || pos >= N - 1) continue;
-				float cur = samples[(size_t)(pos * channels)];
-				float prev = samples[(size_t)((pos - 1) * channels)];
-				float a = std::abs(cur);
-				if (a < bestAbs) { bestAbs = a; bestAbsPos = pos; }
-				if (cur * prev <= 0.f) {
-					float score = a + std::abs(prev);
-					if (score < bestScore) {
-						bestScore = score;
-						M = pos;
-						foundCrossing = true;
-					}
-				}
-			}
-			if (foundCrossing && bestScore < 1e-5f) break;  // essentially silent — can't do better
-		}
-		if (!foundCrossing) M = bestAbsPos;
-	}
-
-	// Clamp crossfade length so it fits in both halves.
-	int64_t C = (int64_t)(crossfadeSecs * (float)sampleRate);
-	int64_t maxC = std::min(M, N - M) - 1;
-	if (maxC <= 0) return;
-	C = std::max((int64_t)1, std::min(C, maxC));
-
-	// Build output of length N−C:
-	//   [original[M .. N-C-1], crossfade, original[C .. M-1]]
-	// where crossfade blends original[N-C .. N-1] (fade-out) and
-	//                         original[0  .. C-1]  (fade-in).
-	int64_t part1Len = (N - C) - M;   // frames from rotation point to end minus tail
-	int64_t part2Len = M - C;          // frames from crossfade end to rotation point
-	int64_t outN = part1Len + C + part2Len; // == N - C
-
-	std::vector<float> out((size_t)(outN * channels));
-
-	// Part 1: original[M .. N-C-1]
-	for (int64_t f = 0; f < part1Len; f++) {
-		for (int ch = 0; ch < channels; ch++) {
-			out[(size_t)(f * channels + ch)] = samples[(size_t)((M + f) * channels + ch)];
-		}
-	}
-
-	// Crossfade: blend tail of second half (fade-out) with head of first half (fade-in)
-	for (int64_t f = 0; f < C; f++) {
-		float alpha = (C > 1) ? (float)f / (float)(C - 1) : 1.f;
-		float angle = alpha * float(M_PI) * 0.5f;
-		float fadeOut = std::cos(angle);
-		float fadeIn = std::sin(angle);
-		for (int ch = 0; ch < channels; ch++) {
-			float s1 = samples[(size_t)((N - C + f) * channels + ch)];
-			float s2 = samples[(size_t)(f * channels + ch)];
-			out[(size_t)((part1Len + f) * channels + ch)] = s1 * fadeOut + s2 * fadeIn;
-		}
-	}
-
-	// Part 2: original[C .. M-1]
-	for (int64_t f = 0; f < part2Len; f++) {
-		for (int ch = 0; ch < channels; ch++) {
-			out[(size_t)((part1Len + C + f) * channels + ch)] = samples[(size_t)((C + f) * channels + ch)];
-		}
-	}
-
-	samples = std::move(out);
-}
-
-// Decode the trimmed region from src/id, apply rotation+crossfade, and return
-// the result as an in-memory buffer. Runs on the worker thread.
-// trimIn/trimOut are normalised [0, 1] over the full file. Preserves the
-// source's full channel count (e.g. 5.1 surround stays 6-channel) — playback
-// downmixes to stereo at the fill-thread stage, not here, and
-// applyLoopCrossfade() is channel-count agnostic.
 inline AudioPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
 		float trimIn, float trimOut, float crossfadeDuration) {
-	AudioPreviewResult result;
-
-	AudioInfo info;
-	if (!src.loadAudioInfo(id, info)) return result;
-	if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return result;
-
-	int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
-	int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
-	startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
-	endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
-	int64_t trimFrames = endFrame - startFrame;
-	if (trimFrames <= 0) return result;
-
-	int ch = info.channels;
-	result.samples.resize((size_t)(trimFrames * ch));
-
 	auto stream = src.openAudioStream(id);
-	if (!stream) return result;
-	stream->seekTo(startFrame);
-	int64_t framesRead = stream->readF32(result.samples.data(), trimFrames);
-	if (framesRead <= 0) return result;
-	result.samples.resize((size_t)(framesRead * ch));
-
-	applyLoopCrossfade(result.samples, ch, info.sampleRate, crossfadeDuration);
-	if (result.samples.empty()) return result;
-
-	result.channels = ch;
-	result.sampleRate = info.sampleRate;
-	result.durationSeconds = (float)(result.samples.size() / (size_t)ch) / (float)info.sampleRate;
-	result.ok = true;
-	return result;
+	if (!stream) return AudioPreviewResult();
+	RenderSpec spec;
+	spec.trimIn = trimIn;
+	spec.trimOut = trimOut;
+	spec.loop = true;
+	spec.loopCrossfadeSecs = crossfadeDuration;
+	return renderRegion(*stream, spec);
 }
+
 
 } // namespace Siren
 } // namespace StoermelderPackOne

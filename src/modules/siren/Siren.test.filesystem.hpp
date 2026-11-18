@@ -330,6 +330,89 @@ TEST_CASE("prepareForDrop: resampling keeps all channels of a surround file", "[
 	}
 }
 
+// ─── renderRegion: the shared render pipeline ───────────────────────────────
+
+static MemoryAudioStream makeConstantStream(int frames, int sr, int ch, float v) {
+	MemoryAudioStream m;
+	m.ch = ch;
+	m.sr = sr;
+	m.samples.assign((size_t)frames * ch, v);
+	return m;
+}
+
+TEST_CASE("renderRegion: trims to the requested range and keeps the source rate", "[Siren][Render]") {
+	MemoryAudioStream m = makeConstantStream(1000, 44100, 3, 0.25f);
+	RenderSpec spec;
+	spec.trimIn = 0.2f;
+	spec.trimOut = 0.7f;
+	AudioPreviewResult r = renderRegion(m, spec);
+	REQUIRE(r.ok);
+	REQUIRE(r.channels == 3);
+	REQUIRE(r.sampleRate == 44100);
+	REQUIRE(r.samples.size() == 500 * 3);
+}
+
+TEST_CASE("renderRegion: resampling changes rate and length for every channel", "[Siren][Render]") {
+	MemoryAudioStream m = makeConstantStream(4800, 48000, 6, 0.5f);
+	RenderSpec spec;
+	spec.targetRate = 24000;
+	AudioPreviewResult r = renderRegion(m, spec);
+	REQUIRE(r.ok);
+	REQUIRE(r.sampleRate == 24000);
+	REQUIRE(r.channels == 6);
+	size_t frames = r.samples.size() / 6;
+	REQUIRE(frames > 2300);
+	REQUIRE(frames < 2500);
+	REQUIRE(r.samples[(frames / 2) * 6 + 5] == Catch::Approx(0.5f).margin(0.02));
+}
+
+TEST_CASE("renderRegion: loop shortens the region, an empty range fails", "[Siren][Render]") {
+	MemoryAudioStream m = makeConstantStream(44100, 44100, 2, 0.1f);
+	RenderSpec loop;
+	loop.loop = true;
+	loop.loopCrossfadeSecs = 0.05f;
+	AudioPreviewResult r = renderRegion(m, loop);
+	REQUIRE(r.ok);
+	REQUIRE(r.samples.size() / 2 < 44100);
+
+	RenderSpec empty;
+	empty.trimIn = 0.5f;
+	empty.trimOut = 0.5f;
+	REQUIRE(renderRegion(m, empty).ok == false);
+}
+
+TEST_CASE("renderRegion: stages run in the order repitch, resample, loop", "[Siren][Render]") {
+	MemoryAudioStream m = makeConstantStream(8820, 44100, 2, 0.1f);
+	RenderSpec spec;
+	spec.repitchSemitones = 2.f;
+	spec.targetRate = 48000;
+	spec.loop = true;
+	spec.loopCrossfadeSecs = 0.01f;
+	spec.declick = true;  // ignored while looping
+	std::vector<RenderStage> trace;
+	REQUIRE(renderRegion(m, spec, &trace).ok);
+	REQUIRE(trace == std::vector<RenderStage>({RenderStage::Decode, RenderStage::Repitch,
+		RenderStage::Resample, RenderStage::LoopCrossfade}));
+}
+
+TEST_CASE("renderRegion: non-loop export declicks after resampling; unused stages are skipped", "[Siren][Render]") {
+	MemoryAudioStream m = makeConstantStream(8820, 44100, 2, 0.1f);
+	RenderSpec spec;
+	spec.targetRate = 48000;
+	spec.declick = true;
+	std::vector<RenderStage> trace;
+	REQUIRE(renderRegion(m, spec, &trace).ok);
+	REQUIRE(trace == std::vector<RenderStage>({RenderStage::Decode, RenderStage::Resample, RenderStage::Declick}));
+
+	// Same rate and no repitch/loop/declick: decode only.
+	RenderSpec plain;
+	plain.targetRate = 44100;
+	trace.clear();
+	m.seekTo(0);
+	REQUIRE(renderRegion(m, plain, &trace).ok);
+	REQUIRE(trace == std::vector<RenderStage>({RenderStage::Decode}));
+}
+
 // copyFileForDrop is the binary-copy helper used by the alwaysCopy path. A
 // missing source file should fall back to the source path so the rest of the
 // drop pipeline can decide what to do.

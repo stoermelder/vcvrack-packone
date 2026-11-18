@@ -280,7 +280,11 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const override {
-		std::string absPath = resolveAbsPath(id);
+		return openFileStream(resolveAbsPath(id));
+	}
+
+	// Streaming decoder for an absolute file path (wav/flac/mp3); nullptr if it can't be opened.
+	static std::unique_ptr<AudioStream> openFileStream(const std::string& absPath) {
 		std::string ext = vcv::fs::getExtension(vcv::fs::getFilename(absPath));
 		for (char& c : ext) c = (char)tolower(c);
 
@@ -387,141 +391,31 @@ struct FileSystemDataSource : DataSource {
 	static std::string processAudioForDrop(const std::string& srcPath, const std::string& dstPath,
 			int targetSampleRate, float trimIn, float trimOut, int resampleQuality = 6,
 			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f, float repitchSemitones = 0.f) {
+		auto stream = openFileStream(srcPath);
+		if (!stream) return srcPath;
 
-		// Read header only to determine trim region without decoding full PCM.
-		AudioInfo info;
-		if (!filesystem::loadAudioInfo(srcPath, info)) return srcPath;
-		if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return srcPath;
-
-		int channels = info.channels;
-		int srcRate = info.sampleRate;
-		int64_t totalFrames = info.frameCount;
-
-		// Trim: compute the [trimIn, trimOut] region.
-		int64_t startFrame = (int64_t)(trimIn * (float)totalFrames);
-		int64_t endFrame = (int64_t)(trimOut * (float)totalFrames);
-		startFrame = std::max((int64_t)0, std::min(startFrame, totalFrames));
-		endFrame = std::max(startFrame, std::min(endFrame, totalFrames));
-		int64_t trimFrames = endFrame - startFrame;
-		if (trimFrames <= 0) return srcPath;
-
-		// Decode only the trimmed region by seeking before reading.
-		std::string ext = vcv::fs::getExtension(vcv::fs::getFilename(srcPath));
-		for (char& c : ext) c = (char)tolower(c);
-
-		std::vector<float> samples((size_t)(trimFrames * channels));
-		int64_t framesRead = 0;
-
-		if (ext == ".wav") {
-			drwav wav;
-			if (!drwav_init_file(&wav, srcPath.c_str(), nullptr)) return srcPath;
-			drwav_seek_to_pcm_frame(&wav, (drwav_uint64)startFrame);
-			framesRead = (int64_t)drwav_read_pcm_frames_f32(&wav, (drwav_uint64)trimFrames, samples.data());
-			drwav_uninit(&wav);
-		}
-		else if (ext == ".flac") {
-			drflac* flac = drflac_open_file(srcPath.c_str(), nullptr);
-			if (!flac) return srcPath;
-			drflac_seek_to_pcm_frame(flac, (drflac_uint64)startFrame);
-			framesRead = (int64_t)drflac_read_pcm_frames_f32(flac, (drflac_uint64)trimFrames, samples.data());
-			drflac_close(flac);
-		}
-		else if (ext == ".mp3") {
-			drmp3 mp3;
-			if (!drmp3_init_file(&mp3, srcPath.c_str(), nullptr)) return srcPath;
-			drmp3_seek_to_pcm_frame(&mp3, (drmp3_uint64)startFrame);
-			framesRead = (int64_t)drmp3_read_pcm_frames_f32(&mp3, (drmp3_uint64)trimFrames, samples.data());
-			drmp3_uninit(&mp3);
-		}
-		else {
-			return srcPath;
-		}
-
-		samples.resize((size_t)(framesRead * channels));
-		if (framesRead <= 0) return srcPath;
-
-		// Repitch first: SoundTouch's window/hop time constants are tuned for the
-		// source sample rate, and pitch-shifting up can extend the spectrum above
-		// the source Nyquist — running SRC afterwards lets it anti-alias correctly.
-		// Operates on `samples` in place, so outPtr starts pointing at it.
-		if (repitchSemitones != 0.f) {
-			::StoermelderPackOne::Siren::applyRepitch(samples, channels, srcRate, repitchSemitones);
-			framesRead = (int64_t)(samples.size() / (size_t)channels);
-			if (framesRead <= 0) return srcPath;
-		}
-
-		// Resample: convert to targetSampleRate when it differs from the source rate.
-		// The converter processes every channel of the file (the buffers are interleaved
-		// with stride `channels`). Beyond its capacity the file keeps its own rate rather
-		// than losing channels.
-		constexpr int MAX_RESAMPLE_CHANNELS = 16;
-		int outRate = (targetSampleRate > 0 && targetSampleRate != srcRate && channels <= MAX_RESAMPLE_CHANNELS)
-			? targetSampleRate : srcRate;
-		std::vector<float> resampled;
-		const float* outPtr = samples.data();
-		int64_t outFrames = framesRead;
-		if (outRate != srcRate) {
-			int64_t outCapacity = (int64_t)((double)framesRead * outRate / srcRate) + 256;
-			resampled.resize((size_t)(outCapacity * channels));
-			dsp::SampleRateConverter<MAX_RESAMPLE_CHANNELS> src;
-			src.setChannels(channels);
-			src.setRates(srcRate, outRate);
-			// Clamp to speex's documented range; out-of-range values would assert / destroy
-			// the resampler state silently in refreshState().
-			int q = resampleQuality;
-			if (q < 0) q = 0;
-			if (q > 10) q = 10;
-			src.setQuality(q);
-			int inF = (int)std::min(framesRead, (int64_t)INT_MAX);
-			int outF = (int)std::min(outCapacity, (int64_t)INT_MAX);
-			src.process(outPtr, channels, &inF, resampled.data(), channels, &outF);
-			resampled.resize((size_t)outF * channels);
-			outPtr = resampled.data();
-			outFrames = (int64_t)outF;
-		}
-
-		// Loop post-processing: rotation + crossfade so the file loops smoothly.
-		// Operates on an owned copy of the buffer so outPtr/resampled are replaced.
-		if (loopOnDrop) {
-			std::vector<float> loopBuf(outPtr, outPtr + (size_t)(outFrames * channels));
-			::StoermelderPackOne::Siren::applyLoopCrossfade(loopBuf, channels, outRate, loopCrossfadeDuration);
-			resampled = std::move(loopBuf);
-			outPtr = resampled.data();
-			outFrames = (int64_t)(resampled.size() / (size_t)channels);
-			if (outFrames <= 0) return srcPath;
-		}
-
-		// Declick the start/end so the exported file doesn't pop.
-		// Non-loop: trim to the nearest zero crossing within 5 ms (no waveform
-		//   modification); falls back to a short cosine fade if none is found.
-		// Loop: leave the buffer untouched. applyLoopCrossfade already placed the
-		//   loop seam at two consecutive source frames, so the wrap is continuous in
-		//   value and slope on every channel and a gapless player loops it with no
-		//   artifact. We deliberately do NOT fade the ends to zero: for steep material
-		//   with no quiet zero crossing, that fade only trades the boundary click for
-		//   an audible low-frequency "bump" (an amplitude hole) on every player.
-		if (!loopOnDrop) {
-			if (resampled.empty()) {
-				resampled.assign(outPtr, outPtr + (size_t)(outFrames * channels));
-			}
-			::StoermelderPackOne::Siren::applyDeclickZeroCross(resampled, channels, outRate);
-			// applyDeclickZeroCross trims to the zero crossings, changing the length;
-			// refresh outPtr/outFrames so the write below uses the trimmed buffer.
-			outPtr = resampled.data();
-			outFrames = (int64_t)(resampled.size() / (size_t)channels);
-			if (outFrames <= 0) return srcPath;
-		}
+		RenderSpec spec;
+		spec.trimIn = trimIn;
+		spec.trimOut = trimOut;
+		spec.repitchSemitones = repitchSemitones;
+		spec.loop = loopOnDrop;
+		spec.loopCrossfadeSecs = loopCrossfadeDuration;
+		spec.targetRate = targetSampleRate;
+		spec.resampleQuality = resampleQuality;
+		spec.declick = true;  // a non-loop export starts/ends at a zero crossing
+		AudioPreviewResult r = renderRegion(*stream, spec);
+		if (!r.ok) return srcPath;
 
 		// Write output WAV.
 		drwav_data_format fmt = {};
 		fmt.container = drwav_container_riff;
 		fmt.format = DR_WAVE_FORMAT_IEEE_FLOAT;
-		fmt.channels = (drwav_uint32)channels;
-		fmt.sampleRate = (drwav_uint32)outRate;
+		fmt.channels = (drwav_uint32)r.channels;
+		fmt.sampleRate = (drwav_uint32)r.sampleRate;
 		fmt.bitsPerSample = 32;
 		drwav wav;
 		if (!drwav_init_file_write(&wav, dstPath.c_str(), &fmt, nullptr)) return srcPath;
-		drwav_write_pcm_frames(&wav, (drwav_uint64)outFrames, outPtr);
+		drwav_write_pcm_frames(&wav, (drwav_uint64)(r.samples.size() / (size_t)r.channels), r.samples.data());
 		drwav_uninit(&wav);
 		return dstPath;
 	}

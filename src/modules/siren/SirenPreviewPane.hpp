@@ -804,14 +804,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	// trimmed region.
 	size_t previewBufferBytes(float trimIn, float trimOut) const {
 		if (!source || info.frameCount <= 0 || info.sampleRate <= 0) return 0;
-		int ch = std::min(info.channels, 2);
+		// The preview keeps every channel of the file (playback downmixes later).
+		int ch = info.channels;
 		if (ch <= 0) return 0;
-		int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
-		int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
-		startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
-		endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
+		int64_t startFrame, endFrame;
+		if (!trimFrameRange(info.frameCount, trimIn, trimOut, startFrame, endFrame)) return 0;
 		int64_t frames = endFrame - startFrame;
-		if (frames <= 0) return 0;
 		return (size_t)frames * (size_t)ch * sizeof(float);
 	}
 };
