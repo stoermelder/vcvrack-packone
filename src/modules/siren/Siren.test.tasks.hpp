@@ -109,10 +109,6 @@ struct SyntheticDataSource : DataSource {
 		return result;
 	}
 
-	void loadChildrenAsync(const std::string& id, StoermelderPackOne::ITaskWorker&,
-			std::function<void(std::vector<DataSourceNode>)> onDone) override {
-		onDone(loadChildrenSync(id));
-	}
 
 	std::unique_ptr<AudioStream> openAudioStream(const std::string&) const override { return nullptr; }
 

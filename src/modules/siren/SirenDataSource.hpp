@@ -174,12 +174,9 @@ struct DataSource {
 	virtual std::string rootId() const = 0;
 	virtual bool isSupportedFile(const std::string& path) const = 0;
 
-	// Load the top-level children of an item id asynchronously via a worker.
-	// Use rootId() to load the root level. Calls onDone on the main thread.
-	virtual void loadChildrenAsync(const std::string& id, ITaskWorker& worker,
-		std::function<void(std::vector<DataSourceNode>)> onDone) = 0;
-
-	// Sync version for testing. withAudioInfo controls whether each file's audio
+	// Top-level children of an item id (rootId() for the root level). Blocking: callers
+	// that must not stall the UI run it on a worker and keep the DataSource alive via a
+	// shared_ptr. withAudioInfo controls whether each file's audio
 	// header is opened to fill in DataSourceNode::durationSeconds — pass false
 	// for callers that only need names/relativePath/isContainer (e.g. recursive
 	// scans), since opening every file (notably MP3 frame counting) is costly.

@@ -110,10 +110,6 @@ struct TestDataSource : DataSource {
 	std::string rootId() const override { return root; }
 	bool isSupportedFile(const std::string& path) const override { return true; }
 
-	void loadChildrenAsync(const std::string& id, ITaskWorker& worker,
-			std::function<void(std::vector<DataSourceNode>)> onDone) override {
-		onDone(loadChildrenSync(id));
-	}
 	std::vector<DataSourceNode> loadChildrenSync(const std::string& id, bool withAudioInfo = true) override { return {}; }
 
 	MetadataStore* getMetadata() override { return &meta_; }

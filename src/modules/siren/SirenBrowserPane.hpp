@@ -421,9 +421,18 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		int gen = ++treeGeneration;
 		if (!worker) return;
 		loadPending = true;
-		activeDs->loadChildrenAsync(activeDs->rootId(), *worker, [this, gen](std::vector<DataSourceNode> nodes) {
+		requestChildren(activeDs->rootId(), "", 0, gen);
+	}
+
+	// List `id` on the worker and queue the result for step(). The task holds its own
+	// reference to the source, so a root switch can't free it mid-listing; stale
+	// results are dropped by their generation.
+	void requestChildren(const std::string& id, const std::string& parentPath, int insertIdx, int gen) {
+		std::shared_ptr<DataSource> ds = activeDs;
+		worker->work([this, ds, id, parentPath, insertIdx, gen]() {
+			std::vector<DataSourceNode> nodes = ds->loadChildrenSync(id);
 			if (!pendingQueue.full()) {
-				pendingQueue.push(PendingResult("", 0, std::move(nodes), gen));
+				pendingQueue.push(PendingResult(parentPath, insertIdx, std::move(nodes), gen));
 			}
 		});
 	}
@@ -516,10 +525,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		if (worker && activeDs) {
 			entry.childrenLoading = true;
 			int gen = treeGeneration.load(std::memory_order_relaxed);
-			activeDs->loadChildrenAsync(id, *worker, [this, id, gen](std::vector<DataSourceNode> nodes) {
-				if (!pendingQueue.full())
-					pendingQueue.push(PendingResult(id, -1, std::move(nodes), gen));
-			});
+			requestChildren(id, id, -1, gen);
 		}
 	}
 

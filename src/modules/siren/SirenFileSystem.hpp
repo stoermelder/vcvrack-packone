@@ -263,33 +263,6 @@ struct FileSystemDataSource : DataSource {
 		return result;
 	}
 
-	void loadChildrenAsync(const std::string& id, ITaskWorker& worker,
-			std::function<void(std::vector<DataSourceNode>)> onDone) override {
-		std::string scanPath = root + id;
-		std::string rootCopy = root;
-		worker.work([this, scanPath, rootCopy, onDone]() {
-			std::vector<DataSourceNode> result;
-			for (const std::string& entryPath : vcv::fs::getEntries(scanPath, 0)) {
-				DataSourceNode node;
-				node.name = vcv::fs::getFilename(entryPath);
-				node.isContainer = vcv::fs::isDirectory(entryPath);
-				node.relativePath = entryPath.substr(rootCopy.size());
-				if (node.isContainer || isSupportedAudioFile(node.name)) {
-					if (!node.isContainer) {
-						if (isGeneratedFile(node.name)) continue;
-						node.durationSeconds = loadCachedDuration(node.relativePath, rootCopy + node.relativePath);
-					}
-					result.push_back(std::move(node));
-				}
-			}
-			std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
-				if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
-				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
-			});
-			onDone(std::move(result));
-		});
-	}
-
 	std::string getDisplayName(const std::string& id) const override {
 		return vcv::fs::getFilename(id);
 	}
