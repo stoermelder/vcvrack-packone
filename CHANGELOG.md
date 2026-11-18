@@ -17,6 +17,7 @@
 - Module [SIREN](./docs/siren/Siren.md)
     - Added support for "Light" ui theme
     - Fixed possible crash on patch loading (#476)
+    - Fixed Resampling only working on stereo files
 
 ## 2.7.0
 

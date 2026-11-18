@@ -299,6 +299,37 @@ TEST_CASE("prepareForDrop: alwaysCopy defers to processAudioForDrop when a trans
 	REQUIRE(rack::system::exists(result));
 }
 
+// "Resample on drop" must resample every channel of a multichannel file; the converter
+// used to be sized for stereo, leaving channels 3+ at zero in the written WAV.
+TEST_CASE("prepareForDrop: resampling keeps all channels of a surround file", "[Siren][FileSystem][Drop]") {
+	TempDir tmp;
+	TempDir outDir;
+	writeMultichannelTestWav(tmp.filePath("surround.wav"), 9600, 48000, 6, 0.6f, -0.3f, 0.15f);
+
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
+	auto task = src.prepareForDrop("/surround.wav", /*convertToWav=*/false, /*targetSampleRate=*/44100,
+		/*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6,
+		outDir.str(), /*loopOnDrop=*/false, /*loopCrossfadeDuration=*/8.f,
+		/*repitchSemitones=*/0.f, /*alwaysCopy=*/false);
+	std::string result = task();
+	REQUIRE(rack::system::getDirectory(result) == outDir.str());
+
+	drwav wav;
+	REQUIRE(drwav_init_file(&wav, result.c_str(), nullptr));
+	REQUIRE(wav.channels == 6);
+	REQUIRE(wav.sampleRate == 44100);
+	std::vector<float> out((size_t)wav.totalPCMFrameCount * 6);
+	drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, out.data());
+	drwav_uninit(&wav);
+
+	// Sample the middle of the file, away from the resampler's and declick's edges.
+	size_t mid = out.size() / 6 / 2;
+	const float expect[6] = {0.6f, -0.3f, 0.15f, 0.15f, 0.15f, 0.15f};
+	for (int c = 0; c < 6; c++) {
+		REQUIRE(out[mid * 6 + c] == Catch::Approx(expect[c]).margin(0.02));
+	}
+}
+
 // copyFileForDrop is the binary-copy helper used by the alwaysCopy path. A
 // missing source file should fall back to the source path so the rest of the
 // drop pipeline can decide what to do.

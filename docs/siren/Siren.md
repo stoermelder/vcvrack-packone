@@ -244,5 +244,6 @@ SIREN can shift the pitch of the current sample or trim region without changing 
 - v2.x.x
   - Added support for "Light" ui theme
   - Fixed possible crash on patch loading (#476)
+  - Fixed Resampling only working on stereo files
 
 <!-- /manual:exclude -->

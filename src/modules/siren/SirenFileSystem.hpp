@@ -451,7 +451,11 @@ struct FileSystemDataSource : DataSource {
 		}
 
 		// Resample: convert to targetSampleRate when it differs from the source rate.
-		int outRate = (targetSampleRate > 0 && targetSampleRate != srcRate)
+		// The converter processes every channel of the file (the buffers are interleaved
+		// with stride `channels`). Beyond its capacity the file keeps its own rate rather
+		// than losing channels.
+		constexpr int MAX_RESAMPLE_CHANNELS = 16;
+		int outRate = (targetSampleRate > 0 && targetSampleRate != srcRate && channels <= MAX_RESAMPLE_CHANNELS)
 			? targetSampleRate : srcRate;
 		std::vector<float> resampled;
 		const float* outPtr = samples.data();
@@ -459,8 +463,8 @@ struct FileSystemDataSource : DataSource {
 		if (outRate != srcRate) {
 			int64_t outCapacity = (int64_t)((double)framesRead * outRate / srcRate) + 256;
 			resampled.resize((size_t)(outCapacity * channels));
-			dsp::SampleRateConverter<2> src;
-			src.setChannels(std::min(channels, 2));
+			dsp::SampleRateConverter<MAX_RESAMPLE_CHANNELS> src;
+			src.setChannels(channels);
 			src.setRates(srcRate, outRate);
 			// Clamp to speex's documented range; out-of-range values would assert / destroy
 			// the resampler state silently in refreshState().
