@@ -1045,6 +1045,68 @@ TEST_CASE("nextFrame: adopts the seek base published by the fill thread", "[Sire
 	REQUIRE(p.playhead() == Catch::Approx(0.501f));
 }
 
+// A seek while playing must not step from the old audio to silence. The DSP keeps
+// running while the fill thread decodes the new position; if the ring was cleared
+// before that decode, the DSP output dropped straight to 0 (an audible click) and the
+// declick ramp only started afterwards, from silence. The DSP is driven from inside
+// the decoder's readF32 to reproduce that window deterministically.
+TEST_CASE("StreamPlayer: seek during playback has no step to silence", "[Siren][Audio]") {
+	struct HookStream : FakeAudioStream {
+		std::function<void()> onRead;
+		using FakeAudioStream::FakeAudioStream;
+		int64_t readF32(float* buf, int64_t n) override {
+			if (onRead) {
+				auto f = std::move(onRead);
+				onRead = nullptr;
+				f();
+			}
+			return FakeAudioStream::readF32(buf, n);
+		}
+	};
+
+	const int sr = 44100;
+	const int frames = 20000;
+	auto* raw = new HookStream(frames, 2, sr, 0.8f);
+	// Second half: a 220 Hz sine starting at a zero crossing — the seek target.
+	for (int f = frames / 2; f < frames; f++) {
+		float v = std::sin(2.f * float(M_PI) * 220.f * (float)(f - frames / 2) / (float)sr);
+		raw->data[(size_t)f * 2] = raw->data[(size_t)f * 2 + 1] = v;
+	}
+
+	std::atomic<float> trimIn{0.f}, trimOut{1.f};
+	StreamPlayer p(&trimIn, &trimOut);
+	p.stopFillThread();  // the test drives fillOnce() itself
+	p.setEngineSampleRate(sr);
+	p.adoptStream(std::unique_ptr<AudioStream>(raw), frames);
+
+	std::vector<float> out;
+	auto step = [&]() { out.push_back(p.nextFrame(0.f, 1.f, false).samples[0]); };
+
+	// Play the constant 0.8 region past the initial declick ramp.
+	p.startPlayback(0.f);
+	p.fillOnce();
+	for (int i = 0; i < 1500; i++) {
+		step();
+		if (i % 256 == 0) p.fillOnce();
+	}
+	REQUIRE(out.back() == Catch::Approx(0.8f));
+
+	// Seek to the sine while the DSP keeps running during the decode.
+	p.startPlayback(0.5f);
+	raw->onRead = [&]() { for (int i = 0; i < 32; i++) step(); };
+	p.fillOnce();
+	REQUIRE(raw->onRead == nullptr);  // the hook ran
+	for (int i = 0; i < 1500; i++) {
+		step();
+		if (i % 256 == 0) p.fillOnce();
+	}
+
+	float maxStep = 0.f;
+	for (size_t i = 1; i < out.size(); i++) maxStep = std::max(maxStep, std::abs(out[i] - out[i - 1]));
+	// The sine itself moves at most ~0.031 per frame; the ramp adds ~0.0012.
+	REQUIRE(maxStep < 0.1f);
+}
+
 // openStream with null source leaves pendingStream nullptr.
 TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio]") {
 	Test::Harness h;

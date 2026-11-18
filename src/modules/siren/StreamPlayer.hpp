@@ -400,11 +400,13 @@ private:
 	// Reposition the decoder, (re)configure the resampler, then prime the ring with
 	// audio beginning on a zero crossing so playback starts click-free.
 	void primeFromSeek(int64_t sf) {
-		// SeekTo first so old audio stays in the ring during seek I/O — MP3 seek can
-		// take ~100ms and an empty ring would be audible silence.
+		// Seek and decode before touching the ring, so the old audio keeps playing during
+		// the I/O — an MP3 seek can take ~100 ms and an empty ring would cut straight to
+		// silence, a click the declick ramp (which starts at the new seekGen) can't hide.
 		stream->seekTo(sf);
+		// Reset EOF up front: if the old session already hit EOF, the DSP could otherwise
+		// drain the ring during the decode and queue its own loop restart over this seek.
 		eofReached.store(false, std::memory_order_relaxed);
-		rb.clear();
 		loopHeadValid = false;
 
 		// streamCh is the real decoder channel count; fillCh is clamped to the stereo
@@ -432,14 +434,19 @@ private:
 		for (int64_t i = 1; i < zcRead; i++) {
 			if (zcBuf[(i - 1) * fillCh] * zcBuf[i * fillCh] <= 0.f) { zcOffset = i; break; }
 		}
+		// Publish the audio start (seek target + zero-crossing offset) so the displayed
+		// playhead matches what is actually heard; the DSP adopts it on seeing the new gen.
+		// This happens before the ring is cleared: the DSP then starts its declick ramp
+		// from the last old sample, so any frames it finds the ring empty while it refills
+		// fade towards silence instead of stepping to it. The new audio starts on a zero
+		// crossing, so joining the ramp mid-way is continuous too.
+		seekBase.store(sf + zcOffset, std::memory_order_relaxed);
+		seekGen.fetch_add(1, std::memory_order_release);
+
+		rb.clear();
 		for (int64_t r = zcOffset; r < zcRead; r += (int64_t)CHUNK) {
 			pushFrames(zcBuf + r * fillCh, (int)std::min((int64_t)CHUNK, zcRead - r));
 		}
-
-		// Publish the audio start (seek target + zero-crossing offset) so the displayed
-		// playhead matches what is actually heard; the DSP adopts it on seeing the new gen.
-		seekBase.store(sf + zcOffset, std::memory_order_relaxed);
-		seekGen.fetch_add(1, std::memory_order_release);
 		fillFilePos = sf + zcRead;
 		playing.store(true, std::memory_order_release);
 	}
