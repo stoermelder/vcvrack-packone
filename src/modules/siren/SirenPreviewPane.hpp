@@ -5,6 +5,7 @@
 #include "SirenMetadata.hpp"
 #include "SirenDropHandler.hpp"
 #include "SirenBpmDetector.hpp"
+#include "SirenStreamPlayer.hpp"
 #include "SirenWaveformCanvas.hpp"
 #include "SirenDummyPreview.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
@@ -65,7 +66,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	float repitchTotalSemitones() const { return repitchSemitones + repitchCents / 100.f; }
 
 	// loop-preview state
-	std::atomic<bool>* previewActive = nullptr;
 	bool previewBuilding = false;  // worker running, not yet active
 	bool previewIsRepitch = false;  // true if the active preview was generated via repitch
 	AudioWaveformCache previewCache;
@@ -91,8 +91,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::function<void(float)> startPlaybackCallback;
 	std::function<void()> stopPlaybackCallback;
 
-	std::atomic<float>* modulePlayheadPos = nullptr;
-	std::atomic<bool>* modulePlaying = nullptr;
+	StreamPlayer* player = nullptr;  // owned by the module; null in widget-only tests
 
 	SirenDropHandler* dropHandler = nullptr;
 	ITaskWorker* worker = nullptr;
@@ -119,7 +118,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	bool isPreviewActive() const {
-		return previewActive && previewActive->load(std::memory_order_relaxed);
+		return player && player->isPreviewActive();
 	}
 
 	bool isLoopPreviewActive() const {
@@ -204,7 +203,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		previewCacheReady = false;
 		previewDurationSeconds = 0.f;
 		previewCache = AudioWaveformCache{};
-		if (previewActive) previewActive->store(false, std::memory_order_relaxed);
+		if (player) player->setPreviewActive(false);
 
 		if (canvas) {
 			if (resetTrim) canvas->resetTrimHandles();
@@ -354,7 +353,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
 		previewBuilding = true;
-		if (previewActive) previewActive->store(false, std::memory_order_relaxed);
+		if (player) player->setPreviewActive(false);
 		previewIsRepitch = repitch;
 		previewCacheReady = false;
 		previewCache = AudioWaveformCache{};
@@ -403,7 +402,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		previewCacheReady = false;
 		previewDurationSeconds = 0.f;
 		previewCache = AudioWaveformCache{};
-		if (previewActive) previewActive->store(false, std::memory_order_relaxed);
+		if (player) player->setPreviewActive(false);
 
 		// Restore original file stream, then seek to trimIn so the playhead and
 		// all DSP counters (seekBaseFrame, outputFrameCount) are valid in the
@@ -446,7 +445,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 				// Tell the module to ignore trimIn/trimOut: the preview buffer already
 				// spans the full [0, 1] range, so the original trim values are left untouched.
-				if (previewActive) previewActive->store(true, std::memory_order_relaxed);
+				if (player) player->setPreviewActive(true);
 
 				// Reset seek base so playhead is valid in the new stream's frame space
 				if (startPlaybackCallback) startPlaybackCallback(0.f);
@@ -470,7 +469,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->durationSeconds = pa ? previewDurationSeconds : info.durationSeconds;
 			canvas->dragPath = currentNode.relativePath;
 			canvas->dragDisplayName = displayName;
-			canvas->modulePlayheadPos = modulePlayheadPos;
+			canvas->player = player;
 
 			// Single background-task overlay. Every source computes a message
 			// ("" = nothing to show), then the first non-empty one wins.
@@ -508,7 +507,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (currentNode.relativePath.empty()) return;
 
 		float w = box.size.x;
-		bool isPlaying = modulePlaying ? modulePlaying->load() : false;
+		bool isPlaying = player && player->isPlaying();
 		NVGcolor previewColor = DisplayTheme::tone(canvas ? canvas->viewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f));
 
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
@@ -638,7 +637,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		// Play/stop button (top bar area only — canvas handles clicks below TB_H)
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			if (e.pos.x < 26.f && e.pos.y < TB_H) {
-				if (modulePlaying && modulePlaying->load()) {
+				if (player && player->isPlaying()) {
 					stopPlaybackCallback();
 				}
 				else if (!currentNode.relativePath.empty()) {
@@ -793,7 +792,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	bool isPlaying() const {
-		return modulePlaying && modulePlaying->load();
+		return player && player->isPlaying();
 	}
 
 	// Threshold (in bytes) above which the user is asked to confirm before

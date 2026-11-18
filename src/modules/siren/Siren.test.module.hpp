@@ -707,35 +707,38 @@ TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
 // ─── SirenPreviewPane: inPoint / scrubPos / stream state ─────────────────────
 
 // ─── Playhead visual source during drag ───────────────────────────────────────
-// during drag, scrubPos overrides modulePlayheadPos for visual display.
+// during drag, scrubPos overrides player for visual display.
 TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[Siren][Preview]") {
 	// The draw() function reads scrubPos directly when draggingPlayhead == true,
-	// ignoring modulePlayheadPos. This prevents the DSP thread from overwriting
+	// ignoring player. This prevents the DSP thread from overwriting
 	// the visual position while the fill thread is still processing the seek.
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
 	pane.init(nullptr, nullptr);
 
 	// Simulate a playing module whose playhead is at 0.1
-	std::atomic<float> fakePlayhead{0.1f};
-	pane.modulePlayheadPos = &fakePlayhead;
+	std::atomic<float> trimIn{0.f}, trimOut{1.f};
+	StreamPlayer player{&trimIn, &trimOut};
+	player.setPlayhead(0.1f);
+	pane.player = &player;
+	pane.canvas->player = &player;
 
 	// User starts dragging to 0.7
 	pane.canvas->scrubPos = 0.7f;
 	pane.canvas->inPoint = 0.7f;
 	pane.canvas->draggingPlayhead = true;
 
-	// The visual playhead should track scrubPos, not modulePlayheadPos
+	// The visual playhead should track scrubPos, not player
 	float displayedPh = pane.canvas->draggingPlayhead
 		? pane.canvas->scrubPos
-		: (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
+		: pane.player->playhead();
 	REQUIRE(displayedPh == Catch::Approx(0.7f));
 
-	// After drag ends, display switches back to modulePlayheadPos
+	// After drag ends, display switches back to player
 	pane.canvas->draggingPlayhead = false;
 	displayedPh = pane.canvas->draggingPlayhead
 		? pane.canvas->scrubPos
-		: (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
+		: pane.player->playhead();
 	REQUIRE(displayedPh == Catch::Approx(0.1f));
 }
 
@@ -779,13 +782,14 @@ TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren]
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
 
-	// Wire a local playing flag so the pane's modulePlaying read has a target.
-	std::atomic<bool> playing{false};
-	pane.modulePlaying = &playing;
+	// Give the pane a real (idle) player so its isPlaying() read has a target.
+	std::atomic<float> trimIn{0.f}, trimOut{1.f};
+	StreamPlayer player{&trimIn, &trimOut};
+	pane.player = &player;
 
 	// startPlay=true with empty id → early return before startPlaybackFrom()
 	pane.loadItem(DataSourceNode{}, nullptr, /*startPlay=*/true);
-	REQUIRE(playing.load() == false);
+	REQUIRE(player.isPlaying() == false);
 }
 
 // ─── DataSource: metadata ownership ──────────────────────────────────────────
@@ -901,6 +905,8 @@ TEST_CASE("matchesSearch: container matches when a descendant satisfies the filt
 }
 
 
+
+
 // ─── Audio streaming: ring buffer / DSP ──────────────────────────────────────
 // process() reads from ring buffers and applies volume scaling.
 // Helper: push a stereo frame directly into the module's ring buffers.
@@ -908,7 +914,7 @@ static void pushFrame(SirenModule* m, float l, float r) {
 	dsp::Frame<2> fr;
 	fr.samples[0] = l;
 	fr.samples[1] = r;
-	m->rb.push(fr);
+	m->player.rb.push(fr);
 }
 
 TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Siren][Audio]") {
@@ -917,8 +923,8 @@ TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Sire
 
 	// Default volume = 1.0; DSP multiplies by vol * 5.f
 	pushFrame(m, 0.5f, -0.5f);
-	m->streamTotalFrames = 100;
-	m->playing.store(true, std::memory_order_release);
+	m->player.streamTotalFrames.store(100);
+	m->player.playing.store(true, std::memory_order_release);
 
 	h.dspStep();
 
@@ -932,13 +938,13 @@ TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]"
 	auto* m = h.addModule<SirenModule>("Siren");
 
 	// Fill thread signals EOF; ring is empty → process() must stop
-	m->streamTotalFrames = 100;
-	m->playing.store(true, std::memory_order_release);
-	m->eofReached.store(true, std::memory_order_release);
+	m->player.streamTotalFrames.store(100);
+	m->player.playing.store(true, std::memory_order_release);
+	m->player.eofReached.store(true, std::memory_order_release);
 
 	h.dspStep();
 
-	REQUIRE(m->playing.load() == false);
+	REQUIRE(m->player.playing.load() == false);
 	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
 }
 
@@ -950,15 +956,15 @@ TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
 	// One frame in ring + eofReached=true: first process() drains the frame;
 	// second process() sees empty ring + eofReached and stops.
 	pushFrame(m, 1.f, 1.f);
-	m->streamTotalFrames = 2;
-	m->playing.store(true, std::memory_order_release);
-	m->eofReached.store(true, std::memory_order_release);
+	m->player.streamTotalFrames.store(2);
+	m->player.playing.store(true, std::memory_order_release);
+	m->player.eofReached.store(true, std::memory_order_release);
 
 	h.dspStep();
-	REQUIRE(m->playing.load() == true);   // still playing — ring had data
+	REQUIRE(m->player.playing.load() == true);   // still playing — ring had data
 
 	h.dspStep();
-	REQUIRE(m->playing.load() == false);  // drained now
+	REQUIRE(m->player.playing.load() == false);  // drained now
 }
 
 TEST_CASE("process: volume knob at zero produces silence even with ring data", "[Siren][Audio]") {
@@ -967,8 +973,8 @@ TEST_CASE("process: volume knob at zero produces silence even with ring data", "
 	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
 
 	pushFrame(m, 1.f, 1.f);
-	m->streamTotalFrames = 100;
-	m->playing.store(true, std::memory_order_release);
+	m->player.streamTotalFrames.store(100);
+	m->player.playing.store(true, std::memory_order_release);
 
 	h.dspStep();
 
@@ -976,26 +982,29 @@ TEST_CASE("process: volume knob at zero produces silence even with ring data", "
 	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
 }
 
-// startPlayback computes seekBaseFrame from position * total frames.
-TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames", "[Siren][Audio]") {
+// startPlayback queues a seek to position * total frames.
+TEST_CASE("startPlayback: seek frame computed from position and total frames", "[Siren][Audio]") {
 	Test::Harness h;
 	auto* m = h.addModule<SirenModule>("Siren");
-	m->streamTotalFrames = 1000;
+	m->player.stopFillThread();  // keep the fill thread from consuming the command
+	m->player.streamTotalFrames.store(1000);
 
-	m->startPlayback(0.5f);
+	m->player.startPlayback(0.5f);
 
-	REQUIRE(m->seekBaseFrame == 500);
+	REQUIRE(m->player.pendingSeekFrame.load() == 500);
+	REQUIRE(m->player.playhead() == Catch::Approx(0.5f));
 }
 
 // startPlayback with position 0 seeks to frame 0.
 TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
 	Test::Harness h;
 	auto* m = h.addModule<SirenModule>("Siren");
-	m->streamTotalFrames = 1000;
+	m->player.stopFillThread();
+	m->player.streamTotalFrames.store(1000);
 
-	m->startPlayback(0.f);
+	m->player.startPlayback(0.f);
 
-	REQUIRE(m->seekBaseFrame == 0);
+	REQUIRE(m->player.pendingSeekFrame.load() == 0);
 }
 
 // rapid successive startPlayback calls — last position wins.
@@ -1006,37 +1015,34 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 	// thread always picks up the latest position.
 	Test::Harness h;
 	auto* m = h.addModule<SirenModule>("Siren");
-	// Stop the fill thread so it can't consume pendingSeekFrame via
-	// exchange(-1) before the assertion runs. The destructor will not
-	// re-join because joinable() returns false after this.
-	m->fillThreadStop.store(true, std::memory_order_release);
-	m->fillCv.notify_all();
-	if (m->fillThread.joinable()) m->fillThread.join();
+	m->player.stopFillThread();
+	m->player.streamTotalFrames.store(1000);
 
-	m->streamTotalFrames = 1000;
+	m->player.startPlayback(0.1f);   // press
+	m->player.startPlayback(0.4f);   // drag step 1
+	m->player.startPlayback(0.7f);   // drag step 2
 
-	m->startPlayback(0.1f);   // press
-	m->startPlayback(0.4f);   // drag step 1
-	m->startPlayback(0.7f);   // drag step 2
-
-	REQUIRE(m->seekBaseFrame == 700);
-	REQUIRE(m->pendingSeekFrame.load() == 700);
+	REQUIRE(m->player.pendingSeekFrame.load() == 700);
 }
 
-// startPlayback resets outputFrameCount on each call for correct playhead tracking.
-TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]") {
-	// Each scrub seek resets the output counter so the playhead position
-	// is computed relative to the new seek base, not the previous one.
+// The playhead base is published by the fill thread (seek target + zero-crossing
+// offset) and adopted by the DSP, which restarts its frame counter.
+TEST_CASE("nextFrame: adopts the seek base published by the fill thread", "[Siren][Audio]") {
 	Test::Harness h;
 	auto* m = h.addModule<SirenModule>("Siren");
-	m->streamTotalFrames = 1000;
+	auto& p = m->player;
+	p.streamTotalFrames.store(1000);
+	p.setEngineSampleRate(44100);
 
-	// Simulate some frames having been output
-	m->outputFrameCount.store(200, std::memory_order_relaxed);
+	pushFrame(m, 0.f, 0.f);
+	p.seekBase.store(500);
+	p.seekGen.fetch_add(1);
+	p.playing.store(true, std::memory_order_release);
 
-	m->startPlayback(0.5f);
+	p.nextFrame(0.f, 1.f, false);
 
-	REQUIRE(m->outputFrameCount.load() == 0);
+	// one frame output at ratio 1 → (500 + 1) / 1000
+	REQUIRE(p.playhead() == Catch::Approx(0.501f));
 }
 
 // openStream with null source leaves pendingStream nullptr.
@@ -1044,11 +1050,11 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 	Test::Harness h;
 	auto* m = h.addModule<SirenModule>("Siren");
 
-	m->openStream("", nullptr);
+	m->player.openStream("", nullptr);
 
 	// pendingStream is consumed by the fill thread; after exchange it should be nullptr
 	// (fill thread might race, but since stream is null either way it is safe to check)
-	AudioStream* ps = m->pendingStream.exchange(nullptr, std::memory_order_acq_rel);
+	AudioStream* ps = m->player.pendingStream.exchange(nullptr, std::memory_order_acq_rel);
 	REQUIRE(ps == nullptr);
 }
 
@@ -1062,7 +1068,7 @@ TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio
 TEST_CASE("Fill thread: multi-channel stream plays back first two channels only", "[Siren][Audio]") {
 	Test::Harness h;
 	auto* m = h.addModule<SirenModule>("Siren");
-	m->engineSampleRate = 44100;
+	m->player.setEngineSampleRate(44100);
 
 	// 6-channel stream (5.1 surround). Channels 0/1 carry distinct constant
 	// values so the test can verify they pass through correctly; channels
@@ -1076,8 +1082,8 @@ TEST_CASE("Fill thread: multi-channel stream plays back first two channels only"
 		for (int c = 2; c < channels; c++) stream->data[(size_t)f * channels + c] = 1.f;
 	}
 
-	m->adoptStream(std::move(stream), frames);
-	m->startPlayback(0.f);
+	m->player.adoptStream(std::move(stream), frames);
+	m->player.startPlayback(0.f);
 
 	// Drive process() until the fill thread has caught up and the declick
 	// ramp (~660 frames at 44.1 kHz) has settled; interleave short sleeps so

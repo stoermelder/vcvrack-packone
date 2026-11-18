@@ -1,6 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include "SirenAudio.hpp"
+#include "SirenStreamPlayer.hpp"
 #include "SirenDropHandler.hpp"
 #include "../../ui/HoverScrollLock.hpp"
 #include "../../utils/MpmcTaskWorker.hpp"
@@ -68,7 +69,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 	const CanvasViewMode* viewMode = &CanvasViewMode::normal(); // active mode's accent color, shared by waveform + header texts
 	bool hasFile = false;
 	float durationSeconds = 0.f;
-	std::atomic<float>* modulePlayheadPos = nullptr;
+	const StreamPlayer* player = nullptr;
 
 	// Module-owned trim points. When set (real module), the canvas reads
 	// inPoint/outPoint from these atomics and writes user-driven changes to
@@ -346,7 +347,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 		// playhead
 		if (hasFile) {
 			float ph = draggingPlayhead ? scrubPos
-				: (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
+				: (player ? player->playhead() : 0.f);
 			float phX = WAVE_X + (ph - scrollPos) * zoomLevel * waveW;
 			if (phX >= WAVE_X && phX <= WAVE_X + waveW) {
 				nvgBeginPath(args.vg);
@@ -409,7 +410,7 @@ struct SirenWaveformCanvas : WithHoverScrollLock<widget::OpaqueWidget> {
 			return rack::string::f("%02d:%05.2f", mm, ss);
 		};
 		float ph = draggingPlayhead ? scrubPos
-			: (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
+			: (player ? player->playhead() : 0.f);
 		float waveW2 = waveformRect().size.x;
 		float col = waveW2 / 4.f + 4.f;
 		nvgFontFaceId(args.vg, font->handle);
